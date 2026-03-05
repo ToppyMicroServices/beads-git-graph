@@ -60,6 +60,7 @@ export interface GitGraphViewState {
   initialLoadCommits: number;
   lastActiveRepo: string | null;
   loadMoreCommits: number;
+  repoDropdownOrder: RepoDropdownOrder;
   repos: GitRepoSet;
   showCurrentBranchByDefault: boolean;
 }
@@ -82,6 +83,7 @@ export type AvatarCache = { [email: string]: Avatar };
 export type DateFormat = "Date & Time" | "Date Only" | "Relative";
 export type DateType = "Author Date" | "Commit Date";
 export type GraphStyle = "rounded" | "angular";
+export type RepoDropdownOrder = "Workspace Full Path" | "Repository Name";
 export type TabIconColourTheme = "colour" | "grey";
 export type GitCommandStatus = string | null;
 export type GitResetMode = "soft" | "mixed" | "hard";

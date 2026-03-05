@@ -139,6 +139,17 @@ class GitGraphView {
 
     let repoPaths = Object.keys(repos),
       changedRepo = false;
+
+    repoPaths.sort((a, b) => {
+      if (this.config.repoDropdownOrder === "Repository Name") {
+        const aName = a.split("/").pop()!;
+        const bName = b.split("/").pop()!;
+        const byName = aName.localeCompare(bName);
+        return byName !== 0 ? byName : a.localeCompare(b);
+      }
+      return a.localeCompare(b);
+    });
+
     if (typeof repos[this.currentRepo] === "undefined") {
       this.currentRepo =
         lastActiveRepo !== null && typeof repos[lastActiveRepo] !== "undefined"
@@ -1342,6 +1353,7 @@ let gitGraph = new GitGraphView(
     grid: { x: 16, y: 24, offsetX: 8, offsetY: 12, expandY: 250 },
     initialLoadCommits: viewState.initialLoadCommits,
     loadMoreCommits: viewState.loadMoreCommits,
+    repoDropdownOrder: viewState.repoDropdownOrder,
     showCurrentBranchByDefault: viewState.showCurrentBranchByDefault
   },
   vscode.getState()

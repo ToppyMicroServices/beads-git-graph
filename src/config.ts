@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 
-import { DateFormat, DateType, GraphStyle, TabIconColourTheme } from "./types";
+import { DateFormat, DateType, GraphStyle, RepoDropdownOrder, TabIconColourTheme } from "./types";
 
 class Config {
   private workspaceConfiguration: vscode.WorkspaceConfiguration;
@@ -46,6 +46,10 @@ class Config {
 
   public loadMoreCommits() {
     return this.workspaceConfiguration.get("loadMoreCommits", 75);
+  }
+
+  public repoDropdownOrder(): RepoDropdownOrder {
+    return this.workspaceConfiguration.get("repoDropdownOrder", "Workspace Full Path");
   }
 
   public maxDepthOfRepoSearch() {
