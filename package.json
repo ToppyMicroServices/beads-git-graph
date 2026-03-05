@@ -70,8 +70,22 @@
         "category": "(neo) Git Graph",
         "command": "neo-git-graph.clearAvatarCache",
         "title": "Clear Avatar Cache"
+      },
+      {
+        "category": "(neo) Git Graph",
+        "command": "neo-git-graph.openDiffFile",
+        "title": "Open File"
       }
     ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "neo-git-graph.openDiffFile",
+          "when": "resourceScheme == neo-git-graph",
+          "group": "navigation@9"
+        }
+      ]
+    },
     "configuration": {
       "type": "object",
       "title": "(neo) Git Graph",

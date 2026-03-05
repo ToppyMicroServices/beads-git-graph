@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 
 import { AvatarManager } from "./avatarManager";
 import { DataSource } from "./dataSource";
-import { DiffDocProvider } from "./diffDocProvider";
+import { decodeDiffDocUri, DiffDocProvider } from "./diffDocProvider";
 import { ExtensionState } from "./extensionState";
 import { GitGraphView } from "./gitGraphView";
 import { RepoManager } from "./repoManager";
@@ -29,6 +29,26 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("neo-git-graph.clearAvatarCache", () => {
       avatarManager.clearCache();
+    }),
+    vscode.commands.registerCommand("neo-git-graph.openDiffFile", async (uri?: vscode.Uri) => {
+      const sourceUri =
+        uri ??
+        vscode.window.activeTextEditor?.document.uri ??
+        vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+      if (!(sourceUri instanceof vscode.Uri) || sourceUri.scheme !== DiffDocProvider.scheme) {
+        return;
+      }
+
+      const request = decodeDiffDocUri(sourceUri);
+      const relativePath = request.filePath.replace(/^\/+/, "");
+      const fileUri = vscode.Uri.joinPath(vscode.Uri.file(request.repo), relativePath);
+
+      try {
+        const document = await vscode.workspace.openTextDocument(fileUri);
+        await vscode.window.showTextDocument(document, { preview: true });
+      } catch {
+        vscode.window.showWarningMessage("Unable to open file in working tree.");
+      }
     }),
     vscode.workspace.registerTextDocumentContentProvider(
       DiffDocProvider.scheme,
