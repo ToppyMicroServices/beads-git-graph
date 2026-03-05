@@ -1310,6 +1310,25 @@ class GitGraphView {
               });
             }
           },
+          {
+            title: "Reset File to this Revision" + ELLIPSIS,
+            onClick: () => {
+              showConfirmationDialog(
+                "Are you sure you want to reset file <b><i>" +
+                  escapeHtml(filePath) +
+                  "</i></b> to this revision?",
+                () => {
+                  sendMessage({
+                    command: "resetFileToRevision",
+                    repo: this.currentRepo!,
+                    commitHash: this.expandedCommit!.hash,
+                    filePath: filePath
+                  });
+                },
+                sourceElem
+              );
+            }
+          },
           null,
           {
             title: "Copy Relative File Path to Clipboard",
@@ -1431,6 +1450,9 @@ window.addEventListener("message", (event) => {
       break;
     case "resetToCommit":
       refreshGraphOrDisplayError(msg.status, "Unable to Reset to Commit");
+      break;
+    case "resetFileToRevision":
+      refreshGraphOrDisplayError(msg.status, "Unable to Reset File to this Revision");
       break;
     case "revertCommit":
       refreshGraphOrDisplayError(msg.status, "Unable to Revert Commit");

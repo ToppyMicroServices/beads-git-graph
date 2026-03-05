@@ -353,6 +353,18 @@ export interface RequestOpenFile {
   commitHash?: string;
 }
 
+export interface RequestResetFileToRevision {
+  command: "resetFileToRevision";
+  repo: string;
+  commitHash: string;
+  filePath: string;
+}
+
+export interface ResponseResetFileToRevision {
+  command: "resetFileToRevision";
+  status: GitCommandStatus;
+}
+
 export type RequestMessage =
   | RequestAddTag
   | RequestCheckoutBranch
@@ -377,7 +389,8 @@ export type RequestMessage =
   | RequestViewDiff
   | RequestViewFileAtRevision
   | RequestViewDiffWithWorkingFile
-  | RequestOpenFile;
+  | RequestOpenFile
+  | RequestResetFileToRevision;
 
 export type ResponseMessage =
   | ResponseAddTag
@@ -398,6 +411,7 @@ export type ResponseMessage =
   | ResponsePushTag
   | ResponseRefresh
   | ResponseRenameBranch
+  | ResponseResetFileToRevision
   | ResponseResetToCommit
   | ResponseRevertCommit
   | ResponseViewDiff;

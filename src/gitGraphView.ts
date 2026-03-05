@@ -279,6 +279,16 @@ export class GitGraphView {
               status: await this.dataSource.resetToCommit(msg.repo, msg.commitHash, msg.resetMode)
             });
             break;
+          case "resetFileToRevision":
+            this.sendMessage({
+              command: "resetFileToRevision",
+              status: await this.dataSource.resetFileToRevision(
+                msg.repo,
+                msg.commitHash,
+                msg.filePath
+              )
+            });
+            break;
           case "revertCommit":
             this.sendMessage({
               command: "revertCommit",

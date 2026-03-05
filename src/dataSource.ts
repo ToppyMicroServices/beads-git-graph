@@ -363,6 +363,10 @@ export class DataSource {
     return this.runGitCommand("reset --" + resetMode + " " + commitHash, repo);
   }
 
+  public resetFileToRevision(repo: string, commitHash: string, filePath: string) {
+    return this.runGitCommandSpawn(["checkout", commitHash, "--", filePath], repo);
+  }
+
   private getRefs(repo: string, showRemoteBranches: boolean) {
     return new Promise<GitRefData>((resolve) => {
       this.execGit(
