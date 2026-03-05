@@ -327,6 +327,26 @@ export interface ResponseViewDiff {
   success: boolean;
 }
 
+export interface RequestViewFileAtRevision {
+  command: "viewFileAtRevision";
+  repo: string;
+  commitHash: string;
+  filePath: string;
+}
+
+export interface RequestViewDiffWithWorkingFile {
+  command: "viewDiffWithWorkingFile";
+  repo: string;
+  commitHash: string;
+  filePath: string;
+}
+
+export interface RequestOpenFile {
+  command: "openFile";
+  repo: string;
+  filePath: string;
+}
+
 export type RequestMessage =
   | RequestAddTag
   | RequestCheckoutBranch
@@ -348,7 +368,10 @@ export type RequestMessage =
   | RequestResetToCommit
   | RequestRevertCommit
   | RequestSaveRepoState
-  | RequestViewDiff;
+  | RequestViewDiff
+  | RequestViewFileAtRevision
+  | RequestViewDiffWithWorkingFile
+  | RequestOpenFile;
 
 export type ResponseMessage =
   | ResponseAddTag

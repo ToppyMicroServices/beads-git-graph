@@ -1235,6 +1235,94 @@ class GitGraphView {
         type: <GG.GitFileChangeType>sourceElem.dataset.type
       });
     });
+    addListenerToClass("gitFile", "contextmenu", (e: Event) => {
+      e.stopPropagation();
+      if (this.expandedCommit === null) return;
+
+      let sourceElem = <HTMLElement>(<Element>e.target).closest(".gitFile")!;
+      let oldFilePath = decodeURIComponent(sourceElem.dataset.oldfilepath!);
+      let newFilePath = decodeURIComponent(sourceElem.dataset.newfilepath!);
+      let filePath = sourceElem.dataset.type === "D" ? oldFilePath : newFilePath;
+      let relativeFilePath = filePath.replace(/^\/+/, "");
+      let absoluteFilePath = this.currentRepo!.replace(/\/+$/, "") + "/" + relativeFilePath;
+
+      showContextMenu(
+        <MouseEvent>e,
+        [
+          ...(sourceElem.classList.contains("gitDiffPossible")
+            ? [
+                {
+                  title: "View Diff",
+                  onClick: () => {
+                    sendMessage({
+                      command: "viewDiff",
+                      repo: this.currentRepo!,
+                      commitHash: this.expandedCommit!.hash,
+                      oldFilePath: oldFilePath,
+                      newFilePath: newFilePath,
+                      type: <GG.GitFileChangeType>sourceElem.dataset.type
+                    });
+                  }
+                },
+                {
+                  title: "View Diff with Working File",
+                  onClick: () => {
+                    sendMessage({
+                      command: "viewDiffWithWorkingFile",
+                      repo: this.currentRepo!,
+                      commitHash: this.expandedCommit!.hash,
+                      filePath: filePath
+                    });
+                  }
+                }
+              ]
+            : []),
+          {
+            title: "View File at this Revision",
+            onClick: () => {
+              sendMessage({
+                command: "viewFileAtRevision",
+                repo: this.currentRepo!,
+                commitHash: this.expandedCommit!.hash,
+                filePath: filePath
+              });
+            }
+          },
+          {
+            title: "Open File",
+            onClick: () => {
+              sendMessage({
+                command: "openFile",
+                repo: this.currentRepo!,
+                filePath: filePath
+              });
+            }
+          },
+          null,
+          {
+            title: "Copy Relative File Path to Clipboard",
+            onClick: () => {
+              sendMessage({
+                command: "copyToClipboard",
+                type: "Relative File Path",
+                data: relativeFilePath
+              });
+            }
+          },
+          {
+            title: "Copy Absolute File Path to Clipboard",
+            onClick: () => {
+              sendMessage({
+                command: "copyToClipboard",
+                type: "Absolute File Path",
+                data: absoluteFilePath
+              });
+            }
+          }
+        ],
+        sourceElem
+      );
+    });
   }
 }
 

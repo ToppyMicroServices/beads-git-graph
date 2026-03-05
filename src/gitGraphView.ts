@@ -300,6 +300,15 @@ export class GitGraphView {
               )
             });
             break;
+          case "viewFileAtRevision":
+            await this.viewFileAtRevision(msg.repo, msg.commitHash, msg.filePath);
+            break;
+          case "viewDiffWithWorkingFile":
+            await this.viewDiffWithWorkingFile(msg.repo, msg.commitHash, msg.filePath);
+            break;
+          case "openFile":
+            await this.openFile(msg.repo, msg.filePath);
+            break;
         }
         this.repoFileWatcher.unmute();
       },
@@ -447,6 +456,42 @@ export class GitGraphView {
         .then(() => resolve(true))
         .then(() => resolve(false));
     });
+  }
+
+  private async viewFileAtRevision(repo: string, commitHash: string, filePath: string) {
+    const docUri = encodeDiffDocUri(repo, filePath, commitHash);
+    try {
+      await vscode.commands.executeCommand("vscode.open", docUri, { preview: true });
+    } catch {
+      vscode.window.showWarningMessage("Unable to open file at this revision.");
+    }
+  }
+
+  private async viewDiffWithWorkingFile(repo: string, commitHash: string, filePath: string) {
+    const relativePath = filePath.replace(/^\/+/, "");
+    const workingFileUri = vscode.Uri.joinPath(vscode.Uri.file(repo), relativePath);
+    try {
+      await vscode.commands.executeCommand(
+        "vscode.diff",
+        encodeDiffDocUri(repo, filePath, commitHash),
+        workingFileUri,
+        `${filePath.split("/").pop()} (${abbrevCommit(commitHash)} ↔ Working Tree)`,
+        { preview: true }
+      );
+    } catch {
+      vscode.window.showWarningMessage("Unable to compare with working file.");
+    }
+  }
+
+  private async openFile(repo: string, filePath: string) {
+    const relativePath = filePath.replace(/^\/+/, "");
+    const fileUri = vscode.Uri.joinPath(vscode.Uri.file(repo), relativePath);
+    try {
+      const document = await vscode.workspace.openTextDocument(fileUri);
+      await vscode.window.showTextDocument(document, { preview: true });
+    } catch {
+      vscode.window.showWarningMessage("Unable to open file.");
+    }
   }
 }
 
