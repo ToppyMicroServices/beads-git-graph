@@ -1,27 +1,30 @@
 <div align="center">
   <img src="./resources/icon.png" height="128"/>
   <samp>
-    <h1>(neo) Git Graph for Visual Studio Code</h1>
-    <h3>View your Git history as a graph with Git actions and devcontainer support</h3>
+    <h1>Beads Git Graph for Visual Studio Code</h1>
+    <h3>Independent Git Graph extension with Beads-friendly workflow</h3>
   </samp>
 </div>
 
 [![](https://img.shields.io/github/license/asispts/neo-git-graph)](https://github.com/asispts/neo-git-graph?tab=MIT-1-ov-file)
 [![GitHub release](https://img.shields.io/github/v/release/asispts/neo-git-graph)](https://github.com/asispts/neo-git-graph/releases)
-[![vscode downloads](https://img.shields.io/visual-studio-marketplace/d/asispts.neo-git-graph?label=download)](https://marketplace.visualstudio.com/items?itemName=asispts.neo-git-graph)
-[![vscode installs](https://img.shields.io/visual-studio-marketplace/i/asispts.neo-git-graph?label=install)](https://marketplace.visualstudio.com/items?itemName=asispts.neo-git-graph)
-[![open-vsx downloads](https://img.shields.io/open-vsx/dt/asispts/neo-git-graph?label=open-vsx)](https://open-vsx.org/extension/asispts/neo-git-graph)
 
 ![demo](resources/demo.gif)
 
 <p>&nbsp;</p>
 
-## Why this fork
+## Project Identity (Required for Marketplace)
+
+- This project is **Beads Git Graph** (independent project identity).
+- It is **not** an upstream-following mirror of `mhutchie/vscode-git-graph`.
+- It keeps full repository history while operating under its own roadmap and release policy.
+
+## Provenance
 
 The original [Git Graph](https://github.com/mhutchie/vscode-git-graph) by mhutchie changed its license in May 2019.
 Everything after [commit 4af8583](https://github.com/mhutchie/vscode-git-graph/commit/4af8583a42082b2c230d2c0187d4eaff4b69c665) is no longer MIT.
 
-This fork is based on the last MIT commit and:
+This project is based on the last MIT commit and:
 
 - Keeps MIT license
 - Adds devcontainer support
@@ -60,13 +63,12 @@ All settings use the `neo-git-graph` prefix.
 
 ## Installation
 
-Search for `neo-git-graph` in Extensions, or install from:
+Search for `beads-git-graph` in Extensions.
 
-- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=asispts.neo-git-graph)
-- [Open VSX Registry](https://open-vsx.org/extension/asispts/neo-git-graph)
+- Marketplace identity (`publisher.name`) must be unique before publish.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
-> Not related to the original Git Graph project.
+> Based on MIT-licensed historical source from Git Graph, but maintained as an independent project and not an upstream-tracking distribution.
