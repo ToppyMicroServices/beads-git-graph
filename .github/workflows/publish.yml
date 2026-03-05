@@ -16,10 +16,8 @@ jobs:
       matrix:
         include:
           - name: VS Marketplace
-            pat: VS_MARKETPLACE_TOKEN
             registryUrl: https://marketplace.visualstudio.com
           - name: Open VSX
-            pat: OPEN_VSX_TOKEN
     steps:
       - uses: actions/checkout@v6
 
@@ -30,8 +28,15 @@ jobs:
 
       - run: corepack enable && pnpm install --frozen-lockfile
 
-      - name: Publish to ${{ matrix.name }}
+      - name: Publish to VS Marketplace
+        if: ${{ matrix.name == 'VS Marketplace' }}
         uses: HaaLeo/publish-vscode-extension@v2
         with:
-          pat: ${{ secrets[matrix.pat] }}
-          registryUrl: ${{ matrix.registryUrl || '' }}
+          pat: ${{ secrets.VS_MARKETPLACE_TOKEN }}
+          registryUrl: https://marketplace.visualstudio.com
+
+      - name: Publish to Open VSX
+        if: ${{ matrix.name == 'Open VSX' }}
+        uses: HaaLeo/publish-vscode-extension@v2
+        with:
+          pat: ${{ secrets.OPEN_VSX_TOKEN }}

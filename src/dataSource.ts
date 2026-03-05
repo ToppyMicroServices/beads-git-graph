@@ -260,23 +260,22 @@ export class DataSource {
   }
 
   public deleteTag(repo: string, tagName: string) {
-    return this.runGitCommand("tag -d " + escapeRefName(tagName), repo);
+    return this.runGitCommandSpawn(["tag", "-d", tagName], repo);
   }
 
   public pushTag(repo: string, tagName: string) {
-    return this.runGitCommand("push origin " + escapeRefName(tagName), repo);
+    return this.runGitCommandSpawn(["push", "origin", tagName], repo);
   }
 
   public createBranch(repo: string, branchName: string, commitHash: string) {
-    return this.runGitCommand("branch " + escapeRefName(branchName) + " " + commitHash, repo);
+    return this.runGitCommandSpawn(["branch", branchName, commitHash], repo);
   }
 
   public checkoutBranch(repo: string, branchName: string, remoteBranch: string | null) {
-    return this.runGitCommand(
-      "checkout " +
-        (remoteBranch === null
-          ? escapeRefName(branchName)
-          : " -b " + escapeRefName(branchName) + " " + escapeRefName(remoteBranch)),
+    return this.runGitCommandSpawn(
+      remoteBranch === null
+        ? ["checkout", branchName]
+        : ["checkout", "-b", branchName, remoteBranch],
       repo
     );
   }
@@ -286,22 +285,19 @@ export class DataSource {
   }
 
   public deleteBranch(repo: string, branchName: string, forceDelete: boolean) {
-    return this.runGitCommand(
-      "branch --delete" + (forceDelete ? " --force" : "") + " " + escapeRefName(branchName),
+    return this.runGitCommandSpawn(
+      ["branch", "--delete", ...(forceDelete ? ["--force"] : []), branchName],
       repo
     );
   }
 
   public renameBranch(repo: string, oldName: string, newName: string) {
-    return this.runGitCommand(
-      "branch -m " + escapeRefName(oldName) + " " + escapeRefName(newName),
-      repo
-    );
+    return this.runGitCommandSpawn(["branch", "-m", oldName, newName], repo);
   }
 
   public mergeBranch(repo: string, branchName: string, createNewCommit: boolean) {
-    return this.runGitCommand(
-      "merge " + escapeRefName(branchName) + (createNewCommit ? " --no-ff" : ""),
+    return this.runGitCommandSpawn(
+      ["merge", branchName, ...(createNewCommit ? ["--no-ff"] : [])],
       repo
     );
   }
@@ -368,7 +364,7 @@ export class DataSource {
   private getGitLog(repo: string, branch: string, num: number, showRemoteBranches: boolean) {
     let args = ["log", "--max-count=" + num, "--format=" + this.gitLogFormat, "--date-order"];
     if (branch !== "") {
-      args.push(escapeRefName(branch));
+      args.push(branch);
     } else {
       args.push("--branches", "--tags");
       if (showRemoteBranches) args.push("--remotes");
@@ -493,8 +489,4 @@ export class DataSource {
       });
     });
   }
-}
-
-function escapeRefName(str: string) {
-  return str.replace(/'/g, "'");
 }

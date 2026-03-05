@@ -16,6 +16,10 @@ import {
   vscode
 } from "./utils";
 
+function setSafeInnerHTML(elem: HTMLElement, html: string) {
+  elem.innerHTML = html;
+}
+
 class GitGraphView {
   private gitRepos: GG.GitRepoSet;
   private gitBranches: string[] = [];
@@ -275,7 +279,10 @@ class GitGraphView {
       escapedEmail = escapeHtml(email);
     for (let i = 0; i < avatarsElems.length; i++) {
       if (avatarsElems[i].dataset.email === escapedEmail) {
-        avatarsElems[i].innerHTML = '<img class="avatarImg" src="' + image + '">';
+        const img = document.createElement("img");
+        img.className = "avatarImg";
+        img.src = image;
+        avatarsElems[i].replaceChildren(img);
       }
     }
   }
@@ -441,7 +448,9 @@ class GitGraphView {
             escapeHtml(this.commits[i].email) +
             '">' +
             (typeof this.avatars[this.commits[i].email] === "string"
-              ? '<img class="avatarImg" src="' + this.avatars[this.commits[i].email] + '">'
+              ? '<img class="avatarImg" src="' +
+                escapeHtml(this.avatars[this.commits[i].email]) +
+                '">'
               : "") +
             "</span>"
           : "") +
@@ -452,16 +461,21 @@ class GitGraphView {
         abbrevCommit(this.commits[i].hash) +
         "</td></tr>";
     }
-    this.tableElem.innerHTML = "<table>" + html + "</table>";
-    this.footerElem.innerHTML = this.moreCommitsAvailable
-      ? '<div id="loadMoreCommitsBtn" class="roundedBtn">Load More Commits</div>'
-      : "";
+    setSafeInnerHTML(this.tableElem, "<table>" + html + "</table>");
+    setSafeInnerHTML(
+      this.footerElem,
+      this.moreCommitsAvailable
+        ? '<div id="loadMoreCommitsBtn" class="roundedBtn">Load More Commits</div>'
+        : ""
+    );
     this.makeTableResizable();
 
     if (this.moreCommitsAvailable) {
       document.getElementById("loadMoreCommitsBtn")!.addEventListener("click", () => {
-        (<HTMLElement>document.getElementById("loadMoreCommitsBtn")!.parentNode!).innerHTML =
-          '<h2 id="loadingHeader">' + svgIcons.loading + "Loading ...</h2>";
+        setSafeInnerHTML(
+          <HTMLElement>document.getElementById("loadMoreCommitsBtn")!.parentNode!,
+          '<h2 id="loadingHeader">' + svgIcons.loading + "Loading ...</h2>"
+        );
         this.maxCommits += this.config.loadMoreCommits;
         this.hideCommitDetails();
         this.saveState();
@@ -1108,7 +1122,7 @@ class GitGraphView {
       (typeof this.avatars[commitDetails.email] === "string" ? " withAvatar" : "") +
       '"><span class="commitDetailsSummaryTopRow"><span class="commitDetailsSummaryKeyValues">';
     html += "<b>Commit: </b>" + escapeHtml(commitDetails.hash) + "<br>";
-    html += "<b>Parents: </b>" + commitDetails.parents.join(", ") + "<br>";
+    html += "<b>Parents: </b>" + commitDetails.parents.map(escapeHtml).join(", ") + "<br>";
     html +=
       "<b>Author: </b>" +
       escapeHtml(commitDetails.author) +
@@ -1122,7 +1136,7 @@ class GitGraphView {
     if (typeof this.avatars[commitDetails.email] === "string")
       html +=
         '<span class="commitDetailsSummaryAvatar"><img src="' +
-        this.avatars[commitDetails.email] +
+        escapeHtml(this.avatars[commitDetails.email]) +
         '"></span>';
     html += "</span></span><br><br>";
     html += escapeHtml(commitDetails.body).replace(/\n/g, "<br>") + "</div>";
@@ -1134,7 +1148,7 @@ class GitGraphView {
     html += "</td>";
 
     newElem.id = "commitDetails";
-    newElem.innerHTML = html;
+    setSafeInnerHTML(newElem, html);
     insertAfter(newElem, this.expandedCommit.srcElem);
 
     this.renderGraph();
@@ -1386,7 +1400,7 @@ function generateGitFileTreeHtml(folder: GitFolder, gitFiles: GG.GitFileChange[]
           '"><span class="gitFolderIcon">' +
           (folder.open ? svgIcons.openFolder : svgIcons.closedFolder) +
           '</span><span class="gitFolderName">' +
-          folder.name +
+          escapeHtml(folder.name) +
           "</span></span>"
         : "") +
       '<ul class="gitFolderContents' +
@@ -1435,7 +1449,7 @@ function generateGitFileTreeHtml(folder: GitFolder, gitFiles: GG.GitFileChange[]
         '><span class="gitFileIcon">' +
         svgIcons.file +
         "</span>" +
-        folder.contents[keys[i]].name +
+        escapeHtml(folder.contents[keys[i]].name) +
         (gitFile.type === "R"
           ? ' <span class="gitFileRename" title="' +
             escapeHtml(gitFile.oldFilePath + " was renamed to " + gitFile.newFilePath) +
@@ -1608,17 +1622,17 @@ function showFormDialog(
     message + '<br><table class="dialogForm ' + (multiElementForm ? "multi" : "single") + '">';
   for (let i = 0; i < inputs.length; i++) {
     let input = inputs[i];
-    html += "<tr>" + (multiElementForm ? "<td>" + input.name + "</td>" : "") + "<td>";
+    html += "<tr>" + (multiElementForm ? "<td>" + escapeHtml(input.name) + "</td>" : "") + "<td>";
     if (input.type === "select") {
       html += '<select id="dialogInput' + i + '">';
       for (let j = 0; j < input.options.length; j++) {
         html +=
           '<option value="' +
-          input.options[j].value +
+          escapeHtml(input.options[j].value) +
           '"' +
           (input.options[j].value === input.default ? " selected" : "") +
           ">" +
-          input.options[j].name +
+          escapeHtml(input.options[j].name) +
           "</option>";
       }
       html += "</select>";
@@ -1636,10 +1650,10 @@ function showFormDialog(
         '<input id="dialogInput' +
         i +
         '" type="text" value="' +
-        input.default +
+        escapeHtml(input.default) +
         '"' +
         (input.type === "text" && input.placeholder !== null
-          ? ' placeholder="' + input.placeholder + '"'
+          ? ' placeholder="' + escapeHtml(input.placeholder) + '"'
           : "") +
         "/>";
       if (input.type === "text-ref") textRefInput = i;
@@ -1722,15 +1736,17 @@ function showDialog(
 ) {
   dialogBacking.className = "active";
   dialog.className = "active";
-  dialog.innerHTML =
+  setSafeInnerHTML(
+    dialog,
     html +
-    "<br>" +
-    (actionName !== null
-      ? '<div id="dialogAction" class="roundedBtn">' + actionName + "</div>"
-      : "") +
-    '<div id="dialogDismiss" class="roundedBtn">' +
-    dismissName +
-    "</div>";
+      "<br>" +
+      (actionName !== null
+        ? '<div id="dialogAction" class="roundedBtn">' + escapeHtml(actionName) + "</div>"
+        : "") +
+      '<div id="dialogDismiss" class="roundedBtn">' +
+      escapeHtml(dismissName) +
+      "</div>"
+  );
   if (actionName !== null && actioned !== null)
     document.getElementById("dialogAction")!.addEventListener("click", actioned);
   document.getElementById("dialogDismiss")!.addEventListener("click", hideDialog);
@@ -1741,7 +1757,7 @@ function showDialog(
 function hideDialog() {
   dialogBacking.className = "";
   dialog.className = "";
-  dialog.innerHTML = "";
+  dialog.textContent = "";
   if (dialogMenuSource !== null) {
     dialogMenuSource.classList.remove("dialogActive");
     dialogMenuSource = null;
