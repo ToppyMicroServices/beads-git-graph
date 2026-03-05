@@ -20,7 +20,7 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel,
     vscode.commands.registerCommand("neo-git-graph.view", () => {
       GitGraphView.createOrShow(
-        context.extensionPath,
+        context.extensionUri,
         dataSource,
         extensionState,
         avatarManager,

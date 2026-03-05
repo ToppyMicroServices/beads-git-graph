@@ -199,6 +199,9 @@
   "activationEvents": [
     "onStartupFinished"
   ],
+  "extensionKind": [
+    "workspace"
+  ],
   "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.98.0"

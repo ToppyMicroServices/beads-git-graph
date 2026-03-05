@@ -1,5 +1,3 @@
-import * as path from "node:path";
-
 import * as vscode from "vscode";
 
 import { AvatarManager } from "./avatarManager";
@@ -22,7 +20,7 @@ export class GitGraphView {
   public static currentPanel: GitGraphView | undefined;
 
   private readonly panel: vscode.WebviewPanel;
-  private readonly extensionPath: string;
+  private readonly extensionUri: vscode.Uri;
   private readonly avatarManager: AvatarManager;
   private readonly dataSource: DataSource;
   private readonly extensionState: ExtensionState;
@@ -34,7 +32,7 @@ export class GitGraphView {
   private currentRepo: string | null = null;
 
   public static createOrShow(
-    extensionPath: string,
+    extensionUri: vscode.Uri,
     dataSource: DataSource,
     extensionState: ExtensionState,
     avatarManager: AvatarManager,
@@ -56,15 +54,15 @@ export class GitGraphView {
       {
         enableScripts: true,
         localResourceRoots: [
-          vscode.Uri.file(path.join(extensionPath, "media")),
-          vscode.Uri.file(path.join(extensionPath, "out"))
+          vscode.Uri.joinPath(extensionUri, "media"),
+          vscode.Uri.joinPath(extensionUri, "out")
         ]
       }
     );
 
     GitGraphView.currentPanel = new GitGraphView(
       panel,
-      extensionPath,
+      extensionUri,
       dataSource,
       extensionState,
       avatarManager,
@@ -74,14 +72,14 @@ export class GitGraphView {
 
   private constructor(
     panel: vscode.WebviewPanel,
-    extensionPath: string,
+    extensionUri: vscode.Uri,
     dataSource: DataSource,
     extensionState: ExtensionState,
     avatarManager: AvatarManager,
     repoManager: RepoManager
   ) {
     this.panel = panel;
-    this.extensionPath = extensionPath;
+    this.extensionUri = extensionUri;
     this.avatarManager = avatarManager;
     this.dataSource = dataSource;
     this.extensionState = extensionState;
@@ -408,7 +406,7 @@ export class GitGraphView {
   }
 
   private getUri(...pathComps: string[]) {
-    return vscode.Uri.file(path.join(this.extensionPath, ...pathComps));
+    return vscode.Uri.joinPath(this.extensionUri, ...pathComps);
   }
 
   private respondLoadRepos(repos: GitRepoSet) {
