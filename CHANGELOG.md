@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add `Beads Graph` Explorer view with `.beads` auto-detection and `bd list` style rendering
+- Add lightweight Git link from Beads items via commit hash actions
+
+### Changed
+
+- Rename extension identity to `beads-git-graph` / `Beads Git Graph` (UI-facing)
+- Keep `neo-git-graph.*` command IDs and configuration keys for compatibility during transition
+
 ## [0.1.1] - 2026-02-23
 
 ### Maintenance

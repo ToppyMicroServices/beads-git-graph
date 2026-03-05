@@ -19,6 +19,12 @@
 - It is **not** an upstream-following mirror of `mhutchie/vscode-git-graph`.
 - It keeps full repository history while operating under its own roadmap and release policy.
 
+## Compatibility Policy (Before Full Prefix Migration)
+
+- For now, command IDs and setting keys remain under `neo-git-graph.*` to avoid breaking existing user keybindings and settings.
+- UI-facing naming is Beads-branded (`Beads Git Graph`) to prevent marketplace identity collision.
+- Planned full migration path: introduce `beads-git-graph.*` aliases first, then deprecate old IDs in a later minor release.
+
 ## Provenance
 
 The original [Git Graph](https://github.com/mhutchie/vscode-git-graph) by mhutchie changed its license in May 2019.
@@ -40,6 +46,7 @@ This project is based on the last MIT commit and:
 - **Avatar support**: Optional avatars from GitHub, GitLab, or Gravatar
 - **Multi-repo**: Work with multiple repositories in one workspace
 - **Devcontainer ready**: Works in remote and container environments
+- **Beads Graph view**: Detects `.beads` data automatically and shows a `bd list` style table
 
 ## Configuration
 
