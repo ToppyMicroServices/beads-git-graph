@@ -1,5 +1,6 @@
 import { Dropdown } from "./dropdown";
 import { Graph } from "./graph";
+import createDOMPurify = require("dompurify");
 import {
   addListenerToClass,
   arraysEqual,
@@ -15,6 +16,8 @@ import {
   unescapeHtml,
   vscode
 } from "./utils";
+
+const DOMPurify = createDOMPurify(window);
 
 function getSafeImageUrl(rawUrl: string) {
   try {
@@ -482,16 +485,25 @@ class GitGraphView {
         abbrevCommit(this.commits[i].hash) +
         "</td></tr>";
     }
-    this.tableElem.innerHTML = "<table>" + html + "</table>";
-    this.footerElem.innerHTML = this.moreCommitsAvailable
-      ? '<div id="loadMoreCommitsBtn" class="roundedBtn">Load More Commits</div>'
-      : "";
+    this.tableElem.innerHTML = DOMPurify.sanitize("<table>" + html + "</table>", {
+      USE_PROFILES: { html: true, svg: true, svgFilters: true }
+    });
+    this.footerElem.innerHTML = DOMPurify.sanitize(
+      this.moreCommitsAvailable
+        ? '<div id="loadMoreCommitsBtn" class="roundedBtn">Load More Commits</div>'
+        : "",
+      {
+        USE_PROFILES: { html: true, svg: true, svgFilters: true }
+      }
+    );
     this.makeTableResizable();
 
     if (this.moreCommitsAvailable) {
       document.getElementById("loadMoreCommitsBtn")!.addEventListener("click", () => {
         (<HTMLElement>document.getElementById("loadMoreCommitsBtn")!.parentNode!).innerHTML =
-          '<h2 id="loadingHeader">' + svgIcons.loading + "Loading ...</h2>";
+          DOMPurify.sanitize('<h2 id="loadingHeader">' + svgIcons.loading + "Loading ...</h2>", {
+            USE_PROFILES: { html: true, svg: true, svgFilters: true }
+          });
         this.maxCommits += this.config.loadMoreCommits;
         this.hideCommitDetails();
         this.saveState();
@@ -1168,7 +1180,9 @@ class GitGraphView {
     html += "</td>";
 
     newElem.id = "commitDetails";
-    newElem.innerHTML = html;
+    newElem.innerHTML = DOMPurify.sanitize(html, {
+      USE_PROFILES: { html: true, svg: true, svgFilters: true }
+    });
     insertAfter(newElem, this.expandedCommit.srcElem);
 
     this.renderGraph();
@@ -1756,15 +1770,19 @@ function showDialog(
 ) {
   dialogBacking.className = "active";
   dialog.className = "active";
-  dialog.innerHTML =
+  dialog.innerHTML = DOMPurify.sanitize(
     html +
-    "<br>" +
-    (actionName !== null
-      ? '<div id="dialogAction" class="roundedBtn">' + escapeHtml(actionName) + "</div>"
-      : "") +
-    '<div id="dialogDismiss" class="roundedBtn">' +
-    escapeHtml(dismissName) +
-    "</div>";
+      "<br>" +
+      (actionName !== null
+        ? '<div id="dialogAction" class="roundedBtn">' + escapeHtml(actionName) + "</div>"
+        : "") +
+      '<div id="dialogDismiss" class="roundedBtn">' +
+      escapeHtml(dismissName) +
+      "</div>",
+    {
+      USE_PROFILES: { html: true, svg: true, svgFilters: true }
+    }
+  );
   if (actionName !== null && actioned !== null)
     document.getElementById("dialogAction")!.addEventListener("click", actioned);
   document.getElementById("dialogDismiss")!.addEventListener("click", hideDialog);

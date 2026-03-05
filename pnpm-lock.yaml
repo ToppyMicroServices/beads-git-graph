@@ -14,6 +14,9 @@ importers:
       '@types/vscode':
         specifier: ~1.98.0
         version: 1.98.0
+      dompurify:
+        specifier: ^3.3.1
+        version: 3.3.1
       esbuild:
         specifier: ^0.27.3
         version: 0.27.3
@@ -490,6 +493,9 @@ packages:
   '@types/node@20.19.33':
     resolution: {integrity: sha512-Rs1bVAIdBs5gbTIKza/tgpMuG1k3U/UMJLWecIMxNdJFDMzcM5LOiLVRYh3PilWEYDIeUDv7bpiHPLPsbydGcw==}
 
+  '@types/trusted-types@2.0.7':
+    resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
+
   '@types/vscode@1.98.0':
     resolution: {integrity: sha512-+KuiWhpbKBaG2egF+51KjbGWatTH5BbmWQjSLMDCssb4xF8FJnW4nGH4nuAdOOfMbpD0QlHtI+C3tPq+DoKElg==}
 
@@ -529,6 +535,9 @@ packages:
 
   deep-is@0.1.4:
     resolution: {integrity: sha512-oIPzksmTg4/MriiaYGO+okXDT7ztn/w3Eptv/+gSIdMdKsJo0u4CfYNFJPy+4SKMuCqGw2wxnA+URMg3t8a/bQ==}
+
+  dompurify@3.3.1:
+    resolution: {integrity: sha512-qkdCKzLNtrgPFP1Vo+98FRzJnBRGe4ffyCea9IwHB1fyxPOeNTHpLKYGd4Uk9xvNoH0ZoOjwZxNptyMwqrId1Q==}
 
   esbuild@0.27.3:
     resolution: {integrity: sha512-8VwMnyGCONIs6cWue2IdpHxHnAjzxnw2Zr7MkVxB2vjmQ2ivqGFb4LEG3SMnv0Gb2F/G/2yA8zUaiL1gywDCCg==}
@@ -991,6 +1000,9 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/trusted-types@2.0.7':
+    optional: true
+
   '@types/vscode@1.98.0': {}
 
   acorn-jsx@5.3.2(acorn@8.16.0):
@@ -1023,6 +1035,10 @@ snapshots:
       ms: 2.1.3
 
   deep-is@0.1.4: {}
+
+  dompurify@3.3.1:
+    optionalDependencies:
+      '@types/trusted-types': 2.0.7
 
   esbuild@0.27.3:
     optionalDependencies:
