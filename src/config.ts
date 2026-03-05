@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 
 import {
+  CommitDetailsFileActionVisibility,
   DateFormat,
   DateType,
   GraphStyle,
@@ -18,6 +19,23 @@ class Config {
 
   public autoCenterCommitDetailsView() {
     return this.workspaceConfiguration.get("autoCenterCommitDetailsView", true);
+  }
+
+  public commitDetailsFileActionVisibility(): CommitDetailsFileActionVisibility {
+    const defaults: CommitDetailsFileActionVisibility = {
+      viewDiff: true,
+      viewDiffWithWorkingFile: true,
+      viewFileAtRevision: true,
+      openFile: true,
+      resetFileToRevision: true,
+      copyRelativeFilePath: true,
+      copyAbsoluteFilePath: true
+    };
+    const configured = this.workspaceConfiguration.get<Partial<CommitDetailsFileActionVisibility>>(
+      "commitDetailsFileActionVisibility",
+      {}
+    );
+    return { ...defaults, ...configured };
   }
 
   public enhancedAccessibility() {

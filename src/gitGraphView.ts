@@ -352,6 +352,7 @@ export class GitGraphView {
       nonce = getNonce();
     const viewState: GitGraphViewState = {
       autoCenterCommitDetailsView: config.autoCenterCommitDetailsView(),
+      commitDetailsFileActionVisibility: config.commitDetailsFileActionVisibility(),
       enhancedAccessibility: config.enhancedAccessibility(),
       dateFormat: config.dateFormat(),
       fetchAvatars: config.fetchAvatars() && this.extensionState.isAvatarStorageAvailable(),

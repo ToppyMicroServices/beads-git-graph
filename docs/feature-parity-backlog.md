@@ -22,12 +22,12 @@ This document tracks post-MIT feature parity with upstream Git Graph release not
 - [x] Repository dropdown order option (`Workspace Full Path` / `Repository Name`)
 - [x] Dialog reference input space substitution (`None` / `Hyphen` / `Underscore`)
 - [x] Enhanced accessibility file change indicators (`A|M|D|R|U`)
+- [x] Context menu visibility controls for commit details file actions
 
 ## Next Candidates (Issue-first)
 
 - [ ] Detect renames when opening working file from historical commits (upstream #480)
 - [ ] Add `Reset File to this Revision...` action in commit details (upstream #516)
-- [ ] Add context menu visibility controls for commit details file actions (upstream #517)
 - [ ] Add "Mark as Reviewed / Not Reviewed" workflow for file-level review (upstream #482)
 
 ## Process

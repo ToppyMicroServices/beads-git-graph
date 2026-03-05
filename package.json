@@ -123,6 +123,57 @@
           "default": "Author Date",
           "description": "Specifies the date type to be displayed throughout Git Graph."
         },
+        "neo-git-graph.commitDetailsFileActionVisibility": {
+          "type": "object",
+          "default": {
+            "viewDiff": true,
+            "viewDiffWithWorkingFile": true,
+            "viewFileAtRevision": true,
+            "openFile": true,
+            "resetFileToRevision": true,
+            "copyRelativeFilePath": true,
+            "copyAbsoluteFilePath": true
+          },
+          "additionalProperties": false,
+          "properties": {
+            "viewDiff": {
+              "type": "boolean",
+              "default": true,
+              "description": "Show \"View Diff\" in the commit details file context menu."
+            },
+            "viewDiffWithWorkingFile": {
+              "type": "boolean",
+              "default": true,
+              "description": "Show \"View Diff with Working File\" in the commit details file context menu."
+            },
+            "viewFileAtRevision": {
+              "type": "boolean",
+              "default": true,
+              "description": "Show \"View File at this Revision\" in the commit details file context menu."
+            },
+            "openFile": {
+              "type": "boolean",
+              "default": true,
+              "description": "Show \"Open File\" in the commit details file context menu."
+            },
+            "resetFileToRevision": {
+              "type": "boolean",
+              "default": true,
+              "description": "Show \"Reset File to this Revision...\" in the commit details file context menu."
+            },
+            "copyRelativeFilePath": {
+              "type": "boolean",
+              "default": true,
+              "description": "Show \"Copy Relative File Path to Clipboard\" in the commit details file context menu."
+            },
+            "copyAbsoluteFilePath": {
+              "type": "boolean",
+              "default": true,
+              "description": "Show \"Copy Absolute File Path to Clipboard\" in the commit details file context menu."
+            }
+          },
+          "description": "Controls visibility of actions in the commit details file context menu."
+        },
         "neo-git-graph.enhancedAccessibility": {
           "type": "boolean",
           "default": false,

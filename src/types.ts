@@ -53,6 +53,7 @@ export interface GitUnsavedChanges {
 
 export interface GitGraphViewState {
   autoCenterCommitDetailsView: boolean;
+  commitDetailsFileActionVisibility: CommitDetailsFileActionVisibility;
   enhancedAccessibility: boolean;
   dateFormat: DateFormat;
   fetchAvatars: boolean;
@@ -81,6 +82,16 @@ export interface Avatar {
   identicon: boolean;
 }
 export type AvatarCache = { [email: string]: Avatar };
+
+export interface CommitDetailsFileActionVisibility {
+  viewDiff: boolean;
+  viewDiffWithWorkingFile: boolean;
+  viewFileAtRevision: boolean;
+  openFile: boolean;
+  resetFileToRevision: boolean;
+  copyRelativeFilePath: boolean;
+  copyAbsoluteFilePath: boolean;
+}
 
 export type DateFormat = "Date & Time" | "Date Only" | "Relative";
 export type DateType = "Author Date" | "Commit Date";

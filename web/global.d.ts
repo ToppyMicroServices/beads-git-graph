@@ -11,6 +11,7 @@ declare global {
 
   interface Config {
     autoCenterCommitDetailsView: boolean;
+    commitDetailsFileActionVisibility: GG.CommitDetailsFileActionVisibility;
     enhancedAccessibility: boolean;
     fetchAvatars: boolean;
     graphColours: string[];

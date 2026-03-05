@@ -1256,103 +1256,118 @@ class GitGraphView {
       let filePath = sourceElem.dataset.type === "D" ? oldFilePath : newFilePath;
       let relativeFilePath = filePath.replace(/^\/+/, "");
       let absoluteFilePath = this.currentRepo!.replace(/\/+$/, "") + "/" + relativeFilePath;
+      const visibility = this.config.commitDetailsFileActionVisibility;
+      const menuItems: ContextMenuElement[] = [];
 
-      showContextMenu(
-        <MouseEvent>e,
-        [
-          ...(sourceElem.classList.contains("gitDiffPossible")
-            ? [
-                {
-                  title: "View Diff",
-                  onClick: () => {
-                    sendMessage({
-                      command: "viewDiff",
-                      repo: this.currentRepo!,
-                      commitHash: this.expandedCommit!.hash,
-                      oldFilePath: oldFilePath,
-                      newFilePath: newFilePath,
-                      type: <GG.GitFileChangeType>sourceElem.dataset.type
-                    });
-                  }
-                },
-                {
-                  title: "View Diff with Working File",
-                  onClick: () => {
-                    sendMessage({
-                      command: "viewDiffWithWorkingFile",
-                      repo: this.currentRepo!,
-                      commitHash: this.expandedCommit!.hash,
-                      filePath: filePath
-                    });
-                  }
-                }
-              ]
-            : []),
-          {
-            title: "View File at this Revision",
-            onClick: () => {
-              sendMessage({
-                command: "viewFileAtRevision",
-                repo: this.currentRepo!,
-                commitHash: this.expandedCommit!.hash,
-                filePath: filePath
-              });
-            }
-          },
-          {
-            title: "Open File",
-            onClick: () => {
-              sendMessage({
-                command: "openFile",
-                repo: this.currentRepo!,
-                filePath: filePath,
-                commitHash: this.expandedCommit!.hash
-              });
-            }
-          },
-          {
-            title: "Reset File to this Revision" + ELLIPSIS,
-            onClick: () => {
-              showConfirmationDialog(
-                "Are you sure you want to reset file <b><i>" +
-                  escapeHtml(filePath) +
-                  "</i></b> to this revision?",
-                () => {
-                  sendMessage({
-                    command: "resetFileToRevision",
-                    repo: this.currentRepo!,
-                    commitHash: this.expandedCommit!.hash,
-                    filePath: filePath
-                  });
-                },
-                sourceElem
-              );
-            }
-          },
-          null,
-          {
-            title: "Copy Relative File Path to Clipboard",
-            onClick: () => {
-              sendMessage({
-                command: "copyToClipboard",
-                type: "Relative File Path",
-                data: relativeFilePath
-              });
-            }
-          },
-          {
-            title: "Copy Absolute File Path to Clipboard",
-            onClick: () => {
-              sendMessage({
-                command: "copyToClipboard",
-                type: "Absolute File Path",
-                data: absoluteFilePath
-              });
-            }
+      if (sourceElem.classList.contains("gitDiffPossible") && visibility.viewDiff) {
+        menuItems.push({
+          title: "View Diff",
+          onClick: () => {
+            sendMessage({
+              command: "viewDiff",
+              repo: this.currentRepo!,
+              commitHash: this.expandedCommit!.hash,
+              oldFilePath: oldFilePath,
+              newFilePath: newFilePath,
+              type: <GG.GitFileChangeType>sourceElem.dataset.type
+            });
           }
-        ],
-        sourceElem
-      );
+        });
+      }
+      if (sourceElem.classList.contains("gitDiffPossible") && visibility.viewDiffWithWorkingFile) {
+        menuItems.push({
+          title: "View Diff with Working File",
+          onClick: () => {
+            sendMessage({
+              command: "viewDiffWithWorkingFile",
+              repo: this.currentRepo!,
+              commitHash: this.expandedCommit!.hash,
+              filePath: filePath
+            });
+          }
+        });
+      }
+      if (visibility.viewFileAtRevision) {
+        menuItems.push({
+          title: "View File at this Revision",
+          onClick: () => {
+            sendMessage({
+              command: "viewFileAtRevision",
+              repo: this.currentRepo!,
+              commitHash: this.expandedCommit!.hash,
+              filePath: filePath
+            });
+          }
+        });
+      }
+      if (visibility.openFile) {
+        menuItems.push({
+          title: "Open File",
+          onClick: () => {
+            sendMessage({
+              command: "openFile",
+              repo: this.currentRepo!,
+              filePath: filePath,
+              commitHash: this.expandedCommit!.hash
+            });
+          }
+        });
+      }
+      if (visibility.resetFileToRevision) {
+        menuItems.push({
+          title: "Reset File to this Revision" + ELLIPSIS,
+          onClick: () => {
+            showConfirmationDialog(
+              "Are you sure you want to reset file <b><i>" +
+                escapeHtml(filePath) +
+                "</i></b> to this revision?",
+              () => {
+                sendMessage({
+                  command: "resetFileToRevision",
+                  repo: this.currentRepo!,
+                  commitHash: this.expandedCommit!.hash,
+                  filePath: filePath
+                });
+              },
+              sourceElem
+            );
+          }
+        });
+      }
+
+      const copyItems: ContextMenuElement[] = [];
+      if (visibility.copyRelativeFilePath) {
+        copyItems.push({
+          title: "Copy Relative File Path to Clipboard",
+          onClick: () => {
+            sendMessage({
+              command: "copyToClipboard",
+              type: "Relative File Path",
+              data: relativeFilePath
+            });
+          }
+        });
+      }
+      if (visibility.copyAbsoluteFilePath) {
+        copyItems.push({
+          title: "Copy Absolute File Path to Clipboard",
+          onClick: () => {
+            sendMessage({
+              command: "copyToClipboard",
+              type: "Absolute File Path",
+              data: absoluteFilePath
+            });
+          }
+        });
+      }
+
+      if (menuItems.length > 0 && copyItems.length > 0) {
+        menuItems.push(null);
+      }
+      menuItems.push(...copyItems);
+      if (menuItems.length === 0) return;
+
+      showContextMenu(<MouseEvent>e, menuItems, sourceElem);
     });
   }
 }
@@ -1367,6 +1382,7 @@ let gitGraph = new GitGraphView(
   viewState.lastActiveRepo,
   {
     autoCenterCommitDetailsView: viewState.autoCenterCommitDetailsView,
+    commitDetailsFileActionVisibility: viewState.commitDetailsFileActionVisibility,
     enhancedAccessibility: viewState.enhancedAccessibility,
     fetchAvatars: viewState.fetchAvatars,
     graphColours: viewState.graphColours,
