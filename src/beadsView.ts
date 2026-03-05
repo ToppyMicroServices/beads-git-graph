@@ -27,22 +27,30 @@ interface BeadLoadResult {
 }
 
 export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
-  public static readonly viewType = "neo-git-graph.beadsView";
+  public static readonly viewType = "beads-git-graph.beadsView";
 
   private webviewView: vscode.WebviewView | null = null;
   private readonly disposables: vscode.Disposable[] = [];
-  private readonly watcher: vscode.FileSystemWatcher;
+  private readonly watchers: vscode.FileSystemWatcher[];
 
   constructor() {
-    this.watcher = vscode.workspace.createFileSystemWatcher("**/.beads/*.json");
+    this.watchers = [
+      vscode.workspace.createFileSystemWatcher("**/.beads/*.json"),
+      vscode.workspace.createFileSystemWatcher("**/.beads/*.jsonl")
+    ];
 
     this.disposables.push(
-      this.watcher,
-      this.watcher.onDidCreate(() => this.refresh()),
-      this.watcher.onDidChange(() => this.refresh()),
-      this.watcher.onDidDelete(() => this.refresh()),
       vscode.workspace.onDidChangeWorkspaceFolders(() => this.refresh())
     );
+
+    for (const watcher of this.watchers) {
+      this.disposables.push(
+        watcher,
+        watcher.onDidCreate(() => this.refresh()),
+        watcher.onDidChange(() => this.refresh()),
+        watcher.onDidDelete(() => this.refresh())
+      );
+    }
   }
 
   public dispose() {
@@ -73,14 +81,25 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const errors: { source: string; message: string }[] = [];
 
     for (const folder of workspaceFolders) {
-      const pattern = new vscode.RelativePattern(folder, ".beads/*.json");
-      const files = await vscode.workspace.findFiles(pattern, "**/node_modules/**");
+      const jsonPattern = new vscode.RelativePattern(folder, ".beads/*.json");
+      const jsonlPattern = new vscode.RelativePattern(folder, ".beads/*.jsonl");
+      const files = [
+        ...(await vscode.workspace.findFiles(jsonPattern, "**/node_modules/**")),
+        ...(await vscode.workspace.findFiles(jsonlPattern, "**/node_modules/**"))
+      ];
+      const uniqueFiles = new Map(files.map((file) => [file.toString(), file]));
 
-      for (const fileUri of files) {
+      for (const fileUri of uniqueFiles.values()) {
         try {
           const raw = await vscode.workspace.fs.readFile(fileUri);
           const text = Buffer.from(raw).toString("utf8");
-          const parsed = JSON.parse(text);
+          const parsed = fileUri.path.endsWith(".jsonl")
+            ? text
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter((line) => line !== "")
+                .map((line) => JSON.parse(line))
+            : JSON.parse(text);
           const items = this.extractItems(parsed);
 
           if (items.length > 0) {
@@ -240,7 +259,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     let bodyHtml = "";
     if (rows.length === 0) {
       bodyHtml =
-        '<div class="empty">.beads data was not found. Add <code>.beads/beads.json</code> (or issues/tasks json) to show a bd list style table.</div>';
+        '<div class="empty">.beads data was not found. Add <code>.beads/beads.json</code> or <code>.beads/issues.jsonl</code> to show a bd list style table.</div>';
     } else {
       bodyHtml = rows
         .map((group) => {
@@ -600,7 +619,7 @@ applyFilters();
         vscode.window.showWarningMessage("Invalid commit hash in Beads item.");
         return;
       }
-      await vscode.commands.executeCommand("neo-git-graph.view");
+      await vscode.commands.executeCommand("beads-git-graph.view");
       await vscode.env.clipboard.writeText(commitHash);
       vscode.window.showInformationMessage(
         `Opened Git Graph. Commit hash copied to clipboard: ${commitHash.substring(0, 8)}`

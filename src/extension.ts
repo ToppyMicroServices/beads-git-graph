@@ -21,7 +21,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     outputChannel,
     beadsViewProvider,
-    vscode.commands.registerCommand("neo-git-graph.view", () => {
+    vscode.commands.registerCommand("beads-git-graph.view", () => {
       GitGraphView.createOrShow(
         context.extensionUri,
         dataSource,
@@ -30,13 +30,13 @@ export function activate(context: vscode.ExtensionContext) {
         repoManager
       );
     }),
-    vscode.commands.registerCommand("neo-git-graph.clearAvatarCache", () => {
+    vscode.commands.registerCommand("beads-git-graph.clearAvatarCache", () => {
       avatarManager.clearCache();
     }),
-    vscode.commands.registerCommand("neo-git-graph.refreshBeads", () => {
+    vscode.commands.registerCommand("beads-git-graph.refreshBeads", () => {
       beadsViewProvider.refresh();
     }),
-    vscode.commands.registerCommand("neo-git-graph.openDiffFile", async (uri?: vscode.Uri) => {
+    vscode.commands.registerCommand("beads-git-graph.openDiffFile", async (uri?: vscode.Uri) => {
       const sourceUri =
         uri ??
         vscode.window.activeTextEditor?.document.uri ??
@@ -62,11 +62,11 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.window.registerWebviewViewProvider(BeadsViewProvider.viewType, beadsViewProvider),
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("neo-git-graph.showStatusBarItem")) {
+      if (e.affectsConfiguration("beads-git-graph.showStatusBarItem")) {
         statusBarItem.refresh();
-      } else if (e.affectsConfiguration("neo-git-graph.dateType")) {
+      } else if (e.affectsConfiguration("beads-git-graph.dateType")) {
         dataSource.generateGitCommandFormats();
-      } else if (e.affectsConfiguration("neo-git-graph.maxDepthOfRepoSearch")) {
+      } else if (e.affectsConfiguration("beads-git-graph.maxDepthOfRepoSearch")) {
         repoManager.maxDepthOfRepoSearchChanged();
       } else if (e.affectsConfiguration("git.path")) {
         dataSource.registerGitPath();

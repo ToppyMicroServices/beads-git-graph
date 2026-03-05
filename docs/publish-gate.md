@@ -4,7 +4,7 @@ This gate must be green before Marketplace publication.
 
 ## 1) Compatibility Decision (Fixed)
 
-- Keep existing command IDs and settings keys under `neo-git-graph.*` for now.
+- Keep existing command IDs and settings keys under `beads-git-graph.*` for now.
 - Keep Beads identity in UI and marketplace metadata.
 - Prefix migration plan:
   - Add `beads-git-graph.*` aliases first.

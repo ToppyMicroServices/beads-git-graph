@@ -10,7 +10,7 @@ export class StatusBarItem {
     this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1);
     this.statusBarItem.text = "(neo) Git Graph";
     this.statusBarItem.tooltip = "View Git Graph";
-    this.statusBarItem.command = "neo-git-graph.view";
+    this.statusBarItem.command = "beads-git-graph.view";
     context.subscriptions.push(this.statusBarItem);
   }
 

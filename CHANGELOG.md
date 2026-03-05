@@ -10,7 +10,7 @@
 ### Changed
 
 - Rename extension identity to `beads-git-graph` / `Beads Git Graph` (UI-facing)
-- Keep `neo-git-graph.*` command IDs and configuration keys for compatibility during transition
+- Keep `beads-git-graph.*` command IDs and configuration keys for compatibility during transition
 
 ## [0.1.1] - 2026-02-23
 

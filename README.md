@@ -7,19 +7,19 @@
 [![](https://img.shields.io/github/license/thinksyncs/beads-git-graph)](https://github.com/thinksyncs/beads-git-graph?tab=MIT-1-ov-file)
 [![GitHub release](https://img.shields.io/github/v/release/thinksyncs/beads-git-graph)](https://github.com/thinksyncs/beads-git-graph/releases)
 
-<sub>Acknowledgement: This project builds on prior work including [Git Graph](https://github.com/mhutchie/vscode-git-graph) and [neo-git-graph](https://github.com/thinksyncs/neo-git-graph), and appreciates their maintainers' efforts, including security improvements.</sub>
+<sub>Acknowledgement: This project builds on prior work including [Git Graph](https://github.com/mhutchie/vscode-git-graph) and [beads-git-graph](https://github.com/thinksyncs/beads-git-graph), and appreciates their maintainers' efforts, including security improvements.</sub>
 
 ## Project Identity (Required for Marketplace)
 
 - This project is **Beads Git Graph** (independent project identity).
 - It is **not** an upstream-following mirror of `mhutchie/vscode-git-graph`.
 - It keeps full repository history while operating under its own roadmap and release policy.
-- As noted in `neo-git-graph`, this project uses MIT-licensed historical source from Git Graph (up to the last MIT commit).
-- This repository was forked from [neo-git-graph](https://github.com/thinksyncs/neo-git-graph) and is maintained independently as Beads Git Graph.
+- As noted in `beads-git-graph`, this project uses MIT-licensed historical source from Git Graph (up to the last MIT commit).
+- This repository was forked from [beads-git-graph](https://github.com/thinksyncs/beads-git-graph) and is maintained independently as Beads Git Graph.
 
 ## Compatibility Policy (Before Full Prefix Migration)
 
-- For now, command IDs and setting keys remain under `neo-git-graph.*` to avoid breaking existing user keybindings and settings.
+- For now, command IDs and setting keys remain under `beads-git-graph.*` to avoid breaking existing user keybindings and settings.
 - UI-facing naming is Beads-branded (`Beads Git Graph`) to prevent marketplace identity collision.
 - Planned full migration path: introduce `beads-git-graph.*` aliases first, then deprecate old IDs in a later minor release.
 
@@ -49,7 +49,7 @@ This project is based on the last MIT commit and:
 
 ## Configuration
 
-All settings use the `neo-git-graph` prefix.
+All settings use the `beads-git-graph` prefix.
 
 | Setting                       | Default         | Description                                      |
 | ----------------------------- | --------------- | ------------------------------------------------ |

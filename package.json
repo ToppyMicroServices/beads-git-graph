@@ -63,37 +63,37 @@
     "commands": [
       {
         "category": "Beads Git Graph",
-        "command": "neo-git-graph.view",
+        "command": "beads-git-graph.view",
         "title": "View Git Graph (git log)"
       },
       {
         "category": "Beads Git Graph",
-        "command": "neo-git-graph.clearAvatarCache",
+        "command": "beads-git-graph.clearAvatarCache",
         "title": "Clear Avatar Cache"
       },
       {
         "category": "Beads Git Graph",
-        "command": "neo-git-graph.openDiffFile",
+        "command": "beads-git-graph.openDiffFile",
         "title": "Open File"
       },
       {
         "category": "Beads Git Graph",
-        "command": "neo-git-graph.refreshBeads",
+        "command": "beads-git-graph.refreshBeads",
         "title": "Refresh Beads"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "neo-git-graph.refreshBeads",
-          "when": "view == neo-git-graph.beadsView",
+          "command": "beads-git-graph.refreshBeads",
+          "when": "view == beads-git-graph.beadsView",
           "group": "navigation"
         }
       ],
       "editor/title": [
         {
-          "command": "neo-git-graph.openDiffFile",
-          "when": "resourceScheme == neo-git-graph",
+          "command": "beads-git-graph.openDiffFile",
+          "when": "resourceScheme == beads-git-graph",
           "group": "navigation@9"
         }
       ]
@@ -101,7 +101,7 @@
     "views": {
       "explorer": [
         {
-          "id": "neo-git-graph.beadsView",
+          "id": "beads-git-graph.beadsView",
           "name": "Beads Graph"
         }
       ]
@@ -110,12 +110,12 @@
       "type": "object",
       "title": "Beads Git Graph",
       "properties": {
-        "neo-git-graph.autoCenterCommitDetailsView": {
+        "beads-git-graph.autoCenterCommitDetailsView": {
           "type": "boolean",
           "default": true,
           "description": "Automatically center the commit details view when it is opened."
         },
-        "neo-git-graph.dateFormat": {
+        "beads-git-graph.dateFormat": {
           "type": "string",
           "enum": [
             "Date & Time",
@@ -130,7 +130,7 @@
           "default": "Date & Time",
           "description": "Specifies the date format to be used in the date column of Git Graph."
         },
-        "neo-git-graph.dateType": {
+        "beads-git-graph.dateType": {
           "type": "string",
           "enum": [
             "Author Date",
@@ -143,7 +143,7 @@
           "default": "Author Date",
           "description": "Specifies the date type to be displayed throughout Git Graph."
         },
-        "neo-git-graph.commitDetailsFileActionVisibility": {
+        "beads-git-graph.commitDetailsFileActionVisibility": {
           "type": "object",
           "default": {
             "viewDiff": true,
@@ -194,17 +194,17 @@
           },
           "description": "Controls visibility of actions in the commit details file context menu."
         },
-        "neo-git-graph.enhancedAccessibility": {
+        "beads-git-graph.enhancedAccessibility": {
           "type": "boolean",
           "default": false,
           "description": "Enable enhanced accessibility rendering, including showing file change type indicators (A, M, D, R, U) in commit details."
         },
-        "neo-git-graph.fetchAvatars": {
+        "beads-git-graph.fetchAvatars": {
           "type": "boolean",
           "default": false,
           "description": "Fetch avatars of commit authors and committers. By enabling this setting, you consent to commit author and committer email addresses being sent GitHub, GitLab or Gravatar, depending on the repositories remote origin."
         },
-        "neo-git-graph.graphColours": {
+        "beads-git-graph.graphColours": {
           "type": "array",
           "items": {
             "type": "string",
@@ -220,7 +220,7 @@
           ],
           "description": "Specifies the colours used on the graph."
         },
-        "neo-git-graph.graphStyle": {
+        "beads-git-graph.graphStyle": {
           "type": "string",
           "enum": [
             "rounded",
@@ -233,17 +233,17 @@
           "default": "rounded",
           "description": "Specifies the style of the graph."
         },
-        "neo-git-graph.initialLoadCommits": {
+        "beads-git-graph.initialLoadCommits": {
           "type": "number",
           "default": 300,
           "description": "Specifies the number of commits to initially load."
         },
-        "neo-git-graph.loadMoreCommits": {
+        "beads-git-graph.loadMoreCommits": {
           "type": "number",
           "default": 100,
           "description": "Specifies the number of commits to load when the \"Load More Commits\" button is pressed (only shown when more commits are available)."
         },
-        "neo-git-graph.referenceInputSpaceSubstitution": {
+        "beads-git-graph.referenceInputSpaceSubstitution": {
           "type": "string",
           "enum": [
             "None",
@@ -258,12 +258,12 @@
           "default": "None",
           "description": "Specifies how spaces are substituted in reference-name dialog inputs (for example, Create Branch and Add Tag)."
         },
-        "neo-git-graph.maxDepthOfRepoSearch": {
+        "beads-git-graph.maxDepthOfRepoSearch": {
           "type": "number",
           "default": 0,
           "description": "Specifies the maximum depth of subfolders to search when discovering repositories in the workspace."
         },
-        "neo-git-graph.repoDropdownOrder": {
+        "beads-git-graph.repoDropdownOrder": {
           "type": "string",
           "enum": [
             "Workspace Full Path",
@@ -276,17 +276,17 @@
           "default": "Workspace Full Path",
           "description": "Specifies how repositories are sorted in the repository dropdown."
         },
-        "neo-git-graph.showCurrentBranchByDefault": {
+        "beads-git-graph.showCurrentBranchByDefault": {
           "type": "boolean",
           "default": false,
           "description": "Show the current branch by default when Git Graph is opened. Default: false (show all branches)"
         },
-        "neo-git-graph.preferMainBranchByDefault": {
+        "beads-git-graph.preferMainBranchByDefault": {
           "type": "boolean",
           "default": true,
           "description": "Prefer main branch-focused view when opening Git Graph. If enabled, defaults to main (or origin/main) before Show All."
         },
-        "neo-git-graph.hiddenBranchPatterns": {
+        "beads-git-graph.hiddenBranchPatterns": {
           "type": "array",
           "items": {
             "type": "string"
@@ -299,38 +299,38 @@
           ],
           "description": "Regex patterns for branch names to hide by default in branch lists and ref labels (current checked out branch remains visible)."
         },
-        "neo-git-graph.mutedGraphOpacity": {
+        "beads-git-graph.mutedGraphOpacity": {
           "type": "number",
           "minimum": 0.1,
           "maximum": 1,
           "default": 0.45,
           "description": "Opacity applied to de-emphasized db/beads graph lines and nodes."
         },
-        "neo-git-graph.mutedGraphLineWidth": {
+        "beads-git-graph.mutedGraphLineWidth": {
           "type": "number",
           "minimum": 0.8,
           "maximum": 2,
           "default": 1.2,
           "description": "Stroke width of de-emphasized db/beads graph lines."
         },
-        "neo-git-graph.mutedGraphNodeRadius": {
+        "beads-git-graph.mutedGraphNodeRadius": {
           "type": "number",
           "minimum": 2,
           "maximum": 4,
           "default": 2.8,
           "description": "Node radius of de-emphasized db/beads graph commits."
         },
-        "neo-git-graph.showStatusBarItem": {
+        "beads-git-graph.showStatusBarItem": {
           "type": "boolean",
           "default": true,
           "description": "Show a Status Bar item which opens Git Graph when clicked."
         },
-        "neo-git-graph.showUncommittedChanges": {
+        "beads-git-graph.showUncommittedChanges": {
           "type": "boolean",
           "default": true,
           "description": "Show uncommitted changes (set to false to decrease load time on large repositories)."
         },
-        "neo-git-graph.tabIconColourTheme": {
+        "beads-git-graph.tabIconColourTheme": {
           "type": "string",
           "enum": [
             "colour",

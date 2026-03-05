@@ -48,7 +48,7 @@ export class GitGraphView {
     }
 
     const panel = vscode.window.createWebviewPanel(
-      "neo-git-graph",
+      "beads-git-graph",
       "(neo) Git Graph",
       column || vscode.ViewColumn.One,
       {

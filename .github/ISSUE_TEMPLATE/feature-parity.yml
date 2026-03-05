@@ -26,7 +26,7 @@ body:
     id: user-value
     attributes:
       label: User value
-      description: Why this is valuable for neo-git-graph users
+      description: Why this is valuable for beads-git-graph users
       placeholder: "Improves ..."
     validations:
       required: true
