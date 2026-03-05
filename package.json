@@ -123,6 +123,11 @@
           "default": "Author Date",
           "description": "Specifies the date type to be displayed throughout Git Graph."
         },
+        "neo-git-graph.enhancedAccessibility": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable enhanced accessibility rendering, including showing file change type indicators (A, M, D, R, U) in commit details."
+        },
         "neo-git-graph.fetchAvatars": {
           "type": "boolean",
           "default": false,

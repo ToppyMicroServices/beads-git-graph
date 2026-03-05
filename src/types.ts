@@ -53,6 +53,7 @@ export interface GitUnsavedChanges {
 
 export interface GitGraphViewState {
   autoCenterCommitDetailsView: boolean;
+  enhancedAccessibility: boolean;
   dateFormat: DateFormat;
   fetchAvatars: boolean;
   graphColours: string[];

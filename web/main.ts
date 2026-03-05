@@ -1347,6 +1347,7 @@ let gitGraph = new GitGraphView(
   viewState.lastActiveRepo,
   {
     autoCenterCommitDetailsView: viewState.autoCenterCommitDetailsView,
+    enhancedAccessibility: viewState.enhancedAccessibility,
     fetchAvatars: viewState.fetchAvatars,
     graphColours: viewState.graphColours,
     graphStyle: viewState.graphStyle,
@@ -1584,6 +1585,11 @@ function generateGitFileTreeHtml(folder: GitFolder, gitFiles: GG.GitFileChange[]
         '><span class="gitFileIcon">' +
         svgIcons.file +
         "</span>" +
+        (viewState.enhancedAccessibility
+          ? '<span class="gitFileTypeIndicator" title="Change type">' +
+            getGitFileChangeTypeIndicator(gitFile.type) +
+            "</span>"
+          : "") +
         escapeHtml(folder.contents[keys[i]].name) +
         (gitFile.type === "R"
           ? ' <span class="gitFileRename" title="' +
@@ -1613,6 +1619,11 @@ function generateGitFileTreeHtml(folder: GitFolder, gitFiles: GG.GitFileChange[]
   }
   return html + "</ul>";
 }
+
+function getGitFileChangeTypeIndicator(type: GG.GitFileChangeType) {
+  return type === "A" || type === "M" || type === "D" || type === "R" ? type : "U";
+}
+
 function alterGitFileTree(folder: GitFolder, folderPath: string, open: boolean) {
   let path = folderPath.split("/"),
     i,

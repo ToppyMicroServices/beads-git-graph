@@ -280,6 +280,14 @@ svg.fileIcon {
   color: var(--vscode-editor-foreground);
   margin-left: 8px;
 }
+.gitFileTypeIndicator {
+  display: inline-block;
+  min-width: 14px;
+  margin-right: 6px;
+  font-weight: 700;
+  color: var(--vscode-editor-foreground);
+  text-align: center;
+}
 .gitFileAdditions,
 .gitFileDeletions {
   padding: 0 3px;

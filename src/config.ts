@@ -20,6 +20,10 @@ class Config {
     return this.workspaceConfiguration.get("autoCenterCommitDetailsView", true);
   }
 
+  public enhancedAccessibility() {
+    return this.workspaceConfiguration.get("enhancedAccessibility", false);
+  }
+
   public dateFormat(): DateFormat {
     return this.workspaceConfiguration.get("dateFormat", "Date & Time");
   }

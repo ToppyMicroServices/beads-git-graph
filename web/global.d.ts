@@ -11,6 +11,7 @@ declare global {
 
   interface Config {
     autoCenterCommitDetailsView: boolean;
+    enhancedAccessibility: boolean;
     fetchAvatars: boolean;
     graphColours: string[];
     graphStyle: "rounded" | "angular";
