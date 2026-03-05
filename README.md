@@ -6,8 +6,8 @@
   </samp>
 </div>
 
-[![](https://img.shields.io/github/license/asispts/neo-git-graph)](https://github.com/asispts/neo-git-graph?tab=MIT-1-ov-file)
-[![GitHub release](https://img.shields.io/github/v/release/asispts/neo-git-graph)](https://github.com/asispts/neo-git-graph/releases)
+[![](https://img.shields.io/github/license/thinksyncs/beads-git-graph)](https://github.com/thinksyncs/beads-git-graph?tab=MIT-1-ov-file)
+[![GitHub release](https://img.shields.io/github/v/release/thinksyncs/beads-git-graph)](https://github.com/thinksyncs/beads-git-graph/releases)
 
 ![demo](resources/demo.gif)
 
