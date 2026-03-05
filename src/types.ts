@@ -350,6 +350,7 @@ export interface RequestOpenFile {
   command: "openFile";
   repo: string;
   filePath: string;
+  commitHash?: string;
 }
 
 export type RequestMessage =

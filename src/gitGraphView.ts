@@ -307,7 +307,7 @@ export class GitGraphView {
             await this.viewDiffWithWorkingFile(msg.repo, msg.commitHash, msg.filePath);
             break;
           case "openFile":
-            await this.openFile(msg.repo, msg.filePath);
+            await this.openFile(msg.repo, msg.filePath, msg.commitHash ?? null);
             break;
         }
         this.repoFileWatcher.unmute();
@@ -471,14 +471,19 @@ export class GitGraphView {
   }
 
   private async viewDiffWithWorkingFile(repo: string, commitHash: string, filePath: string) {
-    const relativePath = filePath.replace(/^\/+/, "");
+    const resolvedPath = await this.dataSource.resolveFilePathInWorkingTree(
+      repo,
+      commitHash,
+      filePath
+    );
+    const relativePath = resolvedPath.replace(/^\/+/, "");
     const workingFileUri = vscode.Uri.joinPath(vscode.Uri.file(repo), relativePath);
     try {
       await vscode.commands.executeCommand(
         "vscode.diff",
         encodeDiffDocUri(repo, filePath, commitHash),
         workingFileUri,
-        `${filePath.split("/").pop()} (${abbrevCommit(commitHash)} ↔ Working Tree)`,
+        `${resolvedPath.split("/").pop()} (${abbrevCommit(commitHash)} ↔ Working Tree)`,
         { preview: true }
       );
     } catch {
@@ -486,8 +491,12 @@ export class GitGraphView {
     }
   }
 
-  private async openFile(repo: string, filePath: string) {
-    const relativePath = filePath.replace(/^\/+/, "");
+  private async openFile(repo: string, filePath: string, commitHash: string | null) {
+    const resolvedPath =
+      commitHash !== null
+        ? await this.dataSource.resolveFilePathInWorkingTree(repo, commitHash, filePath)
+        : filePath;
+    const relativePath = resolvedPath.replace(/^\/+/, "");
     const fileUri = vscode.Uri.joinPath(vscode.Uri.file(repo), relativePath);
     try {
       const document = await vscode.workspace.openTextDocument(fileUri);

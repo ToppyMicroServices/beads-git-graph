@@ -226,6 +226,45 @@ export class DataSource {
     return this.spawnGit(["show", commitHash + ":" + filePath], repo, (stdout) => stdout, "");
   }
 
+  public async resolveFilePathInWorkingTree(repo: string, commitHash: string, filePath: string) {
+    let resolvedFilePath = getPathFromStr(filePath);
+    const commits = await this.spawnGit(
+      ["rev-list", "--ancestry-path", "--reverse", commitHash + "..HEAD"],
+      repo,
+      (stdout) => stdout.split(eolRegex).filter((line) => line !== ""),
+      []
+    );
+
+    for (let i = 0; i < commits.length; i++) {
+      const renamePairs = await this.spawnGit(
+        ["diff-tree", "--name-status", "-r", "-m", "--find-renames", "--diff-filter=R", commits[i]],
+        repo,
+        (stdout) => {
+          const pairs: { oldPath: string; newPath: string }[] = [];
+          const lines = stdout.split(eolRegex);
+          for (let j = 0; j < lines.length; j++) {
+            const lineParts = lines[j].split("\t");
+            if (lineParts.length < 3 || lineParts[0][0] !== "R") continue;
+            pairs.push({
+              oldPath: getPathFromStr(lineParts[1]),
+              newPath: getPathFromStr(lineParts[2])
+            });
+          }
+          return pairs;
+        },
+        []
+      );
+
+      for (let j = 0; j < renamePairs.length; j++) {
+        if (renamePairs[j].oldPath === resolvedFilePath) {
+          resolvedFilePath = renamePairs[j].newPath;
+        }
+      }
+    }
+
+    return resolvedFilePath;
+  }
+
   public async getRemoteUrl(repo: string) {
     return new Promise<string | null>((resolve) => {
       this.execGit("config --get remote.origin.url", repo, (err, stdout) => {

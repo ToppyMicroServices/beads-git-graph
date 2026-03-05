@@ -1305,7 +1305,8 @@ class GitGraphView {
               sendMessage({
                 command: "openFile",
                 repo: this.currentRepo!,
-                filePath: filePath
+                filePath: filePath,
+                commitHash: this.expandedCommit!.hash
               });
             }
           },
