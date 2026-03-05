@@ -16,8 +16,22 @@ import {
   vscode
 } from "./utils";
 
-function setSafeInnerHTML(elem: HTMLElement, html: string) {
-  elem.innerHTML = html;
+function getSafeImageUrl(rawUrl: string) {
+  try {
+    const parsedUrl = new URL(rawUrl, window.location.href);
+    return [
+      "http:",
+      "https:",
+      "data:",
+      "blob:",
+      "vscode-resource:",
+      "vscode-webview-resource:"
+    ].includes(parsedUrl.protocol)
+      ? parsedUrl.toString()
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 class GitGraphView {
@@ -275,13 +289,18 @@ class GitGraphView {
   public loadAvatar(email: string, image: string) {
     this.avatars[email] = image;
     this.saveState();
+    const safeImageUrl = getSafeImageUrl(image);
     let avatarsElems = <HTMLCollectionOf<HTMLElement>>document.getElementsByClassName("avatar"),
       escapedEmail = escapeHtml(email);
     for (let i = 0; i < avatarsElems.length; i++) {
       if (avatarsElems[i].dataset.email === escapedEmail) {
+        if (safeImageUrl === null) {
+          avatarsElems[i].textContent = "";
+          continue;
+        }
         const img = document.createElement("img");
         img.className = "avatarImg";
-        img.src = image;
+        img.src = safeImageUrl;
         avatarsElems[i].replaceChildren(img);
       }
     }
@@ -399,6 +418,10 @@ class GitGraphView {
       i,
       currentHash = this.commits.length > 0 && this.commits[0].hash === "*" ? "*" : this.commitHead;
     for (i = 0; i < this.commits.length; i++) {
+      const avatarUrl =
+        typeof this.avatars[this.commits[i].email] === "string"
+          ? getSafeImageUrl(this.avatars[this.commits[i].email])
+          : null;
       let refs = "",
         message = escapeHtml(this.commits[i].message),
         date = getCommitDate(this.commits[i].date),
@@ -447,10 +470,8 @@ class GitGraphView {
           ? '<span class="avatar" data-email="' +
             escapeHtml(this.commits[i].email) +
             '">' +
-            (typeof this.avatars[this.commits[i].email] === "string"
-              ? '<img class="avatarImg" src="' +
-                escapeHtml(this.avatars[this.commits[i].email]) +
-                '">'
+            (avatarUrl !== null
+              ? '<img class="avatarImg" src="' + escapeHtml(avatarUrl) + '">'
               : "") +
             "</span>"
           : "") +
@@ -461,21 +482,16 @@ class GitGraphView {
         abbrevCommit(this.commits[i].hash) +
         "</td></tr>";
     }
-    setSafeInnerHTML(this.tableElem, "<table>" + html + "</table>");
-    setSafeInnerHTML(
-      this.footerElem,
-      this.moreCommitsAvailable
-        ? '<div id="loadMoreCommitsBtn" class="roundedBtn">Load More Commits</div>'
-        : ""
-    );
+    this.tableElem.innerHTML = "<table>" + html + "</table>";
+    this.footerElem.innerHTML = this.moreCommitsAvailable
+      ? '<div id="loadMoreCommitsBtn" class="roundedBtn">Load More Commits</div>'
+      : "";
     this.makeTableResizable();
 
     if (this.moreCommitsAvailable) {
       document.getElementById("loadMoreCommitsBtn")!.addEventListener("click", () => {
-        setSafeInnerHTML(
-          <HTMLElement>document.getElementById("loadMoreCommitsBtn")!.parentNode!,
-          '<h2 id="loadingHeader">' + svgIcons.loading + "Loading ...</h2>"
-        );
+        (<HTMLElement>document.getElementById("loadMoreCommitsBtn")!.parentNode!).innerHTML =
+          '<h2 id="loadingHeader">' + svgIcons.loading + "Loading ...</h2>";
         this.maxCommits += this.config.loadMoreCommits;
         this.hideCommitDetails();
         this.saveState();
@@ -1133,10 +1149,14 @@ class GitGraphView {
       "</a>&gt;<br>";
     html += "<b>Date: </b>" + new Date(commitDetails.date * 1000).toString() + "<br>";
     html += "<b>Committer: </b>" + escapeHtml(commitDetails.committer) + "</span>";
-    if (typeof this.avatars[commitDetails.email] === "string")
+    const commitDetailsAvatarUrl =
+      typeof this.avatars[commitDetails.email] === "string"
+        ? getSafeImageUrl(this.avatars[commitDetails.email])
+        : null;
+    if (commitDetailsAvatarUrl !== null)
       html +=
         '<span class="commitDetailsSummaryAvatar"><img src="' +
-        escapeHtml(this.avatars[commitDetails.email]) +
+        escapeHtml(commitDetailsAvatarUrl) +
         '"></span>';
     html += "</span></span><br><br>";
     html += escapeHtml(commitDetails.body).replace(/\n/g, "<br>") + "</div>";
@@ -1148,7 +1168,7 @@ class GitGraphView {
     html += "</td>";
 
     newElem.id = "commitDetails";
-    setSafeInnerHTML(newElem, html);
+    newElem.innerHTML = html;
     insertAfter(newElem, this.expandedCommit.srcElem);
 
     this.renderGraph();
@@ -1736,17 +1756,15 @@ function showDialog(
 ) {
   dialogBacking.className = "active";
   dialog.className = "active";
-  setSafeInnerHTML(
-    dialog,
+  dialog.innerHTML =
     html +
-      "<br>" +
-      (actionName !== null
-        ? '<div id="dialogAction" class="roundedBtn">' + escapeHtml(actionName) + "</div>"
-        : "") +
-      '<div id="dialogDismiss" class="roundedBtn">' +
-      escapeHtml(dismissName) +
-      "</div>"
-  );
+    "<br>" +
+    (actionName !== null
+      ? '<div id="dialogAction" class="roundedBtn">' + escapeHtml(actionName) + "</div>"
+      : "") +
+    '<div id="dialogDismiss" class="roundedBtn">' +
+    escapeHtml(dismissName) +
+    "</div>";
   if (actionName !== null && actioned !== null)
     document.getElementById("dialogAction")!.addEventListener("click", actioned);
   document.getElementById("dialogDismiss")!.addEventListener("click", hideDialog);
