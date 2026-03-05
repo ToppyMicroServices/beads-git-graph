@@ -1,23 +1,14 @@
 <svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="bg" x1="16" y1="16" x2="112" y2="112" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#2E7DFF"/>
-      <stop offset="1" stop-color="#7A3EFF"/>
-    </linearGradient>
-    <linearGradient id="bead" x1="40" y1="32" x2="84" y2="96" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF" stop-opacity="0.98"/>
-      <stop offset="1" stop-color="#DCE6FF" stop-opacity="0.96"/>
-    </linearGradient>
-  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="20" fill="#000000"/>
+  <rect x="8" y="8" width="112" height="112" rx="20" stroke="#1F2937" stroke-width="2"/>
 
-  <rect x="10" y="10" width="108" height="108" rx="24" fill="url(#bg)"/>
+  <line x1="30" y1="24" x2="30" y2="104" stroke="#4C9AFF" stroke-width="10" stroke-linecap="round"/>
+  <line x1="54" y1="24" x2="54" y2="104" stroke="#2EC4B6" stroke-width="10" stroke-linecap="round"/>
+  <line x1="78" y1="24" x2="78" y2="104" stroke="#A78BFA" stroke-width="10" stroke-linecap="round"/>
+  <line x1="102" y1="24" x2="102" y2="104" stroke="#FF5DA2" stroke-width="10" stroke-linecap="round"/>
 
-  <path d="M34 86L57 62L74 74L95 46" stroke="#C8D8FF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>
-
-  <circle cx="34" cy="86" r="9" fill="url(#bead)"/>
-  <circle cx="57" cy="62" r="9" fill="url(#bead)"/>
-  <circle cx="74" cy="74" r="9" fill="url(#bead)"/>
-  <circle cx="95" cy="46" r="9" fill="url(#bead)"/>
-
-  <path d="M40 38H64C74.4934 38 83 46.5066 83 57C83 67.4934 74.4934 76 64 76H53" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="30" cy="24" r="9" fill="#4C9AFF"/>
+  <circle cx="54" cy="24" r="9" fill="#2EC4B6"/>
+  <circle cx="78" cy="24" r="9" fill="#A78BFA"/>
+  <circle cx="102" cy="24" r="9" fill="#FF5DA2"/>
 </svg>

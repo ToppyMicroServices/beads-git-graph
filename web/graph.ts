@@ -9,9 +9,11 @@ class Branch {
   private colour: number;
   private end: number = 0;
   private numUncommitted: number = 0;
+  private muted: boolean;
 
-  constructor(colour: number) {
+  constructor(colour: number, muted: boolean) {
     this.colour = colour;
+    this.muted = muted;
   }
 
   public addLine(p1: Point, p2: Point, isCommitted: boolean, lockedFirst: boolean) {
@@ -30,6 +32,9 @@ class Branch {
   }
   public setEnd(end: number) {
     this.end = end;
+  }
+  public setMuted(muted: boolean) {
+    this.muted = muted;
   }
   public draw(svg: SVGElement, config: Config, expandAt: number) {
     let colour = config.graphColours[this.colour % config.graphColours.length],
@@ -175,11 +180,31 @@ class Branch {
       line2 = document.createElementNS("http://www.w3.org/2000/svg", "path");
     line1.setAttribute("class", "shaddow");
     line1.setAttribute("d", path);
+    if (this.muted) {
+      const mutedOpacity = clamp(this.getMutedOpacity(), 0.1, 1);
+      const mutedLineWidth = clamp(this.getMutedLineWidth(), 0.8, 2);
+      line1.setAttribute("stroke-opacity", (mutedOpacity * 0.8).toString());
+      line1.setAttribute("stroke-width", (mutedLineWidth + 1.6).toString());
+    }
     line2.setAttribute("class", "line");
     line2.setAttribute("d", path);
     line2.setAttribute("stroke", colour);
+    if (this.muted) {
+      line2.setAttribute("stroke-opacity", clamp(this.getMutedOpacity(), 0.1, 1).toString());
+      line2.setAttribute("stroke-width", clamp(this.getMutedLineWidth(), 0.8, 2).toString());
+    }
     svg.appendChild(line1);
     svg.appendChild(line2);
+  }
+
+  private getMutedOpacity() {
+    return (window as unknown as { viewState?: GG.GitGraphViewState }).viewState
+      ?.mutedGraphOpacity ?? 0.55;
+  }
+
+  private getMutedLineWidth() {
+    return (window as unknown as { viewState?: GG.GitGraphViewState }).viewState
+      ?.mutedGraphLineWidth ?? 1.4;
   }
 }
 
@@ -191,6 +216,7 @@ class Vertex {
   private onBranch: Branch | null = null;
   private isCommitted: boolean = true;
   private isCurrent: boolean = false;
+  private isMuted: boolean = false;
   private nextX: number = 0;
   private connections: UnavailablePoint[] = [];
 
@@ -268,6 +294,12 @@ class Vertex {
   public setCurrent() {
     this.isCurrent = true;
   }
+  public setMuted(muted: boolean) {
+    this.isMuted = muted;
+  }
+  public getIsMuted() {
+    return this.isMuted;
+  }
   public draw(svg: SVGElement, config: Config, expandOffset: boolean) {
     if (this.onBranch === null) return;
 
@@ -284,15 +316,35 @@ class Vertex {
         (expandOffset ? config.grid.expandY : 0)
       ).toString()
     );
-    circle.setAttribute("r", "4");
+    circle.setAttribute("r", (this.isMuted ? this.getMutedNodeRadius() : 4).toString());
     if (this.isCurrent) {
       circle.setAttribute("class", "current");
       circle.setAttribute("stroke", colour);
+      if (this.isMuted) {
+        circle.setAttribute("stroke-opacity", clamp(this.getMutedOpacity(), 0.1, 1).toString());
+      }
     } else {
       circle.setAttribute("fill", colour);
+      if (this.isMuted) {
+        circle.setAttribute("fill-opacity", clamp(this.getMutedOpacity(), 0.1, 1).toString());
+      }
     }
 
     svg.appendChild(circle);
+  }
+
+  private getMutedOpacity() {
+    return (window as unknown as { viewState?: GG.GitGraphViewState }).viewState
+      ?.mutedGraphOpacity ?? 0.55;
+  }
+
+  private getMutedNodeRadius() {
+    return clamp(
+      (window as unknown as { viewState?: GG.GitGraphViewState }).viewState?.mutedGraphNodeRadius ??
+        3,
+      2,
+      4
+    );
   }
 }
 
@@ -349,6 +401,9 @@ export class Graph {
     let i: number, j: number;
     for (i = 0; i < commits.length; i++) {
       this.vertices.push(new Vertex(i));
+      if (this.isDbSyncCommit(commits[i])) {
+        this.vertices[i].setMuted(true);
+      }
     }
     for (i = 0; i < commits.length; i++) {
       for (j = 0; j < commits[i].parentHashes.length; j++) {
@@ -482,7 +537,7 @@ export class Graph {
       }
     } else {
       // Branch is normal
-      let branch = new Branch(this.getAvailableColour(startAt));
+      let branch = new Branch(this.getAvailableColour(startAt), vertex.getIsMuted());
       vertex.addToBranch(branch, lastPoint.x);
       vertex.registerUnavailablePoint(lastPoint.x, vertex, branch);
       for (i = startAt + 1; i < this.vertices.length; i++) {
@@ -497,6 +552,9 @@ export class Graph {
         if (parentVertex === this.vertices[i]) {
           vertex.registerParentProcessed();
           let parentVertexOnBranch = !parentVertex.isNotOnBranch();
+          if (parentVertex.getIsMuted()) {
+            branch.setMuted(true);
+          }
           parentVertex.addToBranch(branch, curPoint.x);
           vertex = parentVertex;
           parentVertex = vertex.getNextParent();
@@ -525,4 +583,32 @@ export class Graph {
     this.availableColours.push(0);
     return this.availableColours.length - 1;
   }
+
+  private isDbSyncBranchName(branchName: string) {
+    const normalized = branchName.startsWith("remotes/") ? branchName.substring(8) : branchName;
+    return (
+      normalized === "beads-sync" ||
+      normalized.endsWith("/beads-sync") ||
+      normalized.startsWith("beads-sync/") ||
+      normalized.includes("/beads-sync/") ||
+      normalized.startsWith("beads") ||
+      normalized.includes("/beads") ||
+      normalized.startsWith("db/") ||
+      normalized.includes("/db/")
+    );
+  }
+
+  private isDbSyncCommit(commit: GG.GitCommitNode) {
+    if (/^bd sync:/i.test(commit.message)) return true;
+    for (let i = 0; i < commit.refs.length; i++) {
+      if ((commit.refs[i].type === "head" || commit.refs[i].type === "remote") && this.isDbSyncBranchName(commit.refs[i].name)) {
+        return true;
+      }
+    }
+    return false;
+  }
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }

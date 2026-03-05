@@ -230,7 +230,8 @@ export class GitGraphView {
                 msg.repo,
                 msg.branchName,
                 msg.maxCommits,
-                msg.showRemoteBranches
+                msg.showRemoteBranches,
+                msg.featOnly
               )),
               hard: msg.hard
             });
@@ -361,9 +362,13 @@ export class GitGraphView {
       initialLoadCommits: config.initialLoadCommits(),
       lastActiveRepo: this.extensionState.getLastActiveRepo(),
       loadMoreCommits: config.loadMoreCommits(),
+      mutedGraphOpacity: config.mutedGraphOpacity(),
+      mutedGraphLineWidth: config.mutedGraphLineWidth(),
+      mutedGraphNodeRadius: config.mutedGraphNodeRadius(),
       referenceInputSpaceSubstitution: config.referenceInputSpaceSubstitution(),
       repoDropdownOrder: config.repoDropdownOrder(),
       repos: this.repoManager.getRepos(),
+      preferMainBranchByDefault: config.preferMainBranchByDefault(),
       showCurrentBranchByDefault: config.showCurrentBranchByDefault()
     };
 
@@ -382,6 +387,7 @@ export class GitGraphView {
 				<span id="repoControl"><span class="unselectable">Repo: </span><div id="repoSelect" class="dropdown"></div></span>
 				<span id="branchControl"><span class="unselectable">Branch: </span><div id="branchSelect" class="dropdown"></div></span>
 				<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" value="1" checked>Show Remote Branches</label>
+        <label id="featOnlyControl"><input type="checkbox" id="featOnlyCheckbox" value="1">Feat Only</label>
 				<div id="refreshBtn" class="roundedBtn">Refresh</div>
 			</div>
 			<div id="content">

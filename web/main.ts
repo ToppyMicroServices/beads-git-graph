@@ -52,6 +52,7 @@ class GitGraphView {
   private config: Config;
   private moreCommitsAvailable: boolean = false;
   private showRemoteBranches: boolean = true;
+  private featOnly: boolean = false;
   private expandedCommit: ExpandedCommit | null = null;
   private maxCommits: number;
 
@@ -60,6 +61,7 @@ class GitGraphView {
   private repoDropdown: Dropdown;
   private branchDropdown: Dropdown;
   private showRemoteBranchesElem: HTMLInputElement;
+  private featOnlyElem: HTMLInputElement;
   private scrollShadowElem: HTMLElement;
 
   private loadBranchesCallback: ((changes: boolean, isRepo: boolean) => void) | null = null;
@@ -101,6 +103,14 @@ class GitGraphView {
       this.saveState();
       this.refresh(true);
     });
+    this.featOnlyElem = <HTMLInputElement>document.getElementById("featOnlyCheckbox")!;
+    this.featOnlyElem.addEventListener("change", () => {
+      this.featOnly = this.featOnlyElem.checked;
+      this.maxCommits = this.config.initialLoadCommits;
+      this.expandedCommit = null;
+      this.saveState();
+      this.refresh(true);
+    });
     this.scrollShadowElem = <HTMLInputElement>document.getElementById("scrollShadow")!;
     document.getElementById("refreshBtn")!.addEventListener("click", () => {
       this.refresh(true);
@@ -114,6 +124,8 @@ class GitGraphView {
       this.currentBranch = prevState.currentBranch;
       this.showRemoteBranches = prevState.showRemoteBranches;
       this.showRemoteBranchesElem.checked = this.showRemoteBranches;
+      this.featOnly = prevState.featOnly === true;
+      this.featOnlyElem.checked = this.featOnly;
       if (typeof this.gitRepos[prevState.currentRepo] !== "undefined") {
         this.currentRepo = prevState.currentRepo;
         this.maxCommits = prevState.maxCommits;
@@ -200,10 +212,13 @@ class GitGraphView {
       this.currentBranch === null ||
       (this.currentBranch !== "" && this.gitBranches.indexOf(this.currentBranch) === -1)
     ) {
+      const preferredMainBranch = this.getPreferredMainBranch();
       this.currentBranch =
         this.config.showCurrentBranchByDefault && this.gitBranchHead !== null
           ? this.gitBranchHead
-          : "";
+          : this.config.preferMainBranchByDefault && preferredMainBranch !== null
+            ? preferredMainBranch
+            : "";
     }
     this.saveState();
 
@@ -226,6 +241,50 @@ class GitGraphView {
       this.loadBranchesCallback(changes, isRepo);
       this.loadBranchesCallback = null;
     }
+  }
+
+  private getPreferredMainBranch() {
+    const candidates = [
+      "main",
+      "remotes/origin/main",
+      "origin/main",
+      "master",
+      "remotes/origin/master",
+      "origin/master"
+    ];
+    for (let i = 0; i < candidates.length; i++) {
+      if (this.gitBranches.indexOf(candidates[i]) > -1) return candidates[i];
+    }
+    return null;
+  }
+
+  private isDbSyncBranchName(branchName: string) {
+    const normalized = branchName.startsWith("remotes/") ? branchName.substring(8) : branchName;
+    return (
+      normalized === "beads-sync" ||
+      normalized.endsWith("/beads-sync") ||
+      normalized.startsWith("beads-sync/") ||
+      normalized.includes("/beads-sync/") ||
+      normalized.startsWith("db/") ||
+      normalized.includes("/db/")
+    );
+  }
+
+  private isDbSyncCommitMessage(message: string) {
+    return /^bd sync:/i.test(message);
+  }
+
+  private isDbSyncCommit(commit: GG.GitCommitNode) {
+    if (this.isDbSyncCommitMessage(commit.message)) return true;
+    for (let i = 0; i < commit.refs.length; i++) {
+      if (
+        (commit.refs[i].type === "head" || commit.refs[i].type === "remote") &&
+        this.isDbSyncBranchName(commit.refs[i].name)
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public loadCommits(
@@ -355,6 +414,7 @@ class GitGraphView {
       branchName: this.currentBranch !== null ? this.currentBranch : "",
       maxCommits: this.maxCommits,
       showRemoteBranches: this.showRemoteBranches,
+      featOnly: this.featOnly,
       hard: hard
     });
   }
@@ -397,8 +457,78 @@ class GitGraphView {
       moreCommitsAvailable: this.moreCommitsAvailable,
       maxCommits: this.maxCommits,
       showRemoteBranches: this.showRemoteBranches,
+      featOnly: this.featOnly,
       expandedCommit: this.expandedCommit
     });
+  }
+
+  private normalizeCommitSubject(subject: string) {
+    let normalized = subject
+      .replace(/：/g, ":")
+      .replace(/（/g, "(")
+      .replace(/）/g, ")")
+      .trim()
+      .replace(/\s+/g, " ");
+
+    normalized = normalized.replace(/^(fixup!|squash!|WIP:)\s*/i, "");
+    normalized = normalized.replace(/^(\[[^\]]+\]|\([^\)]+\))\s*/g, "");
+    normalized = normalized.replace(/^[^A-Za-z0-9\[]+/, "").trim();
+
+    return normalized;
+  }
+
+  private getCommitType(message: string) {
+    const normalized = this.normalizeCommitSubject(message);
+    if (normalized === "") return null;
+
+    let rawType: string | null = null;
+    const ccMatch = normalized.match(/^([a-zA-Z]+)(\(([^)]+)\))?(!)?:\s*(.+)$/);
+    if (ccMatch !== null) {
+      rawType = ccMatch[1];
+    } else {
+      const bracketTagMatch = normalized.match(/^\[([^\]]+)\]\s*(.+)$/);
+      if (bracketTagMatch !== null) {
+        rawType = bracketTagMatch[1];
+      } else {
+        const keywordMatch = normalized.match(/^([a-zA-Z][a-zA-Z0-9_\/-]*)\s*(?:-|:)\s*(.+)$/);
+        if (keywordMatch !== null) {
+          rawType = keywordMatch[1];
+        }
+      }
+    }
+
+    if (rawType === null) return null;
+    return this.toCanonicalCommitType(rawType);
+  }
+
+  private toCanonicalCommitType(rawType: string) {
+    let type = rawType.toLowerCase().replace(/[^a-z0-9_\/-]/g, "");
+    if (type.indexOf("/") > -1) {
+      type = type.split("/")[0];
+    }
+
+    const aliases: { [canonicalType: string]: string[] } = {
+      feat: ["feat", "feature", "features", "add", "added", "new"],
+      fix: ["fix", "bugfix", "hotfix", "fixed", "bug"],
+      docs: ["docs", "doc", "documentation", "readme"],
+      chore: ["chore", "maintenance", "maint", "deps", "dep", "bump", "update"],
+      refactor: ["refactor", "refactoring", "cleanup", "tidy"],
+      perf: ["perf", "performance"],
+      test: ["test", "tests", "testing"],
+      build: ["build"],
+      ci: ["ci", "github-actions", "actions", "pipeline"],
+      style: ["style"],
+      revert: ["revert"]
+    };
+
+    const canonicalTypes = Object.keys(aliases);
+    for (let i = 0; i < canonicalTypes.length; i++) {
+      const canonicalType = canonicalTypes[i];
+      if (aliases[canonicalType].indexOf(type) > -1) {
+        return canonicalType;
+      }
+    }
+    return null;
   }
 
   /* Renderers */
@@ -432,12 +562,21 @@ class GitGraphView {
       i,
       currentHash = this.commits.length > 0 && this.commits[0].hash === "*" ? "*" : this.commitHead;
     for (i = 0; i < this.commits.length; i++) {
+      const dbSyncCommit = this.isDbSyncCommit(this.commits[i]);
+      const commitType = this.getCommitType(this.commits[i].message);
       const avatarUrl =
         typeof this.avatars[this.commits[i].email] === "string"
           ? getSafeImageUrl(this.avatars[this.commits[i].email])
           : null;
+      const dbSyncBadge = this.isDbSyncCommitMessage(this.commits[i].message)
+        ? '<span class="syncBadge" title="DB sync generated commit">DB</span>'
+        : "";
       let refs = "",
         message = escapeHtml(this.commits[i].message),
+        messageHtml =
+          commitType !== null
+            ? '<span class="commitType type-' + commitType + '">' + message + "</span>"
+            : message,
         date = getCommitDate(this.commits[i].date),
         j,
         refName,
@@ -445,6 +584,7 @@ class GitGraphView {
         refHtml;
       for (j = 0; j < this.commits[i].refs.length; j++) {
         refName = escapeHtml(this.commits[i].refs[j].name);
+        const dbSyncRef = this.isDbSyncBranchName(this.commits[i].refs[j].name);
         refActive =
           this.commits[i].refs[j].type === "head" &&
           this.commits[i].refs[j].name === this.gitBranchHead;
@@ -452,9 +592,12 @@ class GitGraphView {
           '<span class="gitRef ' +
           this.commits[i].refs[j].type +
           (refActive ? " active" : "") +
+          (dbSyncRef ? " dbSync" : "") +
           '" data-name="' +
           refName +
-          '">' +
+          '"' +
+          (dbSyncRef ? ' title="DB sync branch (generated commits)"' : "") +
+          ">" +
           (this.commits[i].refs[j].type === "tag" ? svgIcons.tag : svgIcons.branch) +
           refName +
           "</span>";
@@ -463,7 +606,12 @@ class GitGraphView {
       html +=
         "<tr " +
         (this.commits[i].hash !== "*"
-          ? 'class="commit" data-hash="' + this.commits[i].hash + '"'
+          ?
+            'class="commit' +
+            (dbSyncCommit ? " dbSyncCommit" : "") +
+            '" data-hash="' +
+            this.commits[i].hash +
+            '"'
           : 'class="unsavedChanges"') +
         ' data-id="' +
         i +
@@ -472,7 +620,8 @@ class GitGraphView {
         '"><td></td><td>' +
         (this.commits[i].hash === this.commitHead ? '<span class="commitHeadDot"></span>' : "") +
         refs +
-        (this.commits[i].hash === currentHash ? "<b>" + message + "</b>" : message) +
+        dbSyncBadge +
+        (this.commits[i].hash === currentHash ? "<b>" + messageHtml + "</b>" : messageHtml) +
         '</td><td title="' +
         date.title +
         '">' +
@@ -1420,8 +1569,12 @@ let gitGraph = new GitGraphView(
     grid: { x: 16, y: 24, offsetX: 8, offsetY: 12, expandY: 250 },
     initialLoadCommits: viewState.initialLoadCommits,
     loadMoreCommits: viewState.loadMoreCommits,
+    mutedGraphOpacity: viewState.mutedGraphOpacity,
+    mutedGraphLineWidth: viewState.mutedGraphLineWidth,
+    mutedGraphNodeRadius: viewState.mutedGraphNodeRadius,
     referenceInputSpaceSubstitution: viewState.referenceInputSpaceSubstitution,
     repoDropdownOrder: viewState.repoDropdownOrder,
+    preferMainBranchByDefault: viewState.preferMainBranchByDefault,
     showCurrentBranchByDefault: viewState.showCurrentBranchByDefault
   },
   vscode.getState()

@@ -1,7 +1,5 @@
 <div align="center">
-  <img src="./resources/icon.png" height="128"/>
   <samp>
-    <h1>Beads Git Graph for Visual Studio Code</h1>
     <h3>Independent Git Graph extension with Beads-friendly workflow</h3>
   </samp>
 </div>
@@ -9,15 +7,15 @@
 [![](https://img.shields.io/github/license/thinksyncs/beads-git-graph)](https://github.com/thinksyncs/beads-git-graph?tab=MIT-1-ov-file)
 [![GitHub release](https://img.shields.io/github/v/release/thinksyncs/beads-git-graph)](https://github.com/thinksyncs/beads-git-graph/releases)
 
-![demo](resources/demo.gif)
-
-<p>&nbsp;</p>
+<sub>Acknowledgement: This project builds on prior work including [Git Graph](https://github.com/mhutchie/vscode-git-graph) and [neo-git-graph](https://github.com/thinksyncs/neo-git-graph), and appreciates their maintainers' efforts, including security improvements.</sub>
 
 ## Project Identity (Required for Marketplace)
 
 - This project is **Beads Git Graph** (independent project identity).
 - It is **not** an upstream-following mirror of `mhutchie/vscode-git-graph`.
 - It keeps full repository history while operating under its own roadmap and release policy.
+- As noted in `neo-git-graph`, this project uses MIT-licensed historical source from Git Graph (up to the last MIT commit).
+- This repository was forked from [neo-git-graph](https://github.com/thinksyncs/neo-git-graph) and is maintained independently as Beads Git Graph.
 
 ## Compatibility Policy (Before Full Prefix Migration)
 
@@ -47,6 +45,7 @@ This project is based on the last MIT commit and:
 - **Multi-repo**: Work with multiple repositories in one workspace
 - **Devcontainer ready**: Works in remote and container environments
 - **Beads Graph view**: Detects `.beads` data automatically and shows a `bd list` style table
+- **Conventional Commit assist**: Normalizes and classifies commit types (with alias handling), colors recognized types, and supports `Feat Only` filtering
 
 ## Configuration
 
@@ -58,11 +57,16 @@ All settings use the `neo-git-graph` prefix.
 | `dateFormat`                  | `"Date & Time"` | `"Date & Time"`, `"Date Only"`, or `"Relative"`  |
 | `dateType`                    | `"Author Date"` | `"Author Date"` or `"Commit Date"`               |
 | `fetchAvatars`                | `false`         | Fetch avatars (sends email to external services) |
-| `graphColours`                | 12 defaults     | Colors for graph lines                           |
+| `graphColours`                | 5 defaults (`#4C9AFF`, `#2EC4B6`, `#FFB703`, `#A78BFA`, `#FF5DA2`) | Colors for graph lines                           |
 | `graphStyle`                  | `"rounded"`     | `"rounded"` or `"angular"`                       |
 | `initialLoadCommits`          | `300`           | Commits to load on open                          |
 | `loadMoreCommits`             | `100`           | Commits to load on demand                        |
 | `maxDepthOfRepoSearch`        | `0`             | Folder depth for repo search                     |
+| `hiddenBranchPatterns`        | `['^beads', '^beads-sync$', '^db/', '^beads-sync/']` | Regex patterns for branches hidden by default (current checked-out branch remains visible) |
+| `mutedGraphOpacity`           | `0.45`          | Opacity for de-emphasized db/beads graph lines and nodes |
+| `mutedGraphLineWidth`         | `1.2`           | Line width for de-emphasized db/beads graph lines |
+| `mutedGraphNodeRadius`        | `2.8`           | Node radius for de-emphasized db/beads graph commits |
+| `preferMainBranchByDefault`   | `true`          | Prefer `main` / `origin/main` as initial branch focus when opening the graph |
 | `showCurrentBranchByDefault`  | `false`         | Show only current branch on open                 |
 | `showStatusBarItem`           | `true`          | Show status bar button                           |
 | `showUncommittedChanges`      | `true`          | Show uncommitted changes node                    |

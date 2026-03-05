@@ -56,7 +56,7 @@ class Config {
 
   public graphColours() {
     return this.workspaceConfiguration
-      .get("graphColours", ["#0085d9", "#d9008f", "#00d90a", "#d98500", "#a300d9", "#ff0000"])
+      .get("graphColours", ["#4C9AFF", "#2EC4B6", "#FFB703", "#A78BFA", "#FF5DA2"])
       .filter(
         (v) =>
           v.match(
@@ -91,6 +91,31 @@ class Config {
 
   public showCurrentBranchByDefault() {
     return this.workspaceConfiguration.get("showCurrentBranchByDefault", false);
+  }
+
+  public preferMainBranchByDefault() {
+    return this.workspaceConfiguration.get("preferMainBranchByDefault", true);
+  }
+
+  public hiddenBranchPatterns() {
+    return this.workspaceConfiguration.get("hiddenBranchPatterns", [
+      "^beads",
+      "^beads-sync$",
+      "^db/",
+      "^beads-sync/"
+    ]);
+  }
+
+  public mutedGraphOpacity() {
+    return this.workspaceConfiguration.get("mutedGraphOpacity", 0.45);
+  }
+
+  public mutedGraphLineWidth() {
+    return this.workspaceConfiguration.get("mutedGraphLineWidth", 1.2);
+  }
+
+  public mutedGraphNodeRadius() {
+    return this.workspaceConfiguration.get("mutedGraphNodeRadius", 2.8);
   }
 
   public showStatusBarItem() {

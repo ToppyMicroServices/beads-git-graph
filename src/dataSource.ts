@@ -48,6 +48,7 @@ export class DataSource {
           head: <string | null>null,
           error: false
         };
+        const hiddenBranchPatterns = this.getHiddenBranchPatterns();
 
         if (err) {
           branchData.error = true;
@@ -60,7 +61,7 @@ export class DataSource {
             if (lines[i][0] === "*") {
               branchData.head = name;
               branchData.branches.unshift(name);
-            } else {
+            } else if (!this.isHiddenBranch(name, hiddenBranchPatterns)) {
               branchData.branches.push(name);
             }
           }
@@ -70,14 +71,34 @@ export class DataSource {
     });
   }
 
-  public getCommits(repo: string, branch: string, maxCommits: number, showRemoteBranches: boolean) {
+  public getCommits(
+    repo: string,
+    branch: string,
+    maxCommits: number,
+    showRemoteBranches: boolean,
+    featOnly: boolean
+  ) {
     return new Promise<{
       commits: GitCommitNode[];
       head: string | null;
       moreCommitsAvailable: boolean;
     }>((resolve) => {
+      const gitLogPromise =
+        branch === ""
+          ? this.getBranches(repo, showRemoteBranches).then((branchData) =>
+              this.getGitLog(
+                repo,
+                branch,
+                maxCommits + 1,
+                showRemoteBranches,
+                branchData.branches,
+                featOnly
+              )
+            )
+          : this.getGitLog(repo, branch, maxCommits + 1, showRemoteBranches, [], featOnly);
+
       Promise.all([
-        this.getGitLog(repo, branch, maxCommits + 1, showRemoteBranches),
+        gitLogPromise,
         this.getRefs(repo, showRemoteBranches)
       ]).then(async (results) => {
         let commits = results[0],
@@ -369,6 +390,7 @@ export class DataSource {
 
   private getRefs(repo: string, showRemoteBranches: boolean) {
     return new Promise<GitRefData>((resolve) => {
+      const hiddenBranchPatterns = this.getHiddenBranchPatterns();
       this.execGit(
         "show-ref " + (showRemoteBranches ? "" : "--heads --tags") + " -d --head",
         repo,
@@ -384,7 +406,10 @@ export class DataSource {
               let ref = line.join(" ");
 
               if (ref.startsWith("refs/heads/")) {
-                refData.refs.push({ hash: hash, name: ref.substring(11), type: "head" });
+                const name = ref.substring(11);
+                if (!this.isHiddenBranch(name, hiddenBranchPatterns)) {
+                  refData.refs.push({ hash: hash, name: name, type: "head" });
+                }
               } else if (ref.startsWith("refs/tags/")) {
                 refData.refs.push({
                   hash: hash,
@@ -392,7 +417,10 @@ export class DataSource {
                   type: "tag"
                 });
               } else if (ref.startsWith("refs/remotes/")) {
-                refData.refs.push({ hash: hash, name: ref.substring(13), type: "remote" });
+                const name = ref.substring(13);
+                if (!this.isHiddenBranch(name, hiddenBranchPatterns)) {
+                  refData.refs.push({ hash: hash, name: name, type: "remote" });
+                }
               } else if (ref === "HEAD") {
                 refData.head = hash;
               }
@@ -404,10 +432,25 @@ export class DataSource {
     });
   }
 
-  private getGitLog(repo: string, branch: string, num: number, showRemoteBranches: boolean) {
-    let args = ["log", "--max-count=" + num, "--format=" + this.gitLogFormat, "--date-order"];
+  private getGitLog(
+    repo: string,
+    branch: string,
+    num: number,
+    showRemoteBranches: boolean,
+    visibleBranches: string[] = [],
+    featOnly: boolean = false
+  ) {
+    let maxCount = featOnly ? num * 8 : num;
+    let args = [
+      "log",
+      "--max-count=" + maxCount,
+      "--format=" + this.gitLogFormat,
+      "--date-order"
+    ];
     if (branch !== "") {
       args.push(branch);
+    } else if (visibleBranches.length > 0) {
+      args.push(...visibleBranches);
     } else {
       args.push("--branches", "--tags");
       if (showRemoteBranches) args.push("--remotes");
@@ -422,19 +465,117 @@ export class DataSource {
         for (let i = 0; i < lines.length - 1; i++) {
           let line = lines[i].split(gitLogSeparator);
           if (line.length !== 6) break;
-          gitCommits.push({
+          const commit: GitCommit = {
             hash: line[0],
             parentHashes: line[1].split(" "),
             author: line[2],
             email: line[3],
             date: parseInt(line[4]),
             message: line[5]
-          });
+          };
+          if (!featOnly || this.classifyCommitSubject(commit.message) === "feat") {
+            gitCommits.push(commit);
+          }
+          if (gitCommits.length >= num) break;
         }
         return gitCommits;
       },
       []
     );
+  }
+
+  private normalizeCommitSubject(subject: string) {
+    let normalized = subject
+      .replace(/：/g, ":")
+      .replace(/（/g, "(")
+      .replace(/）/g, ")")
+      .trim()
+      .replace(/\s+/g, " ");
+
+    normalized = normalized.replace(/^(fixup!|squash!|WIP:)\s*/i, "");
+    normalized = normalized.replace(/^(\[[^\]]+\]|\([^\)]+\))\s*/g, "");
+    normalized = normalized.replace(/^[^A-Za-z0-9\[]+/, "").trim();
+
+    return normalized;
+  }
+
+  private classifyCommitSubject(subject: string): string | null {
+    const normalized = this.normalizeCommitSubject(subject);
+    if (normalized === "") return null;
+
+    let rawType: string | null = null;
+
+    const ccMatch = normalized.match(/^([a-zA-Z]+)(\(([^)]+)\))?(!)?:\s*(.+)$/);
+    if (ccMatch !== null) {
+      rawType = ccMatch[1];
+    } else {
+      const bracketTagMatch = normalized.match(/^\[([^\]]+)\]\s*(.+)$/);
+      if (bracketTagMatch !== null) {
+        rawType = bracketTagMatch[1];
+      } else {
+        const keywordMatch = normalized.match(/^([a-zA-Z][a-zA-Z0-9_\/-]*)\s*(?:-|:)\s*(.+)$/);
+        if (keywordMatch !== null) {
+          rawType = keywordMatch[1];
+        }
+      }
+    }
+
+    if (rawType === null) return null;
+    return this.toCanonicalCommitType(rawType);
+  }
+
+  private toCanonicalCommitType(rawType: string): string | null {
+    let type = rawType.toLowerCase().replace(/[^a-z0-9_\/-]/g, "");
+    if (type.indexOf("/") > -1) {
+      type = type.split("/")[0];
+    }
+
+    const aliases: { [canonicalType: string]: string[] } = {
+      feat: ["feat", "feature", "features", "add", "added", "new"],
+      fix: ["fix", "bugfix", "hotfix", "fixed", "bug"],
+      docs: ["docs", "doc", "documentation", "readme"],
+      chore: ["chore", "maintenance", "maint", "deps", "dep", "bump", "update"],
+      refactor: ["refactor", "refactoring", "cleanup", "tidy"],
+      perf: ["perf", "performance"],
+      test: ["test", "tests", "testing"],
+      build: ["build"],
+      ci: ["ci", "github-actions", "actions", "pipeline"],
+      style: ["style"],
+      revert: ["revert"]
+    };
+
+    const canonicalTypes = Object.keys(aliases);
+    for (let i = 0; i < canonicalTypes.length; i++) {
+      const canonicalType = canonicalTypes[i];
+      if (aliases[canonicalType].indexOf(type) > -1) {
+        return canonicalType;
+      }
+    }
+
+    return null;
+  }
+
+  private getHiddenBranchPatterns() {
+    const configuredPatterns = getConfig().hiddenBranchPatterns();
+    if (!Array.isArray(configuredPatterns)) return <RegExp[]>[];
+
+    const patterns: RegExp[] = [];
+    for (let i = 0; i < configuredPatterns.length; i++) {
+      if (typeof configuredPatterns[i] !== "string") continue;
+      try {
+        patterns.push(new RegExp(configuredPatterns[i]));
+      } catch {
+        continue;
+      }
+    }
+    return patterns;
+  }
+
+  private isHiddenBranch(branchName: string, hiddenBranchPatterns: RegExp[]) {
+    for (let i = 0; i < hiddenBranchPatterns.length; i++) {
+      if (hiddenBranchPatterns[i].test(branchName)) return true;
+    }
+    return false;
   }
 
   private getGitUnsavedChanges(repo: string) {

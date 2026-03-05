@@ -19,8 +19,12 @@ declare global {
     grid: { x: number; y: number; offsetX: number; offsetY: number; expandY: number };
     initialLoadCommits: number;
     loadMoreCommits: number;
+    mutedGraphOpacity: number;
+    mutedGraphLineWidth: number;
+    mutedGraphNodeRadius: number;
     referenceInputSpaceSubstitution: GG.ReferenceInputSpaceSubstitution;
     repoDropdownOrder: GG.RepoDropdownOrder;
+    preferMainBranchByDefault: boolean;
     showCurrentBranchByDefault: boolean;
   }
 
@@ -117,6 +121,7 @@ declare global {
     moreCommitsAvailable: boolean;
     maxCommits: number;
     showRemoteBranches: boolean;
+    featOnly: boolean;
     expandedCommit: ExpandedCommit | null;
   }
 }

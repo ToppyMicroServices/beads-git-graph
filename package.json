@@ -212,18 +212,11 @@
             "pattern": "^\\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{8}|rgb[a]?\\s*\\(\\d{1,3},\\s*\\d{1,3},\\s*\\d{1,3}\\))\\s*$"
           },
           "default": [
-            "#0085d9",
-            "#d9008f",
-            "#00d90a",
-            "#d98500",
-            "#a300d9",
-            "#ff0000",
-            "#00d9cc",
-            "#e138e8",
-            "#85d900",
-            "#dc5b23",
-            "#6f24d6",
-            "#ffcc00"
+            "#4C9AFF",
+            "#2EC4B6",
+            "#FFB703",
+            "#A78BFA",
+            "#FF5DA2"
           ],
           "description": "Specifies the colours used on the graph."
         },
@@ -287,6 +280,45 @@
           "type": "boolean",
           "default": false,
           "description": "Show the current branch by default when Git Graph is opened. Default: false (show all branches)"
+        },
+        "neo-git-graph.preferMainBranchByDefault": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prefer main branch-focused view when opening Git Graph. If enabled, defaults to main (or origin/main) before Show All."
+        },
+        "neo-git-graph.hiddenBranchPatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "^beads",
+            "^beads-sync$",
+            "^db/",
+            "^beads-sync/"
+          ],
+          "description": "Regex patterns for branch names to hide by default in branch lists and ref labels (current checked out branch remains visible)."
+        },
+        "neo-git-graph.mutedGraphOpacity": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 1,
+          "default": 0.45,
+          "description": "Opacity applied to de-emphasized db/beads graph lines and nodes."
+        },
+        "neo-git-graph.mutedGraphLineWidth": {
+          "type": "number",
+          "minimum": 0.8,
+          "maximum": 2,
+          "default": 1.2,
+          "description": "Stroke width of de-emphasized db/beads graph lines."
+        },
+        "neo-git-graph.mutedGraphNodeRadius": {
+          "type": "number",
+          "minimum": 2,
+          "maximum": 4,
+          "default": 2.8,
+          "description": "Node radius of de-emphasized db/beads graph commits."
         },
         "neo-git-graph.showStatusBarItem": {
           "type": "boolean",

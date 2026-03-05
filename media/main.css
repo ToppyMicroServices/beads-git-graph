@@ -80,6 +80,9 @@ body.unableToLoad p {
 #commitTable tr.commit.commitDetailsOpen td {
   background-color: rgba(128, 128, 128, 0.15);
 }
+#commitTable tr.commit.dbSyncCommit td:not(:first-child) {
+  opacity: 0.65;
+}
 #commitTable tr.commit:hover td {
   cursor: pointer;
 }
@@ -327,6 +330,28 @@ svg.fileIcon {
   margin-top: 7px;
 }
 
+.commitType.type-feat {
+  color: #4c9aff;
+}
+.commitType.type-fix {
+  color: #ffb703;
+}
+.commitType.type-chore {
+  color: #a78bfa;
+}
+.commitType.type-docs {
+  color: #2ec4b6;
+}
+.commitType.type-refactor,
+.commitType.type-perf,
+.commitType.type-test,
+.commitType.type-style,
+.commitType.type-build,
+.commitType.type-ci,
+.commitType.type-revert {
+  color: #ff5da2;
+}
+
 /* Ref labels */
 .gitRef {
   display: inline-block;
@@ -345,6 +370,14 @@ svg.fileIcon {
 .gitRef.active {
   border-color: var(--git-graph-color);
 }
+.gitRef.dbSync {
+  opacity: 0.55;
+  border-color: rgba(128, 128, 128, 0.45);
+  background-color: rgba(128, 128, 128, 0.08);
+}
+.gitRef.dbSync > svg {
+  opacity: 0.75;
+}
 .gitRef > svg {
   background-color: var(--git-graph-color);
   fill: var(--vscode-editor-background);
@@ -353,6 +386,22 @@ svg.fileIcon {
   padding: 2px;
   margin-right: 5px;
   border-radius: 4px 0 0 4px;
+  vertical-align: top;
+}
+
+.syncBadge {
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin-top: 3px;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--vscode-editor-foreground);
+  background-color: rgba(128, 128, 128, 0.18);
+  border: 1px solid rgba(128, 128, 128, 0.45);
   vertical-align: top;
 }
 
@@ -393,7 +442,8 @@ svg.fileIcon {
 }
 #repoControl,
 #branchControl,
-#showRemoteBranchesControl {
+#showRemoteBranchesControl,
+#featOnlyControl {
   white-space: nowrap;
   margin: 0 10px;
 }
@@ -401,7 +451,8 @@ svg.fileIcon {
 #branchSelect {
   margin-left: 3px;
 }
-#showRemoteBranchesCheckbox {
+#showRemoteBranchesCheckbox,
+#featOnlyCheckbox {
   width: 14px;
   vertical-align: text-top;
 }

@@ -62,9 +62,13 @@ export interface GitGraphViewState {
   initialLoadCommits: number;
   lastActiveRepo: string | null;
   loadMoreCommits: number;
+  mutedGraphOpacity: number;
+  mutedGraphLineWidth: number;
+  mutedGraphNodeRadius: number;
   referenceInputSpaceSubstitution: ReferenceInputSpaceSubstitution;
   repoDropdownOrder: RepoDropdownOrder;
   repos: GitRepoSet;
+  preferMainBranchByDefault: boolean;
   showCurrentBranchByDefault: boolean;
 }
 
@@ -235,6 +239,7 @@ export interface RequestLoadCommits {
   branchName: string;
   maxCommits: number;
   showRemoteBranches: boolean;
+  featOnly: boolean;
   hard: boolean;
 }
 export interface ResponseLoadCommits {
