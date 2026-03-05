@@ -42,4 +42,4 @@ jobs:
         run: pnpm run typecheck
 
       - name: Build VSIX
-        run: pnpm run package
+        run: pnpm run clean && pnpm dlx @vscode/vsce package
