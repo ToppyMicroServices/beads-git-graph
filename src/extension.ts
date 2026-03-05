@@ -36,6 +36,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("beads-git-graph.refreshBeads", () => {
       beadsViewProvider.refresh();
     }),
+    vscode.commands.registerCommand("beads-git-graph.focusBeadsView", async () => {
+      await vscode.commands.executeCommand("beads-git-graph.beadsView.focus");
+    }),
     vscode.commands.registerCommand("beads-git-graph.openDiffFile", async (uri?: vscode.Uri) => {
       const sourceUri =
         uri ??

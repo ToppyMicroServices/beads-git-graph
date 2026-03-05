@@ -80,6 +80,11 @@
         "category": "Beads Git Graph",
         "command": "beads-git-graph.refreshBeads",
         "title": "Refresh Beads"
+      },
+      {
+        "category": "Beads Git Graph",
+        "command": "beads-git-graph.focusBeadsView",
+        "title": "Focus Beads View"
       }
     ],
     "menus": {
