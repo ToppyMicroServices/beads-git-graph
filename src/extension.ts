@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 
 import { AvatarManager } from "./avatarManager";
+import { BeadsViewProvider } from "./beadsView";
 import { DataSource } from "./dataSource";
 import { decodeDiffDocUri, DiffDocProvider } from "./diffDocProvider";
 import { ExtensionState } from "./extensionState";
@@ -13,11 +14,13 @@ export function activate(context: vscode.ExtensionContext) {
   const extensionState = new ExtensionState(context);
   const dataSource = new DataSource();
   const avatarManager = new AvatarManager(dataSource, extensionState);
+  const beadsViewProvider = new BeadsViewProvider();
   const statusBarItem = new StatusBarItem(context);
   const repoManager = new RepoManager(dataSource, extensionState, statusBarItem);
 
   context.subscriptions.push(
     outputChannel,
+    beadsViewProvider,
     vscode.commands.registerCommand("neo-git-graph.view", () => {
       GitGraphView.createOrShow(
         context.extensionUri,
@@ -29,6 +32,9 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("neo-git-graph.clearAvatarCache", () => {
       avatarManager.clearCache();
+    }),
+    vscode.commands.registerCommand("neo-git-graph.refreshBeads", () => {
+      beadsViewProvider.refresh();
     }),
     vscode.commands.registerCommand("neo-git-graph.openDiffFile", async (uri?: vscode.Uri) => {
       const sourceUri =
@@ -54,6 +60,7 @@ export function activate(context: vscode.ExtensionContext) {
       DiffDocProvider.scheme,
       new DiffDocProvider(dataSource)
     ),
+    vscode.window.registerWebviewViewProvider(BeadsViewProvider.viewType, beadsViewProvider),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("neo-git-graph.showStatusBarItem")) {
         statusBarItem.refresh();

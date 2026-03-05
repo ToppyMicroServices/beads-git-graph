@@ -75,14 +75,34 @@
         "category": "(neo) Git Graph",
         "command": "neo-git-graph.openDiffFile",
         "title": "Open File"
+      },
+      {
+        "category": "(neo) Git Graph",
+        "command": "neo-git-graph.refreshBeads",
+        "title": "Refresh Beads"
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "neo-git-graph.refreshBeads",
+          "when": "view == neo-git-graph.beadsView",
+          "group": "navigation"
+        }
+      ],
       "editor/title": [
         {
           "command": "neo-git-graph.openDiffFile",
           "when": "resourceScheme == neo-git-graph",
           "group": "navigation@9"
+        }
+      ]
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "neo-git-graph.beadsView",
+          "name": "Beads Graph"
         }
       ]
     },
