@@ -40,3 +40,6 @@ jobs:
 
       - name: Run typecheck
         run: pnpm run typecheck
+
+      - name: Build VSIX
+        run: pnpm run package
