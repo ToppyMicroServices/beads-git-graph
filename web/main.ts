@@ -1353,6 +1353,7 @@ let gitGraph = new GitGraphView(
     grid: { x: 16, y: 24, offsetX: 8, offsetY: 12, expandY: 250 },
     initialLoadCommits: viewState.initialLoadCommits,
     loadMoreCommits: viewState.loadMoreCommits,
+    referenceInputSpaceSubstitution: viewState.referenceInputSpaceSubstitution,
     repoDropdownOrder: viewState.repoDropdownOrder,
     showCurrentBranchByDefault: viewState.showCurrentBranchByDefault
   },
@@ -1823,8 +1824,18 @@ function showFormDialog(
   if (textRefInput > -1) {
     let dialogInput = <HTMLInputElement>document.getElementById("dialogInput" + textRefInput),
       dialogAction = document.getElementById("dialogAction")!;
+
+    const applyReferenceInputSpaceSubstitution = () => {
+      if (viewState.referenceInputSpaceSubstitution === "None") return;
+      dialogInput.value = dialogInput.value.replace(
+        /\s+/g,
+        viewState.referenceInputSpaceSubstitution === "Hyphen" ? "-" : "_"
+      );
+    };
+
     if (dialogInput.value === "") dialog.className = "active noInput";
     dialogInput.focus();
+    dialogInput.addEventListener("input", applyReferenceInputSpaceSubstitution);
     dialogInput.addEventListener("keyup", () => {
       let noInput = dialogInput.value === "",
         invalidInput = dialogInput.value.match(refInvalid) !== null;

@@ -1,6 +1,13 @@
 import * as vscode from "vscode";
 
-import { DateFormat, DateType, GraphStyle, RepoDropdownOrder, TabIconColourTheme } from "./types";
+import {
+  DateFormat,
+  DateType,
+  GraphStyle,
+  ReferenceInputSpaceSubstitution,
+  RepoDropdownOrder,
+  TabIconColourTheme
+} from "./types";
 
 class Config {
   private workspaceConfiguration: vscode.WorkspaceConfiguration;
@@ -46,6 +53,10 @@ class Config {
 
   public loadMoreCommits() {
     return this.workspaceConfiguration.get("loadMoreCommits", 75);
+  }
+
+  public referenceInputSpaceSubstitution(): ReferenceInputSpaceSubstitution {
+    return this.workspaceConfiguration.get("referenceInputSpaceSubstitution", "None");
   }
 
   public repoDropdownOrder(): RepoDropdownOrder {

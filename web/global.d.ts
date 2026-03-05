@@ -17,6 +17,7 @@ declare global {
     grid: { x: number; y: number; offsetX: number; offsetY: number; expandY: number };
     initialLoadCommits: number;
     loadMoreCommits: number;
+    referenceInputSpaceSubstitution: GG.ReferenceInputSpaceSubstitution;
     repoDropdownOrder: GG.RepoDropdownOrder;
     showCurrentBranchByDefault: boolean;
   }

@@ -349,6 +349,7 @@ export class GitGraphView {
       initialLoadCommits: config.initialLoadCommits(),
       lastActiveRepo: this.extensionState.getLastActiveRepo(),
       loadMoreCommits: config.loadMoreCommits(),
+      referenceInputSpaceSubstitution: config.referenceInputSpaceSubstitution(),
       repoDropdownOrder: config.repoDropdownOrder(),
       repos: this.repoManager.getRepos(),
       showCurrentBranchByDefault: config.showCurrentBranchByDefault()
