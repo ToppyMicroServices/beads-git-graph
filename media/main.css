@@ -275,6 +275,10 @@ svg.fileIcon {
 .gitFile.gitDiffPossible {
   cursor: pointer;
 }
+.gitFile.reviewed {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
 .gitFileAddDel,
 .gitFileRename {
   color: var(--vscode-editor-foreground);

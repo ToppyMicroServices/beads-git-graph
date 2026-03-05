@@ -1119,7 +1119,8 @@ class GitGraphView {
       hash: sourceElem.dataset.hash!,
       srcElem: sourceElem,
       commitDetails: null,
-      fileTree: null
+      fileTree: null,
+      reviewedFilePaths: []
     };
     this.saveState();
     sendMessage({
@@ -1151,6 +1152,9 @@ class GitGraphView {
 
     this.expandedCommit.commitDetails = commitDetails;
     this.expandedCommit.fileTree = fileTree;
+    if (!Array.isArray(this.expandedCommit.reviewedFilePaths)) {
+      this.expandedCommit.reviewedFilePaths = [];
+    }
     this.expandedCommit.srcElem.classList.add("commitDetailsOpen");
     this.saveState();
 
@@ -1185,7 +1189,11 @@ class GitGraphView {
     html += escapeHtml(commitDetails.body).replace(/\n/g, "<br>") + "</div>";
     html +=
       '<div id="commitDetailsFiles">' +
-      generateGitFileTreeHtml(fileTree, commitDetails.fileChanges) +
+      generateGitFileTreeHtml(
+        fileTree,
+        commitDetails.fileChanges,
+        this.expandedCommit.reviewedFilePaths
+      ) +
       "</table></div>";
     html += '<div id="commitDetailsClose">' + svgIcons.close + "</div>";
     html += "</td>";
@@ -1256,6 +1264,7 @@ class GitGraphView {
       let filePath = sourceElem.dataset.type === "D" ? oldFilePath : newFilePath;
       let relativeFilePath = filePath.replace(/^\/+/, "");
       let absoluteFilePath = this.currentRepo!.replace(/\/+$/, "") + "/" + relativeFilePath;
+      let reviewKey = decodeURIComponent(sourceElem.dataset.reviewkey!);
       const visibility = this.config.commitDetailsFileActionVisibility;
       const menuItems: ContextMenuElement[] = [];
 
@@ -1334,6 +1343,27 @@ class GitGraphView {
           }
         });
       }
+
+      if (menuItems.length > 0) {
+        menuItems.push(null);
+      }
+      menuItems.push({
+        title: sourceElem.classList.contains("reviewed")
+          ? "Mark as Not Reviewed"
+          : "Mark as Reviewed",
+        onClick: () => {
+          const isReviewed = sourceElem.classList.contains("reviewed");
+          sourceElem.classList.toggle("reviewed", !isReviewed);
+          const reviewedFilePaths = this.expandedCommit!.reviewedFilePaths;
+          const reviewIndex = reviewedFilePaths.indexOf(reviewKey);
+          if (isReviewed && reviewIndex > -1) {
+            reviewedFilePaths.splice(reviewIndex, 1);
+          } else if (!isReviewed && reviewIndex === -1) {
+            reviewedFilePaths.push(reviewKey);
+          }
+          this.saveState();
+        }
+      });
 
       const copyItems: ContextMenuElement[] = [];
       if (visibility.copyRelativeFilePath) {
@@ -1567,7 +1597,11 @@ function generateGitFileTree(gitFiles: GG.GitFileChange[]) {
   }
   return files;
 }
-function generateGitFileTreeHtml(folder: GitFolder, gitFiles: GG.GitFileChange[]) {
+function generateGitFileTreeHtml(
+  folder: GitFolder,
+  gitFiles: GG.GitFileChange[],
+  reviewedFilePaths: string[]
+) {
   let html =
       (folder.name !== ""
         ? '<span class="gitFolder" data-folderpath="' +
@@ -1603,18 +1637,22 @@ function generateGitFileTreeHtml(folder: GitFolder, gitFiles: GG.GitFileChange[]
         "<li" +
         (!gitFolder.open ? ' class="closed"' : "") +
         ">" +
-        generateGitFileTreeHtml(gitFolder, gitFiles) +
+        generateGitFileTreeHtml(gitFolder, gitFiles, reviewedFilePaths) +
         "</li>";
     } else {
       gitFile = gitFiles[(<GitFile>folder.contents[keys[i]]).index];
+      const reviewKey = getGitFileReviewKey(gitFile);
       html +=
         '<li class="gitFile ' +
         gitFile.type +
+        (reviewedFilePaths.indexOf(reviewKey) > -1 ? " reviewed" : "") +
         (gitFile.additions !== null && gitFile.deletions !== null ? " gitDiffPossible" : "") +
         '" data-oldfilepath="' +
         encodeURIComponent(gitFile.oldFilePath) +
         '" data-newfilepath="' +
         encodeURIComponent(gitFile.newFilePath) +
+        '" data-reviewkey="' +
+        encodeURIComponent(reviewKey) +
         '" data-type="' +
         gitFile.type +
         '"' +
@@ -1657,6 +1695,10 @@ function generateGitFileTreeHtml(folder: GitFolder, gitFiles: GG.GitFileChange[]
     }
   }
   return html + "</ul>";
+}
+
+function getGitFileReviewKey(gitFile: GG.GitFileChange) {
+  return gitFile.type + "|" + gitFile.oldFilePath + "|" + gitFile.newFilePath;
 }
 
 function getGitFileChangeTypeIndicator(type: GG.GitFileChangeType) {

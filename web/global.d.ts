@@ -62,6 +62,7 @@ declare global {
     srcElem: HTMLElement | null;
     commitDetails: GG.GitCommitDetails | null;
     fileTree: GitFolder | null;
+    reviewedFilePaths: string[];
   }
 
   interface GitFile {
