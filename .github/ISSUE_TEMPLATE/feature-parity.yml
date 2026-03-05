@@ -1,0 +1,55 @@
+name: Feature parity task
+description: Track one upstream Git Graph feature parity item
+title: "[parity] "
+labels:
+  - enhancement
+body:
+  - type: input
+    id: upstream-release
+    attributes:
+      label: Upstream release
+      description: Release tag/version where the feature appears
+      placeholder: e.g. 1.30.0
+    validations:
+      required: true
+
+  - type: input
+    id: upstream-ref
+    attributes:
+      label: Upstream reference
+      description: Upstream issue/PR/release-note URL
+      placeholder: https://github.com/mhutchie/vscode-git-graph/issues/480
+    validations:
+      required: true
+
+  - type: textarea
+    id: user-value
+    attributes:
+      label: User value
+      description: Why this is valuable for neo-git-graph users
+      placeholder: "Improves ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope (MVP)
+      description: Keep this to one mergeable PR
+      placeholder: |
+        - In scope:
+        - Out of scope:
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Ready checklist
+      options:
+        - label: One feature / one PR boundary is clear
+          required: true
+        - label: Security impact reviewed (input handling, commands, URI/csp)
+          required: true
+        - label: Test/verification plan exists
+          required: true
