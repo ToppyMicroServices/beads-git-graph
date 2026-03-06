@@ -10,7 +10,7 @@ import { RepoManager } from "./repoManager";
 import { StatusBarItem } from "./statusBarItem";
 
 export function activate(context: vscode.ExtensionContext) {
-  const outputChannel = vscode.window.createOutputChannel("(neo) Git Graph");
+  const outputChannel = vscode.window.createOutputChannel("Beads Git Graph");
   const extensionState = new ExtensionState(context);
   const dataSource = new DataSource();
   const avatarManager = new AvatarManager(dataSource, extensionState);
@@ -79,7 +79,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   outputChannel.appendLine("Extension activated successfully");
-  vscode.window.showInformationMessage("(neo) Git Graph extension loaded");
+  vscode.window.showInformationMessage("Beads Git Graph extension loaded");
 }
 
 export function deactivate() {}
