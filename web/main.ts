@@ -1308,7 +1308,11 @@ class GitGraphView {
     this.saveState();
 
     let newElem = document.createElement("tr"),
-      html = '<td></td><td colspan="4"><div id="commitDetailsSummary">';
+      graphTd = document.createElement("td"),
+      contentTd = document.createElement("td");
+    contentTd.colSpan = 4;
+
+    let html = '<div id="commitDetailsSummary">';
     html +=
       '<span class="commitDetailsSummaryTop' +
       (typeof this.avatars[commitDetails.email] === "string" ? " withAvatar" : "") +
@@ -1345,12 +1349,13 @@ class GitGraphView {
       ) +
       "</div>";
     html += '<div id="commitDetailsClose">' + svgIcons.close + "</div>";
-    html += "</td>";
 
-    newElem.id = "commitDetails";
-    newElem.innerHTML = DOMPurify.sanitize(html, {
+    contentTd.innerHTML = DOMPurify.sanitize(html, {
       USE_PROFILES: { html: true, svg: true, svgFilters: true }
     });
+    newElem.id = "commitDetails";
+    newElem.appendChild(graphTd);
+    newElem.appendChild(contentTd);
     insertAfter(newElem, this.expandedCommit.srcElem);
 
     this.renderGraph();
