@@ -18,8 +18,6 @@ interface BeadItem {
 
 interface BeadGroup {
   workspace: string;
-  source: string;
-  sourceUri: vscode.Uri;
   items: BeadItem[];
 }
 
@@ -121,8 +119,6 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           if (items.length > 0) {
             groups.push({
               workspace: folder.name,
-              source: vscode.workspace.asRelativePath(fileUri, false),
-              sourceUri: fileUri,
               items
             });
           }
@@ -136,7 +132,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
 
     return {
-      groups: groups.sort((a, b) => a.source.localeCompare(b.source)),
+      groups: groups.sort((a, b) => a.workspace.localeCompare(b.workspace)),
       errors
     };
   }
@@ -313,7 +309,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
             })
             .join("");
 
-          return `<section><div class="meta"><strong>${escapeHtml(group.workspace)}</strong><span>${escapeHtml(group.source)}</span></div><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></section>`;
+          return `<section><div class="meta"><strong>${escapeHtml(group.workspace)}</strong></div><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></section>`;
         })
         .join("");
     }
@@ -347,7 +343,8 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);paddin
 .menuPopup button:hover{background:var(--vscode-menu-selectionBackground);color:var(--vscode-menu-selectionForeground);}
 button{border:1px solid var(--vscode-button-border,transparent);background:var(--vscode-button-background);color:var(--vscode-button-foreground);padding:4px 8px;cursor:pointer;border-radius:6px;font-size:11px;}
 button:hover{background:var(--vscode-button-hoverBackground);}
-.meta{display:grid;grid-template-columns:1fr auto;font-size:11px;opacity:.9;margin:6px 0 4px;gap:6px;align-items:center;}
+#refresh{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;font-size:14px;line-height:1;}
+.meta{display:grid;grid-template-columns:1fr;font-size:11px;opacity:.9;margin:6px 0 4px;gap:6px;align-items:center;}
 table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
 th,td{text-align:left;border-bottom:1px solid var(--vscode-panel-border);padding:4px 4px;vertical-align:middle;}
 th{font-size:11px;font-weight:600;opacity:.9;}
@@ -393,7 +390,7 @@ code{font-family:var(--vscode-editor-font-family);}
 <body>
 <div class="toolbar">
   <select id="preset" class="preset">
-    <option value="not_closed" selected>Not Closed</option>
+    <option value="default" selected>Default</option>
     <option value="all">All</option>
   </select>
   <div id="chips" class="chips"></div>
@@ -552,11 +549,11 @@ document.getElementById('addFilter').addEventListener('click', () => {
   filterMenu.classList.toggle('open');
 });
 document.getElementById('clearFilters').addEventListener('click', () => {
-  preset.value = 'not_closed';
-  applyPreset('not_closed');
+  preset.value = 'default';
+  applyPreset('default');
 });
 preset.addEventListener('change', () => {
-  applyPreset(preset.value || 'not_closed');
+  applyPreset(preset.value || 'default');
 });
 document.addEventListener('click', (event) => {
   if (!event.target.closest('.menu')) {
