@@ -90,3 +90,40 @@ export function sendMessage(msg: GG.RequestMessage) {
 export function getVSCodeStyle(name: string) {
   return document.documentElement.style.getPropertyValue(name);
 }
+
+/* Beads / DB-sync branch detection (shared between main.ts and graph.ts) */
+
+export function isDbSyncBranchName(branchName: string): boolean {
+  const normalized = branchName.startsWith("remotes/") ? branchName.substring(8) : branchName;
+  return (
+    normalized === "beads-sync" ||
+    normalized.endsWith("/beads-sync") ||
+    normalized.startsWith("beads-sync/") ||
+    normalized.includes("/beads-sync/") ||
+    normalized.startsWith("beads") ||
+    normalized.includes("/beads") ||
+    normalized.startsWith("db/") ||
+    normalized.includes("/db/")
+  );
+}
+
+export function isDbSyncCommitMessage(message: string): boolean {
+  return /^bd sync:/i.test(message);
+}
+
+export function isDbSyncCommit(commit: GG.GitCommitNode): boolean {
+  if (isDbSyncCommitMessage(commit.message)) return true;
+  for (let i = 0; i < commit.refs.length; i++) {
+    if (
+      (commit.refs[i].type === "head" || commit.refs[i].type === "remote") &&
+      isDbSyncBranchName(commit.refs[i].name)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function abbrevCommit(commitHash: string) {
+  return commitHash.substring(0, 8);
+}

@@ -5,10 +5,10 @@ import { getPathFromStr } from "./utils";
 
 export class DiffDocProvider implements vscode.TextDocumentContentProvider {
   public static scheme = "beads-git-graph";
-  private dataSource: DataSource;
-  private onDidChangeEventEmitter = new vscode.EventEmitter<vscode.Uri>();
-  private docs = new Map<string, DiffDocument>();
-  private subscriptions: vscode.Disposable;
+  private readonly dataSource: DataSource;
+  private readonly onDidChangeEventEmitter = new vscode.EventEmitter<vscode.Uri>();
+  private readonly docs = new Map<string, string>();
+  private readonly subscriptions: vscode.Disposable;
 
   constructor(dataSource: DataSource) {
     this.dataSource = dataSource;
@@ -28,29 +28,16 @@ export class DiffDocProvider implements vscode.TextDocumentContentProvider {
   }
 
   public provideTextDocumentContent(uri: vscode.Uri): string | Thenable<string> {
-    let document = this.docs.get(uri.toString());
-    if (document) return document.value;
+    const cached = this.docs.get(uri.toString());
+    if (cached !== undefined) return cached;
 
-    let request = decodeDiffDocUri(uri);
+    const request = decodeDiffDocUri(uri);
     return this.dataSource
       .getCommitFile(request.repo, request.commit, request.filePath)
       .then((data) => {
-        let document = new DiffDocument(data);
-        this.docs.set(uri.toString(), document);
-        return document.value;
+        this.docs.set(uri.toString(), data);
+        return data;
       });
-  }
-}
-
-class DiffDocument {
-  private body: string;
-
-  constructor(body: string) {
-    this.body = body;
-  }
-
-  get value() {
-    return this.body;
   }
 }
 
@@ -67,17 +54,10 @@ export function encodeDiffDocUri(repo: string, path: string, commit: string): vs
 }
 
 export function decodeDiffDocUri(uri: vscode.Uri) {
-  let queryArgs = decodeUriQueryArgs(uri.query);
-  return { filePath: uri.path, commit: queryArgs.commit, repo: queryArgs.repo };
-}
-
-function decodeUriQueryArgs(query: string) {
-  let queryComps = query.split("&"),
-    queryArgs: { [key: string]: string } = {},
-    i;
-  for (i = 0; i < queryComps.length; i++) {
-    let pair = queryComps[i].split("=");
-    queryArgs[pair[0]] = decodeURIComponent(pair[1]);
-  }
-  return queryArgs;
+  const params = new URLSearchParams(uri.query);
+  return {
+    filePath: uri.path,
+    commit: params.get("commit") ?? "",
+    repo: params.get("repo") ?? ""
+  };
 }

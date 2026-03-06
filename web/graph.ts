@@ -1,3 +1,25 @@
+import { isDbSyncCommit } from "./utils";
+
+/* Shared muted graph style accessors */
+function getMutedOpacity(): number {
+  return (window as unknown as { viewState?: GG.GitGraphViewState }).viewState
+    ?.mutedGraphOpacity ?? 0.55;
+}
+function getMutedLineWidth(): number {
+  return (window as unknown as { viewState?: GG.GitGraphViewState }).viewState
+    ?.mutedGraphLineWidth ?? 1.4;
+}
+function getMutedNodeRadius(): number {
+  return clamp(
+    (window as unknown as { viewState?: GG.GitGraphViewState }).viewState?.mutedGraphNodeRadius ?? 3,
+    2,
+    4
+  );
+}
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 interface UnavailablePoint {
   connectsTo: VertexOrNull;
   onBranch: Branch;
@@ -181,8 +203,8 @@ class Branch {
     line1.setAttribute("class", "shaddow");
     line1.setAttribute("d", path);
     if (this.muted) {
-      const mutedOpacity = clamp(this.getMutedOpacity(), 0.1, 1);
-      const mutedLineWidth = clamp(this.getMutedLineWidth(), 0.8, 2);
+      const mutedOpacity = clamp(getMutedOpacity(), 0.1, 1);
+      const mutedLineWidth = clamp(getMutedLineWidth(), 0.8, 2);
       line1.setAttribute("stroke-opacity", (mutedOpacity * 0.8).toString());
       line1.setAttribute("stroke-width", (mutedLineWidth + 1.6).toString());
     }
@@ -190,21 +212,11 @@ class Branch {
     line2.setAttribute("d", path);
     line2.setAttribute("stroke", colour);
     if (this.muted) {
-      line2.setAttribute("stroke-opacity", clamp(this.getMutedOpacity(), 0.1, 1).toString());
-      line2.setAttribute("stroke-width", clamp(this.getMutedLineWidth(), 0.8, 2).toString());
+      line2.setAttribute("stroke-opacity", clamp(getMutedOpacity(), 0.1, 1).toString());
+      line2.setAttribute("stroke-width", clamp(getMutedLineWidth(), 0.8, 2).toString());
     }
     svg.appendChild(line1);
     svg.appendChild(line2);
-  }
-
-  private getMutedOpacity() {
-    return (window as unknown as { viewState?: GG.GitGraphViewState }).viewState
-      ?.mutedGraphOpacity ?? 0.55;
-  }
-
-  private getMutedLineWidth() {
-    return (window as unknown as { viewState?: GG.GitGraphViewState }).viewState
-      ?.mutedGraphLineWidth ?? 1.4;
   }
 }
 
@@ -316,35 +328,21 @@ class Vertex {
         (expandOffset ? config.grid.expandY : 0)
       ).toString()
     );
-    circle.setAttribute("r", (this.isMuted ? this.getMutedNodeRadius() : 4).toString());
+    circle.setAttribute("r", (this.isMuted ? getMutedNodeRadius() : 4).toString());
     if (this.isCurrent) {
       circle.setAttribute("class", "current");
       circle.setAttribute("stroke", colour);
       if (this.isMuted) {
-        circle.setAttribute("stroke-opacity", clamp(this.getMutedOpacity(), 0.1, 1).toString());
+        circle.setAttribute("stroke-opacity", clamp(getMutedOpacity(), 0.1, 1).toString());
       }
     } else {
       circle.setAttribute("fill", colour);
       if (this.isMuted) {
-        circle.setAttribute("fill-opacity", clamp(this.getMutedOpacity(), 0.1, 1).toString());
+        circle.setAttribute("fill-opacity", clamp(getMutedOpacity(), 0.1, 1).toString());
       }
     }
 
     svg.appendChild(circle);
-  }
-
-  private getMutedOpacity() {
-    return (window as unknown as { viewState?: GG.GitGraphViewState }).viewState
-      ?.mutedGraphOpacity ?? 0.55;
-  }
-
-  private getMutedNodeRadius() {
-    return clamp(
-      (window as unknown as { viewState?: GG.GitGraphViewState }).viewState?.mutedGraphNodeRadius ??
-        3,
-      2,
-      4
-    );
   }
 }
 
@@ -401,7 +399,7 @@ export class Graph {
     let i: number, j: number;
     for (i = 0; i < commits.length; i++) {
       this.vertices.push(new Vertex(i));
-      if (this.isDbSyncCommit(commits[i])) {
+      if (isDbSyncCommit(commits[i])) {
         this.vertices[i].setMuted(true);
       }
     }
@@ -583,32 +581,4 @@ export class Graph {
     this.availableColours.push(0);
     return this.availableColours.length - 1;
   }
-
-  private isDbSyncBranchName(branchName: string) {
-    const normalized = branchName.startsWith("remotes/") ? branchName.substring(8) : branchName;
-    return (
-      normalized === "beads-sync" ||
-      normalized.endsWith("/beads-sync") ||
-      normalized.startsWith("beads-sync/") ||
-      normalized.includes("/beads-sync/") ||
-      normalized.startsWith("beads") ||
-      normalized.includes("/beads") ||
-      normalized.startsWith("db/") ||
-      normalized.includes("/db/")
-    );
-  }
-
-  private isDbSyncCommit(commit: GG.GitCommitNode) {
-    if (/^bd sync:/i.test(commit.message)) return true;
-    for (let i = 0; i < commit.refs.length; i++) {
-      if ((commit.refs[i].type === "head" || commit.refs[i].type === "remote") && this.isDbSyncBranchName(commit.refs[i].name)) {
-        return true;
-      }
-    }
-    return false;
-  }
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
 }

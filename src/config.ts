@@ -131,7 +131,7 @@ class Config {
   }
 
   public gitPath(): string {
-    let path = vscode.workspace.getConfiguration("git").get("path", null);
+    const path = vscode.workspace.getConfiguration("git").get("path", null);
     return path !== null ? path : "git";
   }
 }

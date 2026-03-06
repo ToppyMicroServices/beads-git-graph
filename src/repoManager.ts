@@ -9,6 +9,8 @@ import { StatusBarItem } from "./statusBarItem";
 import { GitRepoSet, GitRepoState } from "./types";
 import { evalPromises, getPathFromUri } from "./utils";
 
+const WATCHER_DEBOUNCE_MS = 1000;
+
 export class RepoManager {
   private readonly dataSource: DataSource;
   private readonly extensionState: ExtensionState;
@@ -269,21 +271,21 @@ export class RepoManager {
     let path = getPathFromUri(uri);
     if (path.indexOf("/.git/") > -1) return;
     if (path.endsWith("/.git")) path = path.slice(0, -5);
-    if (this.createEventPaths.indexOf(path) > -1) return;
+    if (this.createEventPaths.includes(path)) return;
 
     this.createEventPaths.push(path);
     if (this.processCreateEventsTimeout !== null) clearTimeout(this.processCreateEventsTimeout);
-    this.processCreateEventsTimeout = setTimeout(() => this.processCreateEvents(), 1000);
+    this.processCreateEventsTimeout = setTimeout(() => this.processCreateEvents(), WATCHER_DEBOUNCE_MS);
   }
   private onWatcherChange(uri: vscode.Uri) {
     let path = getPathFromUri(uri);
     if (path.indexOf("/.git/") > -1) return;
     if (path.endsWith("/.git")) path = path.slice(0, -5);
-    if (this.changeEventPaths.indexOf(path) > -1) return;
+    if (this.changeEventPaths.includes(path)) return;
 
     this.changeEventPaths.push(path);
     if (this.processChangeEventsTimeout !== null) clearTimeout(this.processChangeEventsTimeout);
-    this.processChangeEventsTimeout = setTimeout(() => this.processChangeEvents(), 1000);
+    this.processChangeEventsTimeout = setTimeout(() => this.processChangeEvents(), WATCHER_DEBOUNCE_MS);
   }
   private onWatcherDelete(uri: vscode.Uri) {
     let path = getPathFromUri(uri);

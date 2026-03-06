@@ -6,13 +6,13 @@ export function abbrevCommit(commitHash: string) {
   return commitHash.substring(0, 8);
 }
 
-export function copyToClipboard(text: string) {
-  return new Promise<boolean>((resolve) => {
-    vscode.env.clipboard.writeText(text).then(
-      () => resolve(true),
-      () => resolve(false)
-    );
-  });
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await vscode.env.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function getPathFromUri(uri: vscode.Uri) {
@@ -21,6 +21,24 @@ export function getPathFromUri(uri: vscode.Uri) {
 
 export function getPathFromStr(str: string) {
   return str.replace(FS_REGEX, "/");
+}
+
+export function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export function getNonce() {
+  const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let text = "";
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
 }
 
 // Evaluate promises in parallel, with at most maxParallel running at any time
@@ -37,12 +55,12 @@ export function evalPromises<X, Y>(
     } else if (data.length === 0) {
       resolve([]);
     } else {
-      let results: Y[] = Array.from({ length: data.length }),
-        nextPromise = 0,
+      const results: Y[] = Array.from({ length: data.length });
+      let nextPromise = 0,
         rejected = false,
         completed = 0;
-      function startNext() {
-        let cur = nextPromise;
+      const startNext = () => {
+        const cur = nextPromise;
         nextPromise++;
         createPromise(data[cur])
           .then((result) => {
@@ -57,7 +75,7 @@ export function evalPromises<X, Y>(
             reject();
             rejected = true;
           });
-      }
+      };
       for (let i = 0; i < maxParallel && i < data.length; i++) startNext();
     }
   });

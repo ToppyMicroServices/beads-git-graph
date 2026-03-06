@@ -14,7 +14,7 @@ import {
   RequestMessage,
   ResponseMessage
 } from "./types";
-import { abbrevCommit, copyToClipboard } from "./utils";
+import { abbrevCommit, copyToClipboard, getNonce } from "./utils";
 
 export class GitGraphView {
   public static currentPanel: GitGraphView | undefined;
@@ -128,7 +128,6 @@ export class GitGraphView {
 
     this.panel.webview.onDidReceiveMessage(
       async (msg: RequestMessage) => {
-        if (this.dataSource === null) return;
         this.repoFileWatcher.mute();
         switch (msg.command) {
           case "addTag":
@@ -477,8 +476,10 @@ export class GitGraphView {
           title,
           { preview: true }
         )
-        .then(() => resolve(true))
-        .then(() => resolve(false));
+        .then(
+          () => resolve(true),
+          () => resolve(false)
+        );
     });
   }
 
@@ -526,13 +527,4 @@ export class GitGraphView {
       vscode.window.showWarningMessage("Unable to open file.");
     }
   }
-}
-
-function getNonce() {
-  let text = "";
-  const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
 }

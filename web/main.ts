@@ -3,12 +3,16 @@ import { Dropdown } from "./dropdown";
 import { Graph } from "./graph";
 import createDOMPurify = require("dompurify");
 import {
+  abbrevCommit,
   addListenerToClass,
   arraysEqual,
   ELLIPSIS,
   escapeHtml,
   getVSCodeStyle,
   insertAfter,
+  isDbSyncBranchName,
+  isDbSyncCommit,
+  isDbSyncCommitMessage,
   months,
   pad2,
   refInvalid,
@@ -263,32 +267,15 @@ class GitGraphView {
   }
 
   private isDbSyncBranchName(branchName: string) {
-    const normalized = branchName.startsWith("remotes/") ? branchName.substring(8) : branchName;
-    return (
-      normalized === "beads-sync" ||
-      normalized.endsWith("/beads-sync") ||
-      normalized.startsWith("beads-sync/") ||
-      normalized.includes("/beads-sync/") ||
-      normalized.startsWith("db/") ||
-      normalized.includes("/db/")
-    );
+    return isDbSyncBranchName(branchName);
   }
 
   private isDbSyncCommitMessage(message: string) {
-    return /^bd sync:/i.test(message);
+    return isDbSyncCommitMessage(message);
   }
 
   private isDbSyncCommit(commit: GG.GitCommitNode) {
-    if (this.isDbSyncCommitMessage(commit.message)) return true;
-    for (let i = 0; i < commit.refs.length; i++) {
-      if (
-        (commit.refs[i].type === "head" || commit.refs[i].type === "remote") &&
-        this.isDbSyncBranchName(commit.refs[i].name)
-      ) {
-        return true;
-      }
-    }
-    return false;
+    return isDbSyncCommit(commit);
   }
 
   public loadCommits(
@@ -1817,9 +1804,6 @@ function alterGitFileTree(folder: GitFolder, folderPath: string, open: boolean) 
       return;
     }
   }
-}
-function abbrevCommit(commitHash: string) {
-  return commitHash.substring(0, 8);
 }
 
 /* Context Menu */

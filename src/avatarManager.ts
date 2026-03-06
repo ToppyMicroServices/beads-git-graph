@@ -2,12 +2,20 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as https from "node:https";
-import * as url from "node:url";
 
 import { DataSource } from "./dataSource";
 import { ExtensionState } from "./extensionState";
 import { GitGraphView } from "./gitGraphView";
 import { AvatarCache } from "./types";
+
+/** Time constants */
+const AVATAR_REFRESH_MS = 1209600000;      // 14 days
+const AVATAR_IDENTICON_REFRESH_MS = 345600000; // 4 days
+const FETCH_INTERVAL_MS = 10000;           // 10 seconds
+const HTTP_TIMEOUT_MS = 15000;             // 15 seconds
+const RETRY_AFTER_ERROR_MS = 300000;       // 5 minutes
+const RETRY_AFTER_SERVER_ERROR_MS = 600000; // 10 minutes
+const AVATAR_SIZE = 54;
 
 export class AvatarManager {
   private readonly dataSource: DataSource;
@@ -30,9 +38,9 @@ export class AvatarManager {
     this.queue = new AvatarRequestQueue(() => {
       if (this.interval !== null) return;
       this.interval = setInterval(() => {
-        // Fetch avatars every 10 seconds
+        // Fetch avatars periodically
         this.fetchAvatarsInterval();
-      }, 10000);
+      }, FETCH_INTERVAL_MS);
       this.fetchAvatarsInterval();
     });
   }
@@ -42,8 +50,8 @@ export class AvatarManager {
       // Avatar exists in the cache
       let t = new Date().getTime();
       if (
-        this.avatars[email].timestamp < t - 1209600000 ||
-        (this.avatars[email].identicon && this.avatars[email].timestamp < t - 345600000)
+        this.avatars[email].timestamp < t - AVATAR_REFRESH_MS ||
+        (this.avatars[email].identicon && this.avatars[email].timestamp < t - AVATAR_IDENTICON_REFRESH_MS)
       ) {
         // Refresh avatar after 14 days, or if an avatar couldn't previously be found after 4 days
         this.queue.add(email, repo, commits, false);
@@ -104,7 +112,7 @@ export class AvatarManager {
   }
 
   private async getRemoteSource(avatarRequest: AvatarRequestItem) {
-    if (typeof this.remoteSourceCache[avatarRequest.repo] === "string") {
+    if (avatarRequest.repo in this.remoteSourceCache) {
       // If the repo exists in the cache of remote sources
       return this.remoteSourceCache[avatarRequest.repo];
     } else {
@@ -152,7 +160,7 @@ export class AvatarManager {
           path: "/repos/" + owner + "/" + repo + "/commits/" + avatarRequest.commits[commitIndex],
           headers: { "User-Agent": "beads-git-graph" },
           agent: false,
-          timeout: 15000
+          timeout: HTTP_TIMEOUT_MS
         },
         (res: http.IncomingMessage) => {
           let respBody = "";
@@ -166,13 +174,13 @@ export class AvatarManager {
             }
 
             if (res.statusCode === 200) {
-              // Sucess
+              // Success
               let commit = JSON.parse(respBody) as { author?: { avatar_url?: string } };
               if (commit.author && commit.author.avatar_url) {
                 // Avatar url found
                 let img = await this.downloadAvatarImage(
                   avatarRequest.email,
-                  commit.author.avatar_url + "&size=54"
+                  commit.author.avatar_url + "&size=" + AVATAR_SIZE
                 );
                 if (img !== null) this.saveAvatar(avatarRequest.email, img, false);
                 return;
@@ -190,8 +198,8 @@ export class AvatarManager {
               this.queue.addItem(avatarRequest, 0, true);
               return;
             } else if (res.statusCode! >= 500) {
-              // If server error, try again after 10 minutes
-              this.githubTimeout = t + 600000;
+              // If server error, try again later
+              this.githubTimeout = t + RETRY_AFTER_SERVER_ERROR_MS;
               this.queue.addItem(avatarRequest, this.githubTimeout, false);
               return;
             }
@@ -200,8 +208,8 @@ export class AvatarManager {
         }
       )
       .on("error", () => {
-        // If connection error, try again after 5 minutes
-        this.githubTimeout = t + 300000;
+        // If connection error, try again later
+        this.githubTimeout = t + RETRY_AFTER_ERROR_MS;
         this.queue.addItem(avatarRequest, this.githubTimeout, false);
       });
   }
@@ -219,9 +227,9 @@ export class AvatarManager {
         {
           hostname: "gitlab.com",
           path: "/api/v4/users?search=" + avatarRequest.email,
-          headers: { "User-Agent": "beads-git-graph", "Private-Token": "w87U_3gAxWWaPtFgCcus" }, // Token only has read access
+          headers: { "User-Agent": "beads-git-graph" },
           agent: false,
-          timeout: 15000
+          timeout: HTTP_TIMEOUT_MS
         },
         (res: http.IncomingMessage) => {
           let respBody = "";
@@ -235,7 +243,7 @@ export class AvatarManager {
             }
 
             if (res.statusCode === 200) {
-              // Sucess
+              // Success
               let users = JSON.parse(respBody) as { avatar_url?: string }[];
               if (users.length > 0 && users[0].avatar_url) {
                 // Avatar url found
@@ -248,8 +256,8 @@ export class AvatarManager {
               this.queue.addItem(avatarRequest, this.gitLabTimeout, false);
               return;
             } else if (res.statusCode! >= 500) {
-              // If server error, try again after 10 minutes
-              this.gitLabTimeout = t + 600000;
+              // If server error, try again later
+              this.gitLabTimeout = t + RETRY_AFTER_SERVER_ERROR_MS;
               this.queue.addItem(avatarRequest, this.gitLabTimeout, false);
               return;
             }
@@ -258,8 +266,8 @@ export class AvatarManager {
         }
       )
       .on("error", () => {
-        // If connection error, try again after 5 minutes
-        this.gitLabTimeout = t + 300000;
+        // If connection error, try again later
+        this.gitLabTimeout = t + RETRY_AFTER_ERROR_MS;
         this.queue.addItem(avatarRequest, this.gitLabTimeout, false);
       });
   }
@@ -268,13 +276,13 @@ export class AvatarManager {
     let hash: string = crypto.createHash("md5").update(avatarRequest.email).digest("hex");
     let img = await this.downloadAvatarImage(
         avatarRequest.email,
-        "https://secure.gravatar.com/avatar/" + hash + "?s=54&d=404"
+        "https://secure.gravatar.com/avatar/" + hash + "?s=" + AVATAR_SIZE + "&d=404"
       ),
       identicon = false;
     if (img === null) {
       img = await this.downloadAvatarImage(
         avatarRequest.email,
-        "https://secure.gravatar.com/avatar/" + hash + "?s=54&d=identicon"
+        "https://secure.gravatar.com/avatar/" + hash + "?s=" + AVATAR_SIZE + "&d=identicon"
       );
       identicon = true;
     }
@@ -282,17 +290,17 @@ export class AvatarManager {
   }
 
   private async downloadAvatarImage(email: string, imageUrl: string): Promise<string | null> {
-    let hash: string = crypto.createHash("md5").update(email).digest("hex"),
-      imgUrl = url.parse(imageUrl);
+    const hash: string = crypto.createHash("md5").update(email).digest("hex");
+    const imgUrl = new URL(imageUrl);
     return new Promise((resolve) => {
       https
         .get(
           {
             hostname: imgUrl.hostname,
-            path: imgUrl.path,
+            path: imgUrl.pathname + imgUrl.search,
             headers: { "User-Agent": "beads-git-graph" },
             agent: false,
-            timeout: 15000
+            timeout: HTTP_TIMEOUT_MS
           },
           (res: http.IncomingMessage) => {
             let imageBufferArray: Buffer[] = [];

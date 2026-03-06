@@ -1,15 +1,5 @@
 /* Git Interfaces / Types */
 
-export interface GitCommitNode {
-  hash: string;
-  parentHashes: string[];
-  author: string;
-  email: string;
-  date: number;
-  message: string;
-  refs: GitRef[];
-}
-
 export interface GitCommit {
   hash: string;
   parentHashes: string[];
@@ -17,6 +7,10 @@ export interface GitCommit {
   email: string;
   date: number;
   message: string;
+}
+
+export interface GitCommitNode extends GitCommit {
+  refs: GitRef[];
 }
 
 export interface GitCommitDetails {
@@ -41,7 +35,7 @@ export interface GitRefData {
   refs: GitRef[];
 }
 
-export type GitRepoSet = { [repo: string]: GitRepoState };
+export type GitRepoSet = Record<string, GitRepoState>;
 export interface GitRepoState {
   columnWidths: number[] | null;
 }
@@ -85,7 +79,7 @@ export interface Avatar {
   timestamp: number;
   identicon: boolean;
 }
-export type AvatarCache = { [email: string]: Avatar };
+export type AvatarCache = Record<string, Avatar>;
 
 export interface CommitDetailsFileActionVisibility {
   viewDiff: boolean;

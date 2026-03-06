@@ -2,6 +2,9 @@ import * as vscode from "vscode";
 
 import { getPathFromUri } from "./utils";
 
+const UNMUTE_COOLDOWN_MS = 1500;
+const REFRESH_DEBOUNCE_MS = 750;
+
 const fileChangeRegex =
   /(^\.git\/(config|index|HEAD|refs\/stash|refs\/heads\/.*|refs\/remotes\/.*|refs\/tags\/.*)$)|(^(?!\.git).*$)|(^\.git[^/]+$)/;
 
@@ -42,7 +45,7 @@ export class RepoFileWatcher {
 
   public unmute() {
     this.muted = false;
-    this.resumeAt = new Date().getTime() + 1500;
+    this.resumeAt = new Date().getTime() + UNMUTE_COOLDOWN_MS;
   }
 
   private async refresh(uri: vscode.Uri) {
@@ -60,6 +63,6 @@ export class RepoFileWatcher {
     }
     this.refreshTimeout = setTimeout(() => {
       this.repoChangeCallback();
-    }, 750);
+    }, REFRESH_DEBOUNCE_MS);
   }
 }

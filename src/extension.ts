@@ -79,7 +79,6 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   outputChannel.appendLine("Extension activated successfully");
-  vscode.window.showInformationMessage("Beads Git Graph extension loaded");
 }
 
 export function deactivate() {}
