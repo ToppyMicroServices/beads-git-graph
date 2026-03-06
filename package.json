@@ -103,11 +103,21 @@
         }
       ]
     },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "beads-git-graph",
+          "title": "Beads Git Graph",
+          "icon": "resources/webview-icon.svg"
+        }
+      ]
+    },
     "views": {
-      "explorer": [
+      "beads-git-graph": [
         {
           "id": "beads-git-graph.beadsView",
-          "name": "Beads Graph"
+          "name": "Beads",
+          "type": "webview"
         }
       ]
     },
