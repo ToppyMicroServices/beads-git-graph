@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+	<!-- Background -->
+	<rect x="8" y="8" width="240" height="240" rx="40" fill="#1A1A2E"/>
+	<rect x="8" y="8" width="240" height="240" rx="40" stroke="#2D2D44" stroke-width="4"/>
+
+	<!-- Blue bar -->
+	<line x1="52" y1="48" x2="52" y2="208" stroke="#4C9AFF" stroke-width="24" stroke-linecap="round"/>
+	<!-- Teal bar -->
+	<line x1="104" y1="48" x2="104" y2="208" stroke="#2EC4B6" stroke-width="24" stroke-linecap="round"/>
+	<!-- Purple bar -->
+	<line x1="156" y1="48" x2="156" y2="208" stroke="#A78BFA" stroke-width="24" stroke-linecap="round"/>
+	<!-- Pink bar -->
+	<line x1="208" y1="48" x2="208" y2="208" stroke="#FF5DA2" stroke-width="24" stroke-linecap="round"/>
+
+	<!-- Beads -->
+	<circle cx="52" cy="88" r="20" fill="#4C9AFF" stroke="#1A1A2E" stroke-width="3"/>
+	<circle cx="104" cy="140" r="20" fill="#2EC4B6" stroke="#1A1A2E" stroke-width="3"/>
+	<circle cx="156" cy="112" r="20" fill="#A78BFA" stroke="#1A1A2E" stroke-width="3"/>
+	<circle cx="208" cy="172" r="20" fill="#FF5DA2" stroke="#1A1A2E" stroke-width="3"/>
+</svg>
