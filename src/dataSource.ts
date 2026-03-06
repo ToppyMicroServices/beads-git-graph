@@ -76,7 +76,7 @@ export class DataSource {
     branch: string,
     maxCommits: number,
     showRemoteBranches: boolean,
-    featOnly: boolean
+    commitTypeFilter: string
   ) {
     return new Promise<{
       commits: GitCommitNode[];
@@ -92,10 +92,10 @@ export class DataSource {
                 maxCommits + 1,
                 showRemoteBranches,
                 branchData.branches,
-                featOnly
+                commitTypeFilter
               )
             )
-          : this.getGitLog(repo, branch, maxCommits + 1, showRemoteBranches, [], featOnly);
+          : this.getGitLog(repo, branch, maxCommits + 1, showRemoteBranches, [], commitTypeFilter);
 
       Promise.all([
         gitLogPromise,
@@ -438,9 +438,10 @@ export class DataSource {
     num: number,
     showRemoteBranches: boolean,
     visibleBranches: string[] = [],
-    featOnly: boolean = false
+    commitTypeFilter: string = "all"
   ) {
-    let maxCount = featOnly ? num * 8 : num;
+    let isFiltered = commitTypeFilter !== "all" && commitTypeFilter !== "";
+    let maxCount = isFiltered ? num * 8 : num;
     let args = [
       "log",
       "--max-count=" + maxCount,
@@ -473,8 +474,15 @@ export class DataSource {
             date: parseInt(line[4]),
             message: line[5]
           };
-          if (!featOnly || this.classifyCommitSubject(commit.message) === "feat") {
+          if (!isFiltered) {
             gitCommits.push(commit);
+          } else {
+            const commitType = this.classifyCommitSubject(commit.message);
+            if (commitTypeFilter === "other") {
+              if (commitType === null) gitCommits.push(commit);
+            } else {
+              if (commitType === commitTypeFilter) gitCommits.push(commit);
+            }
           }
           if (gitCommits.length >= num) break;
         }

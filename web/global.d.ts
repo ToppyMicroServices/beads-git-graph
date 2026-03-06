@@ -121,7 +121,7 @@ declare global {
     moreCommitsAvailable: boolean;
     maxCommits: number;
     showRemoteBranches: boolean;
-    featOnly: boolean;
+    commitTypeFilter: string;
     expandedCommit: ExpandedCommit | null;
   }
 }

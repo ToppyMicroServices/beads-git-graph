@@ -446,7 +446,7 @@ svg.fileIcon {
 #repoControl,
 #branchControl,
 #showRemoteBranchesControl,
-#featOnlyControl {
+#typeFilterControl {
   white-space: nowrap;
   margin: 0 10px;
 }
@@ -454,9 +454,18 @@ svg.fileIcon {
 #branchSelect {
   margin-left: 3px;
 }
-#showRemoteBranchesCheckbox,
-#featOnlyCheckbox {
+#showRemoteBranchesCheckbox {
   width: 14px;
+  vertical-align: text-top;
+}
+#typeFilterSelect {
+  margin-left: 3px;
+  padding: 2px 4px;
+  font-size: 12px;
+  border: 1px solid rgba(128, 128, 128, 0.5);
+  background-color: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border-radius: 4px;
   vertical-align: text-top;
 }
 #beadsBtn {

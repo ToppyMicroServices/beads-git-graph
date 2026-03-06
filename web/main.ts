@@ -52,7 +52,7 @@ class GitGraphView {
   private config: Config;
   private moreCommitsAvailable: boolean = false;
   private showRemoteBranches: boolean = true;
-  private featOnly: boolean = false;
+  private commitTypeFilter: string = "all";
   private expandedCommit: ExpandedCommit | null = null;
   private maxCommits: number;
 
@@ -61,7 +61,7 @@ class GitGraphView {
   private repoDropdown: Dropdown;
   private branchDropdown: Dropdown;
   private showRemoteBranchesElem: HTMLInputElement;
-  private featOnlyElem: HTMLInputElement;
+  private typeFilterElem: HTMLSelectElement;
   private scrollShadowElem: HTMLElement;
 
   private loadBranchesCallback: ((changes: boolean, isRepo: boolean) => void) | null = null;
@@ -103,9 +103,9 @@ class GitGraphView {
       this.saveState();
       this.refresh(true);
     });
-    this.featOnlyElem = <HTMLInputElement>document.getElementById("featOnlyCheckbox")!;
-    this.featOnlyElem.addEventListener("change", () => {
-      this.featOnly = this.featOnlyElem.checked;
+    this.typeFilterElem = <HTMLSelectElement>document.getElementById("typeFilterSelect")!;
+    this.typeFilterElem.addEventListener("change", () => {
+      this.commitTypeFilter = this.typeFilterElem.value;
       this.maxCommits = this.config.initialLoadCommits;
       this.expandedCommit = null;
       this.saveState();
@@ -127,8 +127,8 @@ class GitGraphView {
       this.currentBranch = prevState.currentBranch;
       this.showRemoteBranches = prevState.showRemoteBranches;
       this.showRemoteBranchesElem.checked = this.showRemoteBranches;
-      this.featOnly = prevState.featOnly === true;
-      this.featOnlyElem.checked = this.featOnly;
+      this.commitTypeFilter = typeof prevState.commitTypeFilter === "string" ? prevState.commitTypeFilter : (prevState as any).featOnly === true ? "feat" : "all";
+      this.typeFilterElem.value = this.commitTypeFilter;
       if (typeof this.gitRepos[prevState.currentRepo] !== "undefined") {
         this.currentRepo = prevState.currentRepo;
         this.maxCommits = prevState.maxCommits;
@@ -417,7 +417,7 @@ class GitGraphView {
       branchName: this.currentBranch !== null ? this.currentBranch : "",
       maxCommits: this.maxCommits,
       showRemoteBranches: this.showRemoteBranches,
-      featOnly: this.featOnly,
+      commitTypeFilter: this.commitTypeFilter,
       hard: hard
     });
   }
@@ -460,7 +460,7 @@ class GitGraphView {
       moreCommitsAvailable: this.moreCommitsAvailable,
       maxCommits: this.maxCommits,
       showRemoteBranches: this.showRemoteBranches,
-      featOnly: this.featOnly,
+      commitTypeFilter: this.commitTypeFilter,
       expandedCommit: this.expandedCommit
     });
   }

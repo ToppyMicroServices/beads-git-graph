@@ -239,7 +239,7 @@ export interface RequestLoadCommits {
   branchName: string;
   maxCommits: number;
   showRemoteBranches: boolean;
-  featOnly: boolean;
+  commitTypeFilter: string;
   hard: boolean;
 }
 export interface ResponseLoadCommits {
