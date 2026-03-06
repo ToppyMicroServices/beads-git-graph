@@ -64,6 +64,18 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     this.webviewView = webviewView;
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.onDidReceiveMessage((message) => this.handleMessage(message));
+
+    this.disposables.push(
+      webviewView.onDidChangeVisibility(() => {
+        if (webviewView.visible) {
+          vscode.commands.executeCommand("beads-git-graph.view");
+        }
+      })
+    );
+
+    // Open the Git Graph panel immediately on first resolve
+    vscode.commands.executeCommand("beads-git-graph.view");
+
     this.refresh();
   }
 
