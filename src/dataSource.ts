@@ -1,5 +1,6 @@
 import * as cp from "node:child_process";
 
+import { classifyCommitSubject } from "./commitTypes";
 import { getConfig } from "./config";
 import {
   GitCommandStatus,
@@ -477,7 +478,7 @@ export class DataSource {
           if (!isFiltered) {
             gitCommits.push(commit);
           } else {
-            const commitType = this.classifyCommitSubject(commit.message);
+            const commitType = classifyCommitSubject(commit.message);
             if (commitTypeFilter === "other") {
               if (commitType === null) gitCommits.push(commit);
             } else {
@@ -490,77 +491,6 @@ export class DataSource {
       },
       []
     );
-  }
-
-  private normalizeCommitSubject(subject: string) {
-    let normalized = subject
-      .replace(/：/g, ":")
-      .replace(/（/g, "(")
-      .replace(/）/g, ")")
-      .trim()
-      .replace(/\s+/g, " ");
-
-    normalized = normalized.replace(/^(fixup!|squash!|WIP:)\s*/i, "");
-    normalized = normalized.replace(/^(\[[^\]]+\]|\([^\)]+\))\s*/g, "");
-    normalized = normalized.replace(/^[^A-Za-z0-9\[]+/, "").trim();
-
-    return normalized;
-  }
-
-  private classifyCommitSubject(subject: string): string | null {
-    const normalized = this.normalizeCommitSubject(subject);
-    if (normalized === "") return null;
-
-    let rawType: string | null = null;
-
-    const ccMatch = normalized.match(/^([a-zA-Z]+)(\(([^)]+)\))?(!)?:\s*(.+)$/);
-    if (ccMatch !== null) {
-      rawType = ccMatch[1];
-    } else {
-      const bracketTagMatch = normalized.match(/^\[([^\]]+)\]\s*(.+)$/);
-      if (bracketTagMatch !== null) {
-        rawType = bracketTagMatch[1];
-      } else {
-        const keywordMatch = normalized.match(/^([a-zA-Z][a-zA-Z0-9_\/-]*)\s*(?:-|:)\s*(.+)$/);
-        if (keywordMatch !== null) {
-          rawType = keywordMatch[1];
-        }
-      }
-    }
-
-    if (rawType === null) return null;
-    return this.toCanonicalCommitType(rawType);
-  }
-
-  private toCanonicalCommitType(rawType: string): string | null {
-    let type = rawType.toLowerCase().replace(/[^a-z0-9_\/-]/g, "");
-    if (type.indexOf("/") > -1) {
-      type = type.split("/")[0];
-    }
-
-    const aliases: { [canonicalType: string]: string[] } = {
-      feat: ["feat", "feature", "features", "add", "added", "new"],
-      fix: ["fix", "bugfix", "hotfix", "fixed", "bug"],
-      docs: ["docs", "doc", "documentation", "readme"],
-      chore: ["chore", "maintenance", "maint", "deps", "dep", "bump", "update"],
-      refactor: ["refactor", "refactoring", "cleanup", "tidy"],
-      perf: ["perf", "performance"],
-      test: ["test", "tests", "testing"],
-      build: ["build"],
-      ci: ["ci", "github-actions", "actions", "pipeline"],
-      style: ["style"],
-      revert: ["revert"]
-    };
-
-    const canonicalTypes = Object.keys(aliases);
-    for (let i = 0; i < canonicalTypes.length; i++) {
-      const canonicalType = canonicalTypes[i];
-      if (aliases[canonicalType].indexOf(type) > -1) {
-        return canonicalType;
-      }
-    }
-
-    return null;
   }
 
   private getHiddenBranchPatterns() {

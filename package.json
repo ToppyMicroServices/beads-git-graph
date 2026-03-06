@@ -47,7 +47,9 @@
     "format": "oxfmt --check",
     "format:fix": "oxfmt .",
     "lint": "oxlint",
-    "lint:fix": "oxlint --fix"
+    "lint:fix": "oxlint --fix",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^20.19.33",
@@ -57,7 +59,8 @@
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "oxfmt": "^0.34.0",
     "oxlint": "^1.49.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   },
   "contributes": {
     "commands": [
