@@ -136,11 +136,14 @@ body.unableToLoad p {
   vertical-align: top;
 }
 #commitDetails td {
-  background-color: rgba(128, 128, 128, 0.1);
+  background-color: var(--vscode-editor-background);
   position: relative;
   font-size: 13px;
   line-height: 18px;
   white-space: normal;
+}
+#commitDetails td:nth-child(2) {
+  border-top: 2px solid rgba(128, 128, 128, 0.35);
 }
 #commitDetails td:after {
   content: "";
@@ -150,7 +153,7 @@ body.unableToLoad p {
   right: 0;
   bottom: 0;
   height: 2px;
-  background-color: rgba(128, 128, 128, 0.2);
+  background-color: rgba(128, 128, 128, 0.35);
 }
 #commitTable tr.commit.commitDetailsOpen td {
   background-color: rgba(128, 128, 128, 0.25);

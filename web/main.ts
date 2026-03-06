@@ -1343,7 +1343,7 @@ class GitGraphView {
         commitDetails.fileChanges,
         this.expandedCommit.reviewedFilePaths
       ) +
-      "</table></div>";
+      "</div>";
     html += '<div id="commitDetailsClose">' + svgIcons.close + "</div>";
     html += "</td>";
 
