@@ -20,10 +20,14 @@
   },
   "license": "MIT",
   "author": {
-    "name": "Asis Pattisahusiwa",
-    "email": "asispts@gmail.com"
+    "name": "thinksyncs",
+    "url": "https://github.com/thinksyncs"
   },
   "contributors": [
+    {
+      "name": "Asis Pattisahusiwa",
+      "email": "asispts@gmail.com"
+    },
     {
       "name": "Michael Hutchison",
       "url": "https://github.com/mhutchie"
@@ -71,11 +75,6 @@
       },
       {
         "category": "Beads Git Graph",
-        "command": "beads-git-graph.clearAvatarCache",
-        "title": "Clear Avatar Cache"
-      },
-      {
-        "category": "Beads Git Graph",
         "command": "beads-git-graph.openDiffFile",
         "title": "Open File"
       },
@@ -107,7 +106,7 @@
       ]
     },
     "viewsContainers": {
-      "panel": [
+      "activitybar": [
         {
           "id": "beads-git-graph",
           "title": "Beads Git Graph",
@@ -216,11 +215,6 @@
           "type": "boolean",
           "default": false,
           "description": "Enable enhanced accessibility rendering, including showing file change type indicators (A, M, D, R, U) in commit details."
-        },
-        "beads-git-graph.fetchAvatars": {
-          "type": "boolean",
-          "default": false,
-          "description": "Fetch avatars of commit authors and committers. By enabling this setting, you consent to commit author and committer email addresses being sent GitHub, GitLab or Gravatar, depending on the repositories remote origin."
         },
         "beads-git-graph.graphColours": {
           "type": "array",

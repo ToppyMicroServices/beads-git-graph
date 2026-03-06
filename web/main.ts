@@ -24,24 +24,6 @@ import {
 
 const DOMPurify = createDOMPurify(window);
 
-function getSafeImageUrl(rawUrl: string) {
-  try {
-    const parsedUrl = new URL(rawUrl, window.location.href);
-    return [
-      "http:",
-      "https:",
-      "data:",
-      "blob:",
-      "vscode-resource:",
-      "vscode-webview-resource:"
-    ].includes(parsedUrl.protocol)
-      ? parsedUrl.toString()
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 class GitGraphView {
   private gitRepos: GG.GitRepoSet;
   private gitBranches: string[] = [];
@@ -49,7 +31,6 @@ class GitGraphView {
   private commits: GG.GitCommitNode[] = [];
   private commitHead: string | null = null;
   private commitLookup: { [hash: string]: number } = {};
-  private avatars: AvatarImageCollection = {};
   private currentBranch: string | null = null;
   private currentRepo!: string;
 
@@ -144,7 +125,6 @@ class GitGraphView {
         this.currentRepo = prevState.currentRepo;
         this.maxCommits = prevState.maxCommits;
         this.expandedCommit = prevState.expandedCommit;
-        this.avatars = prevState.avatars;
         this.loadBranches(prevState.gitBranches, prevState.gitBranchHead, true, true);
         this.loadCommits(
           prevState.commits,
@@ -319,23 +299,11 @@ class GitGraphView {
     this.saveState();
 
     let i: number,
-      expandedCommitVisible = false,
-      avatarsNeeded: { [email: string]: string[] } = {};
+      expandedCommitVisible = false;
     for (i = 0; i < this.commits.length; i++) {
       this.commitLookup[this.commits[i].hash] = i;
       if (this.expandedCommit !== null && this.expandedCommit.hash === this.commits[i].hash)
         expandedCommitVisible = true;
-      if (
-        this.config.fetchAvatars &&
-        typeof this.avatars[this.commits[i].email] !== "string" &&
-        this.commits[i].email !== ""
-      ) {
-        if (typeof avatarsNeeded[this.commits[i].email] === "undefined") {
-          avatarsNeeded[this.commits[i].email] = [this.commits[i].hash];
-        } else {
-          avatarsNeeded[this.commits[i].email].push(this.commits[i].hash);
-        }
-      }
     }
 
     this.graph.loadCommits(this.commits, this.commitHead, this.commitLookup);
@@ -347,32 +315,11 @@ class GitGraphView {
     this.render();
 
     this.triggerLoadCommitsCallback(true);
-    this.fetchAvatars(avatarsNeeded);
   }
   private triggerLoadCommitsCallback(changes: boolean) {
     if (this.loadCommitsCallback !== null) {
       this.loadCommitsCallback(changes);
       this.loadCommitsCallback = null;
-    }
-  }
-
-  public loadAvatar(email: string, image: string) {
-    this.avatars[email] = image;
-    this.saveState();
-    const safeImageUrl = getSafeImageUrl(image);
-    let avatarsElems = <HTMLCollectionOf<HTMLElement>>document.getElementsByClassName("avatar"),
-      escapedEmail = escapeHtml(email);
-    for (let i = 0; i < avatarsElems.length; i++) {
-      if (avatarsElems[i].dataset.email === escapedEmail) {
-        if (safeImageUrl === null) {
-          avatarsElems[i].textContent = "";
-          continue;
-        }
-        const img = document.createElement("img");
-        img.className = "avatarImg";
-        img.src = safeImageUrl;
-        avatarsElems[i].replaceChildren(img);
-      }
     }
   }
 
@@ -428,17 +375,6 @@ class GitGraphView {
       }
     });
   }
-  private fetchAvatars(avatars: { [email: string]: string[] }) {
-    let emails = Object.keys(avatars);
-    for (let i = 0; i < emails.length; i++) {
-      sendMessage({
-        command: "fetchAvatar",
-        repo: this.currentRepo!,
-        email: emails[i],
-        commits: avatars[emails[i]]
-      });
-    }
-  }
 
   /* State */
   private saveState() {
@@ -448,7 +384,6 @@ class GitGraphView {
       gitBranchHead: this.gitBranchHead,
       commits: this.commits,
       commitHead: this.commitHead,
-      avatars: this.avatars,
       currentBranch: this.currentBranch,
       currentRepo: this.currentRepo,
       moreCommitsAvailable: this.moreCommitsAvailable,
@@ -496,10 +431,6 @@ class GitGraphView {
     for (i = 0; i < this.commits.length; i++) {
       const dbSyncCommit = this.isDbSyncCommit(this.commits[i]);
       const commitType = this.getCommitType(this.commits[i].message);
-      const avatarUrl =
-        typeof this.avatars[this.commits[i].email] === "string"
-          ? getSafeImageUrl(this.avatars[this.commits[i].email])
-          : null;
       const dbSyncBadge = this.isDbSyncCommitMessage(this.commits[i].message)
         ? '<span class="syncBadge" title="DB sync generated commit">DB</span>'
         : "";
@@ -560,15 +491,6 @@ class GitGraphView {
         '</td><td title="' +
         escapeHtml(this.commits[i].author + " <" + this.commits[i].email + ">") +
         '">' +
-        (this.config.fetchAvatars
-          ? '<span class="avatar" data-email="' +
-            escapeHtml(this.commits[i].email) +
-            '">' +
-            (avatarUrl !== null
-              ? '<img class="avatarImg" src="' + escapeHtml(avatarUrl) + '">'
-              : "") +
-            "</span>"
-          : "") +
         escapeHtml(this.commits[i].author) +
         '</td><td class="commitHashCell" title="' +
         escapeHtml(this.commits[i].hash) +
@@ -1253,9 +1175,7 @@ class GitGraphView {
 
     let html = '<div id="commitDetailsSummary">';
     html +=
-      '<span class="commitDetailsSummaryTop' +
-      (typeof this.avatars[commitDetails.email] === "string" ? " withAvatar" : "") +
-      '"><span class="commitDetailsSummaryTopRow"><span class="commitDetailsSummaryKeyValues">';
+      '<span class="commitDetailsSummaryTop"><span class="commitDetailsSummaryTopRow"><span class="commitDetailsSummaryKeyValues">';
     html += "<b>Commit: </b>" + escapeHtml(commitDetails.hash) + "<br>";
     html += "<b>Parents: </b>" + commitDetails.parents.map(escapeHtml).join(", ") + "<br>";
     html +=
@@ -1268,15 +1188,6 @@ class GitGraphView {
       "</a>&gt;<br>";
     html += "<b>Date: </b>" + new Date(commitDetails.date * 1000).toString() + "<br>";
     html += "<b>Committer: </b>" + escapeHtml(commitDetails.committer) + "</span>";
-    const commitDetailsAvatarUrl =
-      typeof this.avatars[commitDetails.email] === "string"
-        ? getSafeImageUrl(this.avatars[commitDetails.email])
-        : null;
-    if (commitDetailsAvatarUrl !== null)
-      html +=
-        '<span class="commitDetailsSummaryAvatar"><img src="' +
-        escapeHtml(commitDetailsAvatarUrl) +
-        '"></span>';
     html += "</span></span><br><br>";
     html += escapeHtml(commitDetails.body).replace(/\n/g, "<br>") + "</div>";
     html +=
@@ -1507,7 +1418,6 @@ let gitGraph = new GitGraphView(
     autoCenterCommitDetailsView: viewState.autoCenterCommitDetailsView,
     commitDetailsFileActionVisibility: viewState.commitDetailsFileActionVisibility,
     enhancedAccessibility: viewState.enhancedAccessibility,
-    fetchAvatars: viewState.fetchAvatars,
     graphColours: viewState.graphColours,
     graphStyle: viewState.graphStyle,
     grid: { x: 16, y: 24, offsetX: 8, offsetY: 12, expandY: 250 },
@@ -1563,9 +1473,6 @@ window.addEventListener("message", (event) => {
       break;
     case "deleteTag":
       refreshGraphOrDisplayError(msg.status, "Unable to Delete Tag");
-      break;
-    case "fetchAvatar":
-      gitGraph.loadAvatar(msg.email, msg.image);
       break;
     case "loadBranches":
       gitGraph.loadBranches(msg.branches, msg.head, msg.hard, msg.isRepo);

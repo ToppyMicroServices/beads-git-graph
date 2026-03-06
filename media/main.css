@@ -189,8 +189,7 @@ body.unableToLoad p {
 .commitDetailsSummaryTopRow {
   display: table-row;
 }
-.commitDetailsSummaryKeyValues,
-.commitDetailsSummaryAvatar {
+.commitDetailsSummaryKeyValues {
   display: table-cell;
   vertical-align: top;
 }
@@ -198,16 +197,6 @@ body.unableToLoad p {
   max-width: 0px;
   overflow-x: hidden;
   text-overflow: ellipsis;
-}
-.commitDetailsSummaryTop.withAvatar .commitDetailsSummaryKeyValues {
-  padding-right: 10px;
-}
-.commitDetailsSummaryAvatar {
-  width: 54px;
-}
-.commitDetailsSummaryAvatar > img {
-  width: 54px;
-  border-radius: 4px;
 }
 #commitDetailsFiles {
   position: absolute;
@@ -317,15 +306,6 @@ svg.fileIcon {
 }
 .gitFileRename {
   cursor: help;
-}
-
-.commit .avatar > img {
-  display: inline-block;
-  width: 18px;
-  border-radius: 4px;
-  vertical-align: top;
-  margin-top: 3px;
-  margin-right: 4px;
 }
 
 .commitHeadDot {
@@ -480,9 +460,16 @@ svg.fileIcon {
   top: 50%;
   width: 60px;
   height: 22px;
-  line-height: 22px;
   border-radius: 11px;
   margin-top: -12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.beadsBtnIcon {
+  display: block;
+  width: 16px;
+  height: 16px;
 }
 #refreshBtn {
   position: absolute;

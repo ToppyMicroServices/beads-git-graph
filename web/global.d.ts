@@ -13,7 +13,6 @@ declare global {
     autoCenterCommitDetailsView: boolean;
     commitDetailsFileActionVisibility: GG.CommitDetailsFileActionVisibility;
     enhancedAccessibility: boolean;
-    fetchAvatars: boolean;
     graphColours: string[];
     graphStyle: "rounded" | "angular";
     grid: { x: number; y: number; offsetX: number; offsetY: number; expandY: number };
@@ -107,15 +106,12 @@ declare global {
     lockedFirst: boolean; // TRUE => The line is locked to p1, FALSE => The line is locked to p2
   }
 
-  type AvatarImageCollection = { [email: string]: string };
-
   interface WebViewState {
     gitRepos: GG.GitRepoSet;
     gitBranches: string[];
     gitBranchHead: string | null;
     commits: GG.GitCommitNode[];
     commitHead: string | null;
-    avatars: AvatarImageCollection;
     currentBranch: string | null;
     currentRepo: string;
     moreCommitsAvailable: boolean;

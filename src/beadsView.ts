@@ -1,20 +1,15 @@
 import * as vscode from "vscode";
 
+import {
+  type BeadItem,
+  beadShortDate,
+  beadStatusLabel,
+  extractBeadItems,
+  normalizeBeadPriority,
+  normalizeBeadStatus,
+  normalizeBeadType
+} from "./beadsData";
 import { escapeHtml, getNonce } from "./utils";
-
-interface BeadItem {
-  id: string;
-  title: string;
-  type: string;
-  status: string;
-  priority: string;
-  updatedAt: string;
-  commitHash: string;
-  description: string;
-  assignee: string;
-  labels: string;
-  createdAt: string;
-}
 
 interface BeadGroup {
   workspace: string;
@@ -114,7 +109,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
                 .filter((line) => line !== "")
                 .map((line) => JSON.parse(line))
             : JSON.parse(text);
-          const items = this.extractItems(parsed);
+          const items = extractBeadItems(parsed);
 
           if (items.length > 0) {
             groups.push({
@@ -137,144 +132,6 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     };
   }
 
-  private extractItems(parsed: unknown): BeadItem[] {
-    const items = this.asArray(parsed);
-    const mapped = items
-      .map((item) => this.toBeadItem(item))
-      .filter((item): item is BeadItem => item !== null);
-
-    return mapped.sort((a, b) => {
-      const aTime = Date.parse(a.updatedAt);
-      const bTime = Date.parse(b.updatedAt);
-      if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) {
-        return bTime - aTime;
-      }
-      return a.id.localeCompare(b.id);
-    });
-  }
-
-  private asArray(parsed: unknown): unknown[] {
-    if (Array.isArray(parsed)) {
-      return parsed;
-    }
-    if (typeof parsed !== "object" || parsed === null) {
-      return [];
-    }
-
-    const root = parsed as Record<string, unknown>;
-    const candidateKeys = ["beads", "issues", "items", "tasks", "data"];
-    for (const key of candidateKeys) {
-      if (Array.isArray(root[key])) {
-        return root[key] as unknown[];
-      }
-    }
-
-    return [];
-  }
-
-  private toBeadItem(item: unknown): BeadItem | null {
-    if (typeof item !== "object" || item === null) {
-      return null;
-    }
-
-    const record = item as Record<string, unknown>;
-    const id = this.pickString(record, ["id", "key", "slug", "issue", "name"]);
-    const title = this.pickString(record, ["title", "summary", "name", "description"]);
-
-    if (id === "" || title === "") {
-      return null;
-    }
-
-    return {
-      id,
-      title,
-      type: this.pickString(record, ["type", "kind", "category"], "task"),
-      status: this.pickString(record, ["status", "state"], "open"),
-      priority: this.pickString(record, ["priority", "p"], "P3"),
-      description: this.pickString(record, ["description", "body", "details", "summary"], "-"),
-      assignee: this.pickString(record, ["assignee", "owner", "assigned_to"], "-"),
-      labels: this.pickStringArray(record, ["labels", "tags"], "-"),
-      createdAt: this.pickString(record, ["created_at", "createdAt", "created"], "-"),
-      updatedAt: this.pickString(
-        record,
-        ["updated_at", "updatedAt", "updated", "modified_at"],
-        "-"
-      ),
-      commitHash: this.pickString(record, ["commitHash", "commit_hash", "commit"], "")
-    };
-  }
-
-  private pickString(record: Record<string, unknown>, keys: string[], fallback: string = "") {
-    for (const key of keys) {
-      const value = record[key];
-      if (typeof value === "string" && value.trim() !== "") {
-        return value.trim();
-      }
-      if (typeof value === "number") {
-        return String(value);
-      }
-    }
-    return fallback;
-  }
-
-  private pickStringArray(record: Record<string, unknown>, keys: string[], fallback: string = "") {
-    for (const key of keys) {
-      const value = record[key];
-      if (Array.isArray(value)) {
-        const labels = value
-          .filter((v): v is string => typeof v === "string" && v.trim() !== "")
-          .map((v) => v.trim());
-        if (labels.length > 0) return labels.join(", ");
-      }
-    }
-    return fallback;
-  }
-
-  private normalizeStatus(status: string) {
-    const value = status.toLowerCase().replace(/\s+/g, "_");
-    if (value === "open") return "open";
-    if (value === "in_progress" || value === "in-progress" || value === "progress") {
-      return "in_progress";
-    }
-    if (value === "blocked") return "blocked";
-    if (value === "closed" || value === "done" || value === "resolved") return "closed";
-    return "other";
-  }
-
-  private statusLabel(status: string) {
-    if (status === "open") return "Open";
-    if (status === "in_progress") return "In Progress";
-    if (status === "blocked") return "Blocked";
-    if (status === "closed") return "Closed";
-    return "Other";
-  }
-
-  private normalizePriority(priority: string) {
-    const value = priority.trim().toUpperCase();
-    const match = value.match(/P\s*([0-4])/i) ?? value.match(/([0-4])/);
-    return match ? `P${match[1]}` : "P3";
-  }
-
-  private normalizeType(type: string) {
-    const value = type.trim().toLowerCase();
-    if (value === "feature" || value === "feat") return "feature";
-    if (value === "bug" || value === "fix") return "bug";
-    if (value === "task" || value === "chore") return "task";
-    if (value === "epic") return "epic";
-    return "other";
-  }
-
-  private shortDate(raw: string): string {
-    const ms = Date.parse(raw);
-    if (Number.isNaN(ms)) return raw;
-    const d = new Date(ms);
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    const hh = String(d.getHours()).padStart(2, "0");
-    const min = String(d.getMinutes()).padStart(2, "0");
-    return `${mm}/${dd} ${hh}:${min}`;
-  }
-
   private getHtml(webview: vscode.Webview, result: BeadLoadResult) {
     const nonce = getNonce();
     const rows = result.groups;
@@ -288,10 +145,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         .map((group) => {
           const itemRows = group.items
             .map((item) => {
-              const normalizedStatus = this.normalizeStatus(item.status);
-              const statusLabel = this.statusLabel(normalizedStatus);
-              const normalizedPriority = this.normalizePriority(item.priority);
-              const normalizedType = this.normalizeType(item.type);
+              const normalizedStatus = normalizeBeadStatus(item.status);
+              const statusLabel = beadStatusLabel(normalizedStatus);
+              const normalizedPriority = normalizeBeadPriority(item.priority);
+              const normalizedType = normalizeBeadType(item.type);
               const updatedTs = Date.parse(item.updatedAt);
               const typeSortOrder =
                 normalizedType === "epic"
@@ -304,7 +161,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
                         ? 3
                         : 9;
               const prioritySortOrder = parseInt(normalizedPriority.substring(1), 10);
-              const shortUpdated = this.shortDate(item.updatedAt);
+              const shortUpdated = beadShortDate(item.updatedAt);
               return `<tr class="beadRow" data-status="${escapeHtml(normalizedStatus)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(item)))}" data-updated-ts="${Number.isNaN(updatedTs) ? 0 : updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div></td><td><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
             })
             .join("");

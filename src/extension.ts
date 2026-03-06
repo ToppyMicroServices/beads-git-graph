@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
 
-import { AvatarManager } from "./avatarManager";
 import { BeadsViewProvider } from "./beadsView";
 import { DataSource } from "./dataSource";
 import { decodeDiffDocUri, DiffDocProvider } from "./diffDocProvider";
@@ -13,7 +12,6 @@ export function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel("Beads Git Graph");
   const extensionState = new ExtensionState(context);
   const dataSource = new DataSource();
-  const avatarManager = new AvatarManager(dataSource, extensionState);
   const beadsViewProvider = new BeadsViewProvider();
   const statusBarItem = new StatusBarItem(context);
   const repoManager = new RepoManager(dataSource, extensionState, statusBarItem);
@@ -22,16 +20,7 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel,
     beadsViewProvider,
     vscode.commands.registerCommand("beads-git-graph.view", () => {
-      GitGraphView.createOrShow(
-        context.extensionUri,
-        dataSource,
-        extensionState,
-        avatarManager,
-        repoManager
-      );
-    }),
-    vscode.commands.registerCommand("beads-git-graph.clearAvatarCache", () => {
-      avatarManager.clearCache();
+      GitGraphView.createOrShow(context.extensionUri, dataSource, extensionState, repoManager);
     }),
     vscode.commands.registerCommand("beads-git-graph.refreshBeads", () => {
       beadsViewProvider.refresh();

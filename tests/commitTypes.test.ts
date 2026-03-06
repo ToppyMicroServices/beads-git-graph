@@ -216,6 +216,21 @@ describe("classifyCommitSubject — edge cases", () => {
     expect(classifyCommitSubject("Merge branch 'main' into dev")).toBeNull();
     expect(classifyCommitSubject("Merge pull request #42 from user/branch")).toBeNull();
   });
+
+  it("supports bracketed ticket plus alias type", () => {
+    expect(classifyCommitSubject("[ABC-123] feature(auth): add SSO")).toBe("feat");
+    expect(classifyCommitSubject("(hotfix) bugfix: patch prod issue")).toBe("fix");
+  });
+
+  it("normalizes extra punctuation before classifying", () => {
+    expect(classifyCommitSubject("*** docs: refresh install guide")).toBe("docs");
+    expect(classifyCommitSubject("--- ci/deploy: ship workflow change")).toBe("ci");
+  });
+
+  it("keeps unknown release-style subjects unclassified", () => {
+    expect(classifyCommitSubject("release: v0.2.0")).toBeNull();
+    expect(classifyCommitSubject("version bump to 1.0.0")).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

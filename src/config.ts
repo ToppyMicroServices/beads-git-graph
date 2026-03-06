@@ -50,10 +50,6 @@ class Config {
     return this.workspaceConfiguration.get("dateType", "Author Date");
   }
 
-  public fetchAvatars() {
-    return this.workspaceConfiguration.get("fetchAvatars", false);
-  }
-
   public graphColours() {
     return this.workspaceConfiguration
       .get("graphColours", ["#4C9AFF", "#2EC4B6", "#FFB703", "#A78BFA", "#FF5DA2"])

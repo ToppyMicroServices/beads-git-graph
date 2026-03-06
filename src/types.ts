@@ -50,7 +50,6 @@ export interface GitGraphViewState {
   commitDetailsFileActionVisibility: CommitDetailsFileActionVisibility;
   enhancedAccessibility: boolean;
   dateFormat: DateFormat;
-  fetchAvatars: boolean;
   graphColours: string[];
   graphStyle: GraphStyle;
   initialLoadCommits: number;
@@ -73,13 +72,6 @@ export interface GitFileChange {
   additions: number | null;
   deletions: number | null;
 }
-
-export interface Avatar {
-  image: string;
-  timestamp: number;
-  identicon: boolean;
-}
-export type AvatarCache = Record<string, Avatar>;
 
 export interface CommitDetailsFileActionVisibility {
   viewDiff: boolean;
@@ -199,18 +191,6 @@ export interface RequestDeleteTag {
 export interface ResponseDeleteTag {
   command: "deleteTag";
   status: GitCommandStatus;
-}
-
-export interface RequestFetchAvatar {
-  command: "fetchAvatar";
-  repo: string;
-  email: string;
-  commits: string[];
-}
-export interface ResponseFetchAvatar {
-  command: "fetchAvatar";
-  email: string;
-  image: string;
 }
 
 export interface RequestLoadBranches {
@@ -389,7 +369,6 @@ export type RequestMessage =
   | RequestCreateBranch
   | RequestDeleteBranch
   | RequestDeleteTag
-  | RequestFetchAvatar
   | RequestLoadBranches
   | RequestLoadCommits
   | RequestLoadRepos
@@ -417,7 +396,6 @@ export type ResponseMessage =
   | ResponseCreateBranch
   | ResponseDeleteBranch
   | ResponseDeleteTag
-  | ResponseFetchAvatar
   | ResponseLoadBranches
   | ResponseLoadCommits
   | ResponseLoadRepos

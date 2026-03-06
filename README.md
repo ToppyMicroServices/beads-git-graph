@@ -7,7 +7,15 @@
 [![](https://img.shields.io/github/license/thinksyncs/beads-git-graph)](https://github.com/thinksyncs/beads-git-graph?tab=MIT-1-ov-file)
 [![GitHub release](https://img.shields.io/github/v/release/thinksyncs/beads-git-graph)](https://github.com/thinksyncs/beads-git-graph/releases)
 
-<sub>Acknowledgement: This project builds on prior work including [Git Graph](https://github.com/mhutchie/vscode-git-graph) and [beads-git-graph](https://github.com/thinksyncs/beads-git-graph), and appreciates their maintainers' efforts, including security improvements.</sub>
+<sub>Acknowledgement: This project builds on prior work including [Git Graph](https://github.com/mhutchie/vscode-git-graph) and [neo-git-graph](https://github.com/asispts/neo-git-graph), and appreciates their maintainers' efforts, including security improvements.</sub>
+
+<sub>This fork was continued because the upstream fork was no longer being actively updated, and this project prioritizes timely maintenance, dependency review, and security-focused fixes.</sub>
+
+## Core Principles
+
+- **No Telemetry**
+- **Privacy First**
+- **Security First**
 
 ## Project Identity (Required for Marketplace)
 
@@ -15,13 +23,13 @@
 - It is **not** an upstream-following mirror of `mhutchie/vscode-git-graph`.
 - It keeps full repository history while operating under its own roadmap and release policy.
 - As noted in `beads-git-graph`, this project uses MIT-licensed historical source from Git Graph (up to the last MIT commit).
-- This repository was forked from [beads-git-graph](https://github.com/thinksyncs/beads-git-graph) and is maintained independently as Beads Git Graph.
+- This repository was forked from [neo-git-graph](https://github.com/asispts/neo-git-graph) and is maintained independently as Beads Git Graph.
 
 ## Compatibility Policy (Before Full Prefix Migration)
 
-- For now, command IDs and setting keys remain under `beads-git-graph.*` to avoid breaking existing user keybindings and settings.
+- Command IDs and setting keys use the `beads-git-graph.*` prefix and will remain stable to avoid breaking existing user keybindings and settings.
 - UI-facing naming is Beads-branded (`Beads Git Graph`) to prevent marketplace identity collision.
-- Planned full migration path: introduce `beads-git-graph.*` aliases first, then deprecate old IDs in a later minor release.
+- No additional prefix migration is currently planned.
 
 ## Provenance
 
@@ -33,6 +41,8 @@ This project is based on the last MIT commit and:
 - Keeps MIT license
 - Adds devcontainer support
 - Improves codebase, tooling, and maintainability
+- Continues active maintenance where the prior fork had slowed, with a stronger emphasis on security review and corrective updates
+- **Adds Beads integration** — `.beads/` data auto-detection, `bd list` style issue table in a dedicated panel, status bar shortcut, and Git Graph ↔ Beads view toggle. See [Beads (bd)](https://github.com/steveyegge/beads) for more on the issue tracker.
 
 ## Features
 
@@ -41,11 +51,17 @@ This project is based on the last MIT commit and:
 - **Branch actions**: Create, checkout, rename, delete, and merge
 - **Tag actions**: Create, delete, and push tags
 - **Commit actions**: Checkout, cherry-pick, revert, and reset
-- **Avatar support**: Optional avatars from GitHub, GitLab, or Gravatar
 - **Multi-repo**: Work with multiple repositories in one workspace
 - **Devcontainer ready**: Works in remote and container environments
 - **Beads Graph view**: Detects `.beads` data automatically and shows a `bd list` style table
 - **Conventional Commit assist**: Normalizes and classifies commit types (with alias handling), colors recognized types, and supports `Feat Only` filtering
+
+## Security & Privacy
+
+- No telemetry is included.
+- No avatar fetching or other external profile lookups are performed.
+- Privacy-first by default, with no telemetry and no profile-enrichment lookups.
+- Security-first maintenance, including active review and corrective updates.
 
 ## Configuration
 
@@ -56,7 +72,6 @@ All settings use the `beads-git-graph` prefix.
 | `autoCenterCommitDetailsView` | `true`                                                             | Center commit details when opened                                                          |
 | `dateFormat`                  | `"Date & Time"`                                                    | `"Date & Time"`, `"Date Only"`, or `"Relative"`                                            |
 | `dateType`                    | `"Author Date"`                                                    | `"Author Date"` or `"Commit Date"`                                                         |
-| `fetchAvatars`                | `false`                                                            | Fetch avatars (sends email to external services)                                           |
 | `graphColours`                | 5 defaults (`#4C9AFF`, `#2EC4B6`, `#FFB703`, `#A78BFA`, `#FF5DA2`) | Colors for graph lines                                                                     |
 | `graphStyle`                  | `"rounded"`                                                        | `"rounded"` or `"angular"`                                                                 |
 | `initialLoadCommits`          | `300`                                                              | Commits to load on open                                                                    |
