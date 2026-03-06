@@ -12,7 +12,7 @@ export function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel("Beads Git Graph");
   const extensionState = new ExtensionState(context);
   const dataSource = new DataSource();
-  const beadsViewProvider = new BeadsViewProvider();
+  const beadsViewProvider = new BeadsViewProvider(context.extensionUri);
   const statusBarItem = new StatusBarItem(context);
   const repoManager = new RepoManager(dataSource, extensionState, statusBarItem);
 
@@ -20,13 +20,21 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel,
     beadsViewProvider,
     vscode.commands.registerCommand("beads-git-graph.view", () => {
-      GitGraphView.createOrShow(context.extensionUri, dataSource, extensionState, repoManager);
+      const column = beadsViewProvider.closePanel();
+      GitGraphView.createOrShow(
+        context.extensionUri,
+        dataSource,
+        extensionState,
+        repoManager,
+        column
+      );
     }),
     vscode.commands.registerCommand("beads-git-graph.refreshBeads", () => {
       beadsViewProvider.refresh();
     }),
     vscode.commands.registerCommand("beads-git-graph.focusBeadsView", async () => {
-      await vscode.commands.executeCommand("beads-git-graph.beadsView.focus");
+      const column = GitGraphView.closeCurrentPanel();
+      beadsViewProvider.showPanel(column);
     }),
     vscode.commands.registerCommand("beads-git-graph.openDiffFile", async (uri?: vscode.Uri) => {
       const sourceUri =

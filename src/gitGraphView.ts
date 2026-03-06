@@ -33,21 +33,22 @@ export class GitGraphView {
     extensionUri: vscode.Uri,
     dataSource: DataSource,
     extensionState: ExtensionState,
-    repoManager: RepoManager
+    repoManager: RepoManager,
+    column?: vscode.ViewColumn
   ) {
-    const column = vscode.window.activeTextEditor
-      ? vscode.window.activeTextEditor.viewColumn
-      : undefined;
+    const targetColumn =
+      column ??
+      (vscode.window.activeTextEditor ? vscode.window.activeTextEditor.viewColumn : undefined);
 
     if (GitGraphView.currentPanel) {
-      GitGraphView.currentPanel.panel.reveal(column);
+      GitGraphView.currentPanel.panel.reveal(targetColumn);
       return;
     }
 
     const panel = vscode.window.createWebviewPanel(
       "beads-git-graph",
       "Beads Git Graph",
-      column || vscode.ViewColumn.One,
+      targetColumn || vscode.ViewColumn.One,
       {
         enableScripts: true,
         localResourceRoots: [
@@ -64,6 +65,16 @@ export class GitGraphView {
       extensionState,
       repoManager
     );
+  }
+
+  public static closeCurrentPanel() {
+    if (!GitGraphView.currentPanel) {
+      return undefined;
+    }
+
+    const { viewColumn } = GitGraphView.currentPanel.panel;
+    GitGraphView.currentPanel.dispose();
+    return viewColumn;
   }
 
   private constructor(
@@ -310,7 +321,7 @@ export class GitGraphView {
             await this.openFile(msg.repo, msg.filePath, msg.commitHash ?? null);
             break;
           case "focusBeadsView":
-            await vscode.commands.executeCommand("beads-git-graph.beadsView.focus");
+            await vscode.commands.executeCommand("beads-git-graph.focusBeadsView");
             break;
         }
         this.repoFileWatcher.unmute();

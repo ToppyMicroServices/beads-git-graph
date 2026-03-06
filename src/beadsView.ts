@@ -9,6 +9,7 @@ import {
   normalizeBeadStatus,
   normalizeBeadType
 } from "./beadsData";
+import { GitGraphView } from "./gitGraphView";
 import { escapeHtml, getNonce } from "./utils";
 
 interface BeadGroup {
@@ -25,10 +26,13 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   public static readonly viewType = "beads-git-graph.beadsView";
 
   private webviewView: vscode.WebviewView | null = null;
+  private panel: vscode.WebviewPanel | null = null;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly watchers: vscode.FileSystemWatcher[];
+  private readonly extensionUri: vscode.Uri;
 
-  constructor() {
+  constructor(extensionUri: vscode.Uri) {
+    this.extensionUri = extensionUri;
     this.watchers = [
       vscode.workspace.createFileSystemWatcher("**/.beads/*.json"),
       vscode.workspace.createFileSystemWatcher("**/.beads/*.jsonl")
@@ -60,24 +64,83 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     this.disposables.push(
       webviewView.onDidChangeVisibility(() => {
         if (webviewView.visible) {
-          vscode.commands.executeCommand("beads-git-graph.view");
+          this.showPanel();
         }
       })
     );
 
-    // Open the Git Graph panel immediately on first resolve
-    vscode.commands.executeCommand("beads-git-graph.view");
+    this.showPanel();
 
     this.refresh();
   }
 
+  public showPanel(column?: vscode.ViewColumn) {
+    const targetColumn =
+      column ??
+      (vscode.window.activeTextEditor ? vscode.window.activeTextEditor.viewColumn : undefined);
+
+    if (this.panel) {
+      this.panel.reveal(targetColumn);
+      void this.refresh();
+      return;
+    }
+
+    const graphColumn = GitGraphView.closeCurrentPanel();
+    this.panel = vscode.window.createWebviewPanel(
+      "beads-git-graph.beadsPanel",
+      "Beads",
+      targetColumn ?? graphColumn ?? vscode.ViewColumn.One,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true
+      }
+    );
+
+    this.panel.iconPath = {
+      light: vscode.Uri.joinPath(this.extensionUri, "resources", "webview-icon-light.svg"),
+      dark: vscode.Uri.joinPath(this.extensionUri, "resources", "webview-icon-dark.svg")
+    };
+    this.panel.webview.onDidReceiveMessage(
+      (message) => this.handleMessage(message),
+      null,
+      this.disposables
+    );
+    this.disposables.push(
+      this.panel.onDidDispose(() => {
+        this.panel = null;
+      }),
+      this.panel.onDidChangeViewState(() => {
+        if (this.panel?.visible) {
+          void this.refresh();
+        }
+      })
+    );
+    void this.refresh();
+  }
+
+  public closePanel() {
+    if (!this.panel) {
+      return undefined;
+    }
+
+    const { viewColumn } = this.panel;
+    this.panel.dispose();
+    this.panel = null;
+    return viewColumn;
+  }
+
   public async refresh() {
-    if (this.webviewView === null) {
+    if (this.webviewView === null && this.panel === null) {
       return;
     }
 
     const results = await this.loadBeads();
-    this.webviewView.webview.html = this.getHtml(this.webviewView.webview, results);
+    if (this.webviewView !== null) {
+      this.webviewView.webview.html = this.getHtml(this.webviewView.webview, results);
+    }
+    if (this.panel !== null) {
+      this.panel.webview.html = this.getHtml(this.panel.webview, results);
+    }
   }
 
   private async loadBeads(): Promise<BeadLoadResult> {
@@ -246,6 +309,7 @@ code{font-family:var(--vscode-editor-font-family);}
 </head>
 <body>
 <div class="toolbar">
+  <button id="openGitGraph" type="button">Git Graph</button>
   <select id="preset" class="preset">
     <option value="default" selected>Default</option>
     <option value="all">All</option>
@@ -420,6 +484,9 @@ document.addEventListener('click', (event) => {
 document.getElementById('refresh').addEventListener('click', () => {
   vscode.postMessage({ command: 'refresh' });
 });
+document.getElementById('openGitGraph').addEventListener('click', () => {
+  vscode.postMessage({ command: 'openGitGraph' });
+});
 for (const button of Array.from(document.querySelectorAll('.sortToggle'))) {
   button.addEventListener('click', () => {
     const key = button.dataset.sortKey || 'updated';
@@ -476,6 +543,11 @@ applyFilters();
   public async handleMessage(message: { command?: string; uri?: string; commitHash?: string }) {
     if (message.command === "refresh") {
       await this.refresh();
+      return;
+    }
+
+    if (message.command === "openGitGraph") {
+      await vscode.commands.executeCommand("beads-git-graph.view");
       return;
     }
 
