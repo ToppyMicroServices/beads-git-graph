@@ -210,6 +210,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
             .map((item) => {
               const normalizedStatus = normalizeBeadStatus(item.status);
               const statusLabel = beadStatusLabel(normalizedStatus);
+              const progressLabel =
+                normalizedStatus === "in_progress" && item.progress !== null
+                  ? `${item.progress}%`
+                  : "";
               const normalizedPriority = normalizeBeadPriority(item.priority);
               const normalizedType = normalizeBeadType(item.type);
               const updatedTs = Date.parse(item.updatedAt);
@@ -225,7 +229,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
                         : 9;
               const prioritySortOrder = parseInt(normalizedPriority.substring(1), 10);
               const shortUpdated = beadShortDate(item.updatedAt);
-              return `<tr class="beadRow" data-status="${escapeHtml(normalizedStatus)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(item)))}" data-updated-ts="${Number.isNaN(updatedTs) ? 0 : updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div></td><td><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
+              return `<tr class="beadRow" data-status="${escapeHtml(normalizedStatus)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(item)))}" data-updated-ts="${Number.isNaN(updatedTs) ? 0 : updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
             })
             .join("");
 
@@ -276,7 +280,9 @@ th:nth-child(1){width:56px;}th:nth-child(3){width:72px;}th:nth-child(4){width:38
 .beadRow.selected{background:rgba(128,128,128,.18);}
 .beadId{font-size:10px;color:var(--vscode-descriptionForeground);margin-bottom:1px;}
 .beadTitle{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.statusCell{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .typeBadge,.statusBadge,.priorityBadge{display:inline-flex;align-items:center;justify-content:center;padding:1px 5px;border-radius:999px;font-size:10px;font-weight:600;white-space:nowrap;}
+.progressText{font-size:10px;font-weight:700;color:var(--vscode-textLink-foreground);white-space:nowrap;}
 .type-feature{background:#16a34a;color:#fff;}
 .type-bug{background:#dc2626;color:#fff;}
 .type-task{background:#eab308;color:#1f2937;}
@@ -409,11 +415,15 @@ function renderDetails(item) {
   const commit = item.commitHash && item.commitHash !== ''
     ? '<button class="commitLink" data-commit="' + esc(item.commitHash) + '">' + esc(item.commitHash.substring(0, 8)) + '</button>'
     : '-';
+  const progress = item.status === 'in_progress' && item.progress !== null
+    ? String(item.progress) + '%'
+    : '-';
   details.innerHTML =
     '<h3>' + esc(item.id) + ' — ' + esc(item.title) + '</h3>' +
     '<div class="detailsGrid">' +
       '<div class="key">Type</div><div>' + esc(item.type || '-') + '</div>' +
       '<div class="key">Status</div><div>' + esc(item.status || '-') + '</div>' +
+      '<div class="key">Progress</div><div>' + esc(progress) + '</div>' +
       '<div class="key">Priority</div><div>' + esc(item.priority || '-') + '</div>' +
       '<div class="key">Assignee</div><div>' + esc(item.assignee || '-') + '</div>' +
       '<div class="key">Labels</div><div>' + esc(item.labels || '-') + '</div>' +
@@ -421,6 +431,7 @@ function renderDetails(item) {
       '<div class="key">Updated</div><div>' + esc(item.updatedAt || '-') + '</div>' +
       '<div class="key">Commit</div><div>' + commit + '</div>' +
     '</div>' +
+    '<div class="detailsDescription"><strong>Notes</strong><br>' + esc(item.notes || '-') + '</div>' +
     '<div class="detailsDescription"><strong>Description</strong><br>' + esc(item.description || '-') + '</div>';
 
   for (const button of Array.from(details.getElementsByClassName('commitLink'))) {

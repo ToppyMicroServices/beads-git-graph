@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  beadPickProgress,
   beadsAsArray,
   beadShortDate,
   beadStatusLabel,
@@ -38,8 +39,10 @@ describe("toBeadItem", () => {
         title: "Implement toggle",
         type: "feat",
         status: "in_progress",
+        progress: 35,
         priority: "P1",
         description: "Details",
+        notes: "進捗: 35%",
         assignee: "akira",
         labels: ["ux", "beads"],
         createdAt: "2026-03-07T00:00:00Z",
@@ -51,8 +54,10 @@ describe("toBeadItem", () => {
       title: "Implement toggle",
       type: "feat",
       status: "in_progress",
+      progress: 35,
       priority: "P1",
       description: "Details",
+      notes: "進捗: 35%",
       assignee: "akira",
       labels: "ux, beads",
       createdAt: "2026-03-07T00:00:00Z",
@@ -70,6 +75,7 @@ describe("toBeadItem", () => {
         state: "blocked",
         p: 2,
         body: "Broken JSONL handling",
+        notes: "progress: 80%",
         owner: "copilot",
         tags: ["parser"],
         created_at: "2026-03-06T10:00:00Z",
@@ -81,7 +87,9 @@ describe("toBeadItem", () => {
       title: "Fix parser",
       type: "bug",
       status: "blocked",
+      progress: 80,
       priority: "2",
+      notes: "progress: 80%",
       labels: "parser",
       commitHash: "1234567890abcdef"
     });
@@ -116,6 +124,14 @@ describe("extractBeadItems", () => {
 });
 
 describe("bead normalization helpers", () => {
+  it("extracts progress percentages from direct fields or notes", () => {
+    expect(beadPickProgress({ progress: 42 })).toBe(42);
+    expect(beadPickProgress({ progress: "65%" })).toBe(65);
+    expect(beadPickProgress({ notes: "進捗: 80%" })).toBe(80);
+    expect(beadPickProgress({ description: "progress: 15%" })).toBe(15);
+    expect(beadPickProgress({ notes: "not started" })).toBeNull();
+  });
+
   it("normalizes statuses and labels", () => {
     expect(normalizeBeadStatus("in progress")).toBe("in_progress");
     expect(normalizeBeadStatus("resolved")).toBe("closed");

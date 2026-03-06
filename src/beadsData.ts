@@ -3,10 +3,12 @@ export interface BeadItem {
   title: string;
   type: string;
   status: string;
+  progress: number | null;
   priority: string;
   updatedAt: string;
   commitHash: string;
   description: string;
+  notes: string;
   assignee: string;
   labels: string;
   createdAt: string;
@@ -65,6 +67,39 @@ export function beadPickStringArray(
   return fallback;
 }
 
+export function beadPickProgress(record: Record<string, unknown>): number | null {
+  const directKeys = ["progress", "progressPercent", "progress_percentage", "percentComplete"];
+  for (const key of directKeys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      if (value >= 0 && value <= 100) {
+        return Math.round(value);
+      }
+    }
+    if (typeof value === "string") {
+      const match = value.match(/(100|[1-9]?\d)\s*%/);
+      if (match) {
+        return Number.parseInt(match[1], 10);
+      }
+    }
+  }
+
+  const textKeys = ["notes", "description", "body", "details", "summary"];
+  for (const key of textKeys) {
+    const value = record[key];
+    if (typeof value !== "string") {
+      continue;
+    }
+
+    const match = value.match(/(?:進捗|progress)\s*[:：]?\s*(100|[1-9]?\d)\s*%/i);
+    if (match) {
+      return Number.parseInt(match[1], 10);
+    }
+  }
+
+  return null;
+}
+
 export function toBeadItem(item: unknown): BeadItem | null {
   if (typeof item !== "object" || item === null) {
     return null;
@@ -81,10 +116,12 @@ export function toBeadItem(item: unknown): BeadItem | null {
   return {
     id,
     title,
-    type: beadPickString(record, ["type", "kind", "category"], "task"),
+    type: beadPickString(record, ["type", "kind", "category", "issue_type"], "task"),
     status: beadPickString(record, ["status", "state"], "open"),
+    progress: beadPickProgress(record),
     priority: beadPickString(record, ["priority", "p"], "P3"),
     description: beadPickString(record, ["description", "body", "details", "summary"], "-"),
+    notes: beadPickString(record, ["notes"], "-"),
     assignee: beadPickString(record, ["assignee", "owner", "assigned_to"], "-"),
     labels: beadPickStringArray(record, ["labels", "tags"], "-"),
     createdAt: beadPickString(record, ["created_at", "createdAt", "created"], "-"),
