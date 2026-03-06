@@ -466,10 +466,11 @@ svg.fileIcon {
   align-items: center;
   justify-content: center;
 }
-.beadsBtnIcon {
+.toolbarActionIcon {
   display: block;
   width: 16px;
   height: 16px;
+  color: var(--vscode-button-foreground);
 }
 #refreshBtn {
   position: absolute;
@@ -477,9 +478,11 @@ svg.fileIcon {
   top: 50%;
   width: 80px;
   height: 22px;
-  line-height: 22px;
   border-radius: 11px;
   margin-top: -12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 #loadMoreCommitsBtn {
   width: 180px;

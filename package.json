@@ -110,7 +110,7 @@
         {
           "id": "beads-git-graph",
           "title": "Beads Git Graph",
-          "icon": "resources/webview-icon-light.svg"
+          "icon": "resources/activitybar-icon.svg"
         }
       ]
     },

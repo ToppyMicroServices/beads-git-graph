@@ -9,6 +9,7 @@
 !media/
 
 !resources/icon.png
+!resources/activitybar-icon.svg
 !resources/webview-icon.svg
 !resources/webview-icon-dark.svg
 !resources/webview-icon-light.svg

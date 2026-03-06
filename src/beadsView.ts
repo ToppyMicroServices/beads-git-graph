@@ -251,7 +251,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:4px;background:var(--vscode-editor-background);}
-.toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;}
+.toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px;margin-bottom:6px;}
+.toolbarMain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;}
+.toolbarActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:0 0 auto;}
 .preset{height:24px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));border-radius:6px;padding:0 6px;font-size:11px;}
 .chips{display:flex;gap:6px;flex-wrap:wrap;}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;font-size:11px;border:1px solid var(--vscode-panel-border);background:rgba(128,128,128,.12);}
@@ -267,7 +269,13 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);paddin
 .menuPopup button:hover{background:var(--vscode-menu-selectionBackground);color:var(--vscode-menu-selectionForeground);}
 button{border:1px solid var(--vscode-button-border,transparent);background:var(--vscode-button-background);color:var(--vscode-button-foreground);padding:4px 8px;cursor:pointer;border-radius:6px;font-size:11px;}
 button:hover{background:var(--vscode-button-hoverBackground);}
-#refresh{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;font-size:14px;line-height:1;}
+.actionBtn{display:inline-flex;align-items:center;justify-content:center;height:24px;padding:0;border-radius:11px;background:rgba(128,128,128,.1);border:1px solid rgba(128,128,128,.5);}
+.actionBtn:hover{background:rgba(128,128,128,.2);}
+#openGitGraph{width:60px;}
+#refresh{width:80px;font-size:14px;line-height:1;}
+.toolbarIcon{display:block;color:var(--vscode-button-foreground);}
+.toolbarIcon.switchIcon{width:18px;height:18px;}
+.toolbarIcon.refreshIcon{width:18px;height:18px;}
 .meta{display:grid;grid-template-columns:1fr;font-size:11px;opacity:.9;margin:6px 0 4px;gap:6px;align-items:center;}
 table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
 th,td{text-align:left;border-bottom:1px solid var(--vscode-panel-border);padding:4px 4px;vertical-align:middle;}
@@ -315,18 +323,33 @@ code{font-family:var(--vscode-editor-font-family);}
 </head>
 <body>
 <div class="toolbar">
-  <button id="openGitGraph" type="button">Git Graph</button>
-  <select id="preset" class="preset">
-    <option value="default" selected>Default</option>
-    <option value="all">All</option>
-  </select>
-  <div id="chips" class="chips"></div>
-  <div class="menu">
-    <button id="addFilter" type="button">+ Filter</button>
-    <div id="filterMenu" class="menuPopup"></div>
+  <div class="toolbarMain">
+    <select id="preset" class="preset">
+      <option value="default" selected>Default</option>
+      <option value="all">All</option>
+    </select>
+    <div id="chips" class="chips"></div>
+    <div class="menu">
+      <button id="addFilter" type="button">+ Filter</button>
+      <div id="filterMenu" class="menuPopup"></div>
+    </div>
+    <button id="clearFilters" type="button">Clear</button>
   </div>
-  <button id="clearFilters" type="button">Clear</button>
-  <button id="refresh">↻</button>
+  <div class="toolbarActions">
+    <button id="openGitGraph" class="actionBtn" type="button" title="Git Graph" aria-label="Git Graph">
+      <svg class="toolbarIcon switchIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M7 7.5v9M8 8h3.5l3.2 3.2M8 16h3.5l4.5-4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="7" cy="7.5" r="2.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <circle cx="7" cy="16.5" r="2.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <circle cx="18" cy="12" r="2.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+      </svg>
+    </button>
+    <button id="refresh" class="actionBtn" type="button" title="Refresh" aria-label="Refresh">
+      <svg class="toolbarIcon refreshIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path fill="currentColor" d="M12 5a7 7 0 1 0 6.65 9.5a1 1 0 1 0-1.9-.63A5 5 0 1 1 12 7h1.59l-1.3 1.29a1 1 0 1 0 1.42 1.42l3-3a1 1 0 0 0 0-1.42l-3-3a1 1 0 1 0-1.42 1.42L13.59 5H12Z"/>
+      </svg>
+    </button>
+  </div>
 </div>
 <div class="stats" id="stats"></div>
 <div id="details" class="details empty">Click a bead row to view details (show-like info).</div>

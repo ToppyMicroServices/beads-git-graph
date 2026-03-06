@@ -390,18 +390,16 @@ export class GitGraphView {
 				<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" value="1" checked>Show Remote</label>
         <span id="typeFilterControl"><span class="unselectable">Type: </span><select id="typeFilterSelect"><option value="all">All</option><option value="feat">feat</option><option value="fix">fix</option><option value="docs">docs</option><option value="chore">chore</option><option value="refactor">refactor</option><option value="perf">perf</option><option value="test">test</option><option value="build">build</option><option value="ci">ci</option><option value="style">style</option><option value="revert">revert</option><option value="other">other</option></select></span>
         <div id="beadsBtn" class="roundedBtn iconBtn" title="Beads" aria-label="Beads">
-          <svg class="beadsBtnIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path style="fill:#757575" d="m 2.75,15.808 c 0,0 0.5,0.2 1.25,0.2 0.75,0 1.25,-0.2 1.25,-0.2 l 0,8.192 -2.5,0 z"/>
-            <path style="fill:#656565" d="m 10.75,6.7964375 c 0,0 0.5,0.2 1.25,0.203125 0.750257,-8.355e-4 1.25,-0.203125 1.25,-0.203125 L 13.25,14.47 10.75,14 z"/>
-            <path style="fill:#656565" d="m 10.75,18.52 2.5,0.46 0,5.02 -2.5,0 z"/>
-            <path style="fill:#a5a5a5" d="m 2.75,0 2.5,0 0,8.2 C 5.25,8.2 4.75,8 3.9779029,8 3.25,8.015175 2.75,8.203 2.75,8.2 z"/>
-            <path style="fill:#858585" d="M 5.140625,15.835938 C 5.23502,15.905738 5.143195,15.875148 6,16.25 c 1.7136032,0.749701 3.78125,1.09375 5.78125,1.46875 2,0.375 3.545654,0.571029 4.832051,1.133828 0.560272,-0.839749 1.263386,-1.390304 2.244583,-1.678078 C 18.667708,17.046412 18.856802,17.124851 18,16.75 c -1.713603,-0.749701 -3.78125,-1.09375 -5.78125,-1.46875 -2,-0.375 -3.5228672,-0.621464 -4.809264,-1.184263 -0.406834,0.63185 -1.0739799,1.382044 -2.268861,1.738951 z"/>
-            <circle style="fill:#757575" cx="4" cy="12" r="3"/>
-            <circle style="fill:#656565" cx="12" cy="3" r="3"/>
-            <circle style="fill:#858585" cx="20" cy="21" r="3"/>
+          <svg class="toolbarActionIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M7 5.5v13M7 6h4M7 12h6M7 18h10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M11 6h6M13 12h4M19 18h0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
           </svg>
         </div>
-				<div id="refreshBtn" class="roundedBtn iconBtn" title="Refresh">&#x21bb;</div>
+				<div id="refreshBtn" class="roundedBtn iconBtn" title="Refresh" aria-label="Refresh">
+					<svg class="toolbarActionIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+						<path fill="currentColor" d="M12 5a7 7 0 1 0 6.65 9.5a1 1 0 1 0-1.9-.63A5 5 0 1 1 12 7h1.59l-1.3 1.29a1 1 0 1 0 1.42 1.42l3-3a1 1 0 0 0 0-1.42l-3-3a1 1 0 1 0-1.42 1.42L13.59 5H12Z"/>
+					</svg>
+				</div>
 			</div>
 			<div id="content">
 				<div id="commitGraph"></div>
