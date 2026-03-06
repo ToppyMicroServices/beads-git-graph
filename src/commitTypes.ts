@@ -35,8 +35,8 @@ export function normalizeCommitSubject(subject: string): string {
     .replace(/\s+/g, " ");
 
   normalized = normalized.replace(/^(fixup!|squash!|WIP:)\s*/i, "");
-  normalized = normalized.replace(/^(\[[^\]]+\]|\([^\)]+\))\s*/g, "");
-  normalized = normalized.replace(/^[^A-Za-z0-9\[]+/, "").trim();
+  normalized = normalized.replace(/^(\[[^\]]+\]|\([^)]+\))\s*/g, "");
+  normalized = normalized.replace(/^[^A-Za-z0-9[]+/, "").trim();
 
   return normalized;
 }
@@ -46,7 +46,7 @@ export function normalizeCommitSubject(subject: string): string {
  * Returns null if no known alias matches.
  */
 export function toCanonicalCommitType(rawType: string): string | null {
-  let type = rawType.toLowerCase().replace(/[^a-z0-9_\/-]/g, "");
+  let type = rawType.toLowerCase().replace(/[^a-z0-9_/-]/g, "");
   if (type.indexOf("/") > -1) {
     type = type.split("/")[0];
   }
@@ -97,9 +97,7 @@ export function classifyCommitSubject(subject: string): string | null {
     rawType = ccMatch[1];
   } else {
     // Keyword style: type - description  or  type: description
-    const keywordMatch = normalized.match(
-      /^([a-zA-Z][a-zA-Z0-9_\/-]*)\s*(?:-|:)\s*(.+)$/
-    );
+    const keywordMatch = normalized.match(/^([a-zA-Z][a-zA-Z0-9_/-]*)\s*(?:-|:)\s*(.+)$/);
     if (keywordMatch !== null) {
       rawType = keywordMatch[1];
     }

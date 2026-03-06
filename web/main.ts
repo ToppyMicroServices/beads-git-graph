@@ -118,7 +118,7 @@ class GitGraphView {
     });
     this.scrollShadowElem = <HTMLInputElement>document.getElementById("scrollShadow")!;
     document.getElementById("beadsBtn")!.addEventListener("click", () => {
-      sendMessage({ command: "focusBeadsView" } as any);
+      sendMessage({ command: "focusBeadsView" });
     });
     document.getElementById("refreshBtn")!.addEventListener("click", () => {
       this.refresh(true);
@@ -132,7 +132,13 @@ class GitGraphView {
       this.currentBranch = prevState.currentBranch;
       this.showRemoteBranches = prevState.showRemoteBranches;
       this.showRemoteBranchesElem.checked = this.showRemoteBranches;
-      this.commitTypeFilter = typeof prevState.commitTypeFilter === "string" ? prevState.commitTypeFilter : (prevState as any).featOnly === true ? "feat" : "all";
+      const legacyState = prevState as WebViewState & { featOnly?: boolean };
+      this.commitTypeFilter =
+        typeof prevState.commitTypeFilter === "string"
+          ? prevState.commitTypeFilter
+          : legacyState.featOnly === true
+            ? "feat"
+            : "all";
       this.typeFilterElem.value = this.commitTypeFilter;
       if (typeof this.gitRepos[prevState.currentRepo] !== "undefined") {
         this.currentRepo = prevState.currentRepo;
@@ -532,8 +538,7 @@ class GitGraphView {
       html +=
         "<tr " +
         (this.commits[i].hash !== "*"
-          ?
-            'class="commit' +
+          ? 'class="commit' +
             (dbSyncCommit ? " dbSyncCommit" : "") +
             '" data-hash="' +
             this.commits[i].hash +
@@ -565,7 +570,9 @@ class GitGraphView {
             "</span>"
           : "") +
         escapeHtml(this.commits[i].author) +
-        '</td><td title="' +
+        '</td><td class="commitHashCell" title="' +
+        escapeHtml(this.commits[i].hash) +
+        '" data-hash="' +
         escapeHtml(this.commits[i].hash) +
         '">' +
         abbrevCommit(this.commits[i].hash) +
@@ -871,6 +878,12 @@ class GitGraphView {
       } else {
         this.loadCommitDetails(sourceElem);
       }
+    });
+    addListenerToClass("commitHashCell", "dblclick", (e: Event) => {
+      e.stopPropagation();
+      const td = <HTMLElement>(<Element>e.target).closest(".commitHashCell")!;
+      const hash = td.dataset.hash!;
+      sendMessage({ command: "copyToClipboard", type: "Commit Hash", data: hash });
     });
     addListenerToClass("gitRef", "contextmenu", (e: Event) => {
       e.stopPropagation();

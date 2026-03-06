@@ -9,11 +9,11 @@ import { GitGraphView } from "./gitGraphView";
 import { AvatarCache } from "./types";
 
 /** Time constants */
-const AVATAR_REFRESH_MS = 1209600000;      // 14 days
+const AVATAR_REFRESH_MS = 1209600000; // 14 days
 const AVATAR_IDENTICON_REFRESH_MS = 345600000; // 4 days
-const FETCH_INTERVAL_MS = 10000;           // 10 seconds
-const HTTP_TIMEOUT_MS = 15000;             // 15 seconds
-const RETRY_AFTER_ERROR_MS = 300000;       // 5 minutes
+const FETCH_INTERVAL_MS = 10000; // 10 seconds
+const HTTP_TIMEOUT_MS = 15000; // 15 seconds
+const RETRY_AFTER_ERROR_MS = 300000; // 5 minutes
 const RETRY_AFTER_SERVER_ERROR_MS = 600000; // 10 minutes
 const AVATAR_SIZE = 54;
 
@@ -51,7 +51,8 @@ export class AvatarManager {
       let t = new Date().getTime();
       if (
         this.avatars[email].timestamp < t - AVATAR_REFRESH_MS ||
-        (this.avatars[email].identicon && this.avatars[email].timestamp < t - AVATAR_IDENTICON_REFRESH_MS)
+        (this.avatars[email].identicon &&
+          this.avatars[email].timestamp < t - AVATAR_IDENTICON_REFRESH_MS)
       ) {
         // Refresh avatar after 14 days, or if an avatar couldn't previously be found after 4 days
         this.queue.add(email, repo, commits, false);

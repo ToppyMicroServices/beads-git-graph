@@ -2,16 +2,20 @@ import { isDbSyncCommit } from "./utils";
 
 /* Shared muted graph style accessors */
 function getMutedOpacity(): number {
-  return (window as unknown as { viewState?: GG.GitGraphViewState }).viewState
-    ?.mutedGraphOpacity ?? 0.55;
+  return (
+    (window as unknown as { viewState?: GG.GitGraphViewState }).viewState?.mutedGraphOpacity ?? 0.55
+  );
 }
 function getMutedLineWidth(): number {
-  return (window as unknown as { viewState?: GG.GitGraphViewState }).viewState
-    ?.mutedGraphLineWidth ?? 1.4;
+  return (
+    (window as unknown as { viewState?: GG.GitGraphViewState }).viewState?.mutedGraphLineWidth ??
+    1.4
+  );
 }
 function getMutedNodeRadius(): number {
   return clamp(
-    (window as unknown as { viewState?: GG.GitGraphViewState }).viewState?.mutedGraphNodeRadius ?? 3,
+    (window as unknown as { viewState?: GG.GitGraphViewState }).viewState?.mutedGraphNodeRadius ??
+      3,
     2,
     4
   );

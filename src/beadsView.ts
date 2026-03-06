@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+
 import { escapeHtml, getNonce } from "./utils";
 
 interface BeadItem {
@@ -40,9 +41,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       vscode.workspace.createFileSystemWatcher("**/.beads/*.jsonl")
     ];
 
-    this.disposables.push(
-      vscode.workspace.onDidChangeWorkspaceFolders(() => this.refresh())
-    );
+    this.disposables.push(vscode.workspace.onDidChangeWorkspaceFolders(() => this.refresh()));
 
     for (const watcher of this.watchers) {
       this.disposables.push(
@@ -103,6 +102,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       const uniqueFiles = new Map(files.map((file) => [file.toString(), file]));
 
       for (const fileUri of uniqueFiles.values()) {
+        const basename = fileUri.path.split("/").pop() ?? "";
+        if (basename.startsWith("sync_base") || basename.startsWith(".")) {
+          continue;
+        }
         try {
           const raw = await vscode.workspace.fs.readFile(fileUri);
           const text = Buffer.from(raw).toString("utf8");
@@ -265,6 +268,17 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     return "other";
   }
 
+  private shortDate(raw: string): string {
+    const ms = Date.parse(raw);
+    if (Number.isNaN(ms)) return raw;
+    const d = new Date(ms);
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
+    return `${mm}/${dd} ${hh}:${min}`;
+  }
+
   private getHtml(webview: vscode.Webview, result: BeadLoadResult) {
     const nonce = getNonce();
     const rows = result.groups;
@@ -294,11 +308,12 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
                         ? 3
                         : 9;
               const prioritySortOrder = parseInt(normalizedPriority.substring(1), 10);
-              return `<tr class="beadRow" data-status="${escapeHtml(normalizedStatus)}" data-text="${escapeHtml((item.id + " " + item.title + " " + item.type + " " + item.status + " " + item.priority).toLowerCase())}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(item)))}" data-updated-ts="${Number.isNaN(updatedTs) ? 0 : updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div></td><td><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td>${escapeHtml(item.updatedAt)}</td></tr>`;
+              const shortUpdated = this.shortDate(item.updatedAt);
+              return `<tr class="beadRow" data-status="${escapeHtml(normalizedStatus)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(item)))}" data-updated-ts="${Number.isNaN(updatedTs) ? 0 : updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div></td><td><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
             })
             .join("");
 
-          return `<section><div class="meta"><strong>${escapeHtml(group.workspace)}</strong><span>${escapeHtml(group.source)}</span><button class="openSource" data-uri="${encodeURIComponent(group.sourceUri.toString())}">Open JSON</button></div><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></section>`;
+          return `<section><div class="meta"><strong>${escapeHtml(group.workspace)}</strong><span>${escapeHtml(group.source)}</span></div><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></section>`;
         })
         .join("");
     }
@@ -315,10 +330,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:8px;background:var(--vscode-editor-background);}
-.toolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
-.toolbarLeft,.toolbarRight{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
-.preset{height:26px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));border-radius:6px;padding:0 8px;font-size:12px;}
+body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:4px;background:var(--vscode-editor-background);}
+.toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;}
+.preset{height:24px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));border-radius:6px;padding:0 6px;font-size:11px;}
 .chips{display:flex;gap:6px;flex-wrap:wrap;}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;font-size:11px;border:1px solid var(--vscode-panel-border);background:rgba(128,128,128,.12);}
 .chip .remove{background:transparent;border:none;color:inherit;cursor:pointer;line-height:1;padding:0;font-size:12px;opacity:.8;}
@@ -331,22 +345,21 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);paddin
 .menuPopup.open{display:block;}
 .menuPopup button{display:block;width:100%;margin:2px 0;text-align:left;background:transparent;color:var(--vscode-menu-foreground);border:1px solid transparent;padding:4px 6px;border-radius:4px;}
 .menuPopup button:hover{background:var(--vscode-menu-selectionBackground);color:var(--vscode-menu-selectionForeground);}
-.search{min-width:180px;max-width:280px;width:100%;padding:5px 8px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border,transparent);border-radius:6px;}
-button{border:1px solid var(--vscode-button-border,transparent);background:var(--vscode-button-background);color:var(--vscode-button-foreground);padding:4px 10px;cursor:pointer;border-radius:6px;font-size:12px;}
+button{border:1px solid var(--vscode-button-border,transparent);background:var(--vscode-button-background);color:var(--vscode-button-foreground);padding:4px 8px;cursor:pointer;border-radius:6px;font-size:11px;}
 button:hover{background:var(--vscode-button-hoverBackground);}
-.meta{display:grid;grid-template-columns:1fr auto auto;font-size:12px;opacity:.9;margin:10px 0 6px;gap:8px;align-items:center;}
+.meta{display:grid;grid-template-columns:1fr auto;font-size:11px;opacity:.9;margin:6px 0 4px;gap:6px;align-items:center;}
 table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
-th,td{text-align:left;border-bottom:1px solid var(--vscode-panel-border);padding:8px 6px;vertical-align:middle;}
-th{font-size:12px;font-weight:600;opacity:.9;}
-th:nth-child(1){width:90px;}th:nth-child(3){width:110px;}th:nth-child(4){width:80px;}th:nth-child(5){width:100px;}
+th,td{text-align:left;border-bottom:1px solid var(--vscode-panel-border);padding:4px 4px;vertical-align:middle;}
+th{font-size:11px;font-weight:600;opacity:.9;}
+th:nth-child(1){width:56px;}th:nth-child(3){width:72px;}th:nth-child(4){width:38px;}th:nth-child(5){width:72px;}
 .sortToggle{display:inline-flex;align-items:center;gap:4px;background:transparent;border:none;color:inherit;padding:0;cursor:pointer;font:inherit;}
 .sortToggle:hover{text-decoration:underline;}
 .beadRow{cursor:pointer;}
 .beadRow:hover{background:rgba(128,128,128,.08);}
 .beadRow.selected{background:rgba(128,128,128,.18);}
-.beadId{font-size:11px;color:var(--vscode-descriptionForeground);margin-bottom:2px;}
-.beadTitle{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.typeBadge,.statusBadge,.priorityBadge{display:inline-flex;align-items:center;justify-content:center;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;}
+.beadId{font-size:10px;color:var(--vscode-descriptionForeground);margin-bottom:1px;}
+.beadTitle{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.typeBadge,.statusBadge,.priorityBadge{display:inline-flex;align-items:center;justify-content:center;padding:1px 5px;border-radius:999px;font-size:10px;font-weight:600;white-space:nowrap;}
 .type-feature{background:#16a34a;color:#fff;}
 .type-bug{background:#dc2626;color:#fff;}
 .type-task{background:#eab308;color:#1f2937;}
@@ -363,6 +376,7 @@ th:nth-child(1){width:90px;}th:nth-child(3){width:110px;}th:nth-child(4){width:8
 .priority-p3{background:#22c55e;color:#fff;}
 .priority-p4{background:#6b7280;color:#fff;}
 .empty{font-size:12px;line-height:1.5;opacity:.9;}
+.updatedCell{font-size:10px;white-space:nowrap;}
 .errors{margin-top:10px;padding-top:8px;border-top:1px solid var(--vscode-panel-border);font-size:12px;}
 .errors ul{margin:6px 0 0;padding-left:18px;}
 .commitLink{font-size:11px;padding:2px 6px;}
@@ -378,22 +392,17 @@ code{font-family:var(--vscode-editor-font-family);}
 </head>
 <body>
 <div class="toolbar">
-  <div class="toolbarLeft">
-    <select id="preset" class="preset">
-      <option value="not_closed" selected>Not Closed</option>
-      <option value="all">All</option>
-    </select>
-    <div id="chips" class="chips"></div>
-    <div class="menu">
-      <button id="addFilter" type="button">+ Filter</button>
-      <div id="filterMenu" class="menuPopup"></div>
-    </div>
-    <button id="clearFilters" type="button">Clear</button>
+  <select id="preset" class="preset">
+    <option value="not_closed" selected>Not Closed</option>
+    <option value="all">All</option>
+  </select>
+  <div id="chips" class="chips"></div>
+  <div class="menu">
+    <button id="addFilter" type="button">+ Filter</button>
+    <div id="filterMenu" class="menuPopup"></div>
   </div>
-  <div class="toolbarRight">
-    <input id="search" class="search" type="text" placeholder="Search beads..."/>
-    <button id="refresh">Refresh</button>
-  </div>
+  <button id="clearFilters" type="button">Clear</button>
+  <button id="refresh">↻</button>
 </div>
 <div class="stats" id="stats"></div>
 <div id="details" class="details empty">Click a bead row to view details (show-like info).</div>
@@ -405,7 +414,6 @@ const STATUS_LABELS = { open: 'Open', in_progress: 'In Progress', blocked: 'Bloc
 let activeFilters = new Set(['open', 'in_progress', 'blocked']);
 let selectedRow = null;
 let sortState = { key: 'updated', desc: true };
-const search = document.getElementById('search');
 const details = document.getElementById('details');
 const chips = document.getElementById('chips');
 const preset = document.getElementById('preset');
@@ -506,14 +514,10 @@ function renderDetails(item) {
 
 function applyFilters() {
   const rows = Array.from(document.querySelectorAll('tbody tr'));
-  const text = search.value.trim().toLowerCase();
   let visibleCount = 0;
   for (const row of rows) {
     const status = row.dataset.status || '';
-    const rowText = row.dataset.text || '';
-    const statusMatch = activeFilters.has(status);
-    const textMatch = text === '' || rowText.includes(text);
-    const visible = statusMatch && textMatch;
+    const visible = activeFilters.has(status);
     row.style.display = visible ? '' : 'none';
     if (visible) visibleCount++;
   }
@@ -544,7 +548,6 @@ function applySort() {
   }
 }
 
-search.addEventListener('input', applyFilters);
 document.getElementById('addFilter').addEventListener('click', () => {
   filterMenu.classList.toggle('open');
 });
@@ -572,11 +575,6 @@ for (const button of Array.from(document.querySelectorAll('.sortToggle'))) {
       sortState = { key: key, desc: true };
     }
     applySort();
-  });
-}
-for (const button of Array.from(document.getElementsByClassName('openSource'))) {
-  button.addEventListener('click', () => {
-    vscode.postMessage({ command: 'openSource', uri: decodeURIComponent(button.dataset.uri) });
   });
 }
 for (const button of Array.from(document.getElementsByClassName('commitLink'))) {
@@ -627,17 +625,6 @@ applyFilters();
       return;
     }
 
-    if (message.command === "openSource" && typeof message.uri === "string") {
-      try {
-        const uri = vscode.Uri.parse(message.uri);
-        const doc = await vscode.workspace.openTextDocument(uri);
-        await vscode.window.showTextDocument(doc, { preview: true });
-      } catch {
-        vscode.window.showWarningMessage("Unable to open Beads JSON source file.");
-      }
-      return;
-    }
-
     if (message.command === "openGitGraphForCommit" && typeof message.commitHash === "string") {
       const commitHash = message.commitHash.trim();
       if (!/^[0-9a-f]{7,40}$/i.test(commitHash)) {
@@ -652,4 +639,3 @@ applyFilters();
     }
   }
 }
-

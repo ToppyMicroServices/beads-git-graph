@@ -1,7 +1,7 @@
 {
   "name": "beads-git-graph",
   "displayName": "Beads Git Graph",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Independent VS Code Git graph extension with Beads support, based on the last MIT commit of Git Graph.",
   "categories": [
     "SCM Providers",
@@ -33,7 +33,7 @@
     "type": "git",
     "url": "https://github.com/thinksyncs/beads-git-graph.git"
   },
-  "publisher": "asispts",
+  "publisher": "thinksyncs",
   "main": "./out/extension.js",
   "scripts": {
     "typecheck": "tsc -p ./src --noEmit && tsc -p ./web --noEmit",
@@ -107,11 +107,11 @@
       ]
     },
     "viewsContainers": {
-      "activitybar": [
+      "panel": [
         {
           "id": "beads-git-graph",
           "title": "Beads Git Graph",
-          "icon": "resources/webview-icon.svg"
+          "icon": "resources/webview-icon-light.svg"
         }
       ]
     },
@@ -365,8 +365,7 @@
     }
   },
   "activationEvents": [
-    "onStartupFinished",
-    "onView:beads-git-graph.beadsView"
+    "onStartupFinished"
   ],
   "extensionKind": [
     "workspace"

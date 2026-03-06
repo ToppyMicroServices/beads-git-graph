@@ -98,10 +98,7 @@ export class DataSource {
             )
           : this.getGitLog(repo, branch, maxCommits + 1, showRemoteBranches, [], commitTypeFilter);
 
-      Promise.all([
-        gitLogPromise,
-        this.getRefs(repo, showRemoteBranches)
-      ]).then(async (results) => {
+      Promise.all([gitLogPromise, this.getRefs(repo, showRemoteBranches)]).then(async (results) => {
         let commits = results[0],
           refData = results[1],
           i,
@@ -443,12 +440,7 @@ export class DataSource {
   ) {
     let isFiltered = commitTypeFilter !== "all" && commitTypeFilter !== "";
     let maxCount = isFiltered ? num * 8 : num;
-    let args = [
-      "log",
-      "--max-count=" + maxCount,
-      "--format=" + this.gitLogFormat,
-      "--date-order"
-    ];
+    let args = ["log", "--max-count=" + maxCount, "--format=" + this.gitLogFormat, "--date-order"];
     if (branch !== "") {
       args.push(branch);
     } else if (visibleBranches.length > 0) {

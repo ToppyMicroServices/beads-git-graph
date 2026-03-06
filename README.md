@@ -51,26 +51,26 @@ This project is based on the last MIT commit and:
 
 All settings use the `beads-git-graph` prefix.
 
-| Setting                       | Default         | Description                                      |
-| ----------------------------- | --------------- | ------------------------------------------------ |
-| `autoCenterCommitDetailsView` | `true`          | Center commit details when opened                |
-| `dateFormat`                  | `"Date & Time"` | `"Date & Time"`, `"Date Only"`, or `"Relative"`  |
-| `dateType`                    | `"Author Date"` | `"Author Date"` or `"Commit Date"`               |
-| `fetchAvatars`                | `false`         | Fetch avatars (sends email to external services) |
-| `graphColours`                | 5 defaults (`#4C9AFF`, `#2EC4B6`, `#FFB703`, `#A78BFA`, `#FF5DA2`) | Colors for graph lines                           |
-| `graphStyle`                  | `"rounded"`     | `"rounded"` or `"angular"`                       |
-| `initialLoadCommits`          | `300`           | Commits to load on open                          |
-| `loadMoreCommits`             | `100`           | Commits to load on demand                        |
-| `maxDepthOfRepoSearch`        | `0`             | Folder depth for repo search                     |
-| `hiddenBranchPatterns`        | `['^beads', '^beads-sync$', '^db/', '^beads-sync/']` | Regex patterns for branches hidden by default (current checked-out branch remains visible) |
-| `mutedGraphOpacity`           | `0.45`          | Opacity for de-emphasized db/beads graph lines and nodes |
-| `mutedGraphLineWidth`         | `1.2`           | Line width for de-emphasized db/beads graph lines |
-| `mutedGraphNodeRadius`        | `2.8`           | Node radius for de-emphasized db/beads graph commits |
-| `preferMainBranchByDefault`   | `true`          | Prefer `main` / `origin/main` as initial branch focus when opening the graph |
-| `showCurrentBranchByDefault`  | `false`         | Show only current branch on open                 |
-| `showStatusBarItem`           | `true`          | Show status bar button                           |
-| `showUncommittedChanges`      | `true`          | Show uncommitted changes node                    |
-| `tabIconColourTheme`          | `"colour"`      | `"colour"` or `"grey"`                           |
+| Setting                       | Default                                                            | Description                                                                                |
+| ----------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `autoCenterCommitDetailsView` | `true`                                                             | Center commit details when opened                                                          |
+| `dateFormat`                  | `"Date & Time"`                                                    | `"Date & Time"`, `"Date Only"`, or `"Relative"`                                            |
+| `dateType`                    | `"Author Date"`                                                    | `"Author Date"` or `"Commit Date"`                                                         |
+| `fetchAvatars`                | `false`                                                            | Fetch avatars (sends email to external services)                                           |
+| `graphColours`                | 5 defaults (`#4C9AFF`, `#2EC4B6`, `#FFB703`, `#A78BFA`, `#FF5DA2`) | Colors for graph lines                                                                     |
+| `graphStyle`                  | `"rounded"`                                                        | `"rounded"` or `"angular"`                                                                 |
+| `initialLoadCommits`          | `300`                                                              | Commits to load on open                                                                    |
+| `loadMoreCommits`             | `100`                                                              | Commits to load on demand                                                                  |
+| `maxDepthOfRepoSearch`        | `0`                                                                | Folder depth for repo search                                                               |
+| `hiddenBranchPatterns`        | `['^beads', '^beads-sync$', '^db/', '^beads-sync/']`               | Regex patterns for branches hidden by default (current checked-out branch remains visible) |
+| `mutedGraphOpacity`           | `0.45`                                                             | Opacity for de-emphasized db/beads graph lines and nodes                                   |
+| `mutedGraphLineWidth`         | `1.2`                                                              | Line width for de-emphasized db/beads graph lines                                          |
+| `mutedGraphNodeRadius`        | `2.8`                                                              | Node radius for de-emphasized db/beads graph commits                                       |
+| `preferMainBranchByDefault`   | `true`                                                             | Prefer `main` / `origin/main` as initial branch focus when opening the graph               |
+| `showCurrentBranchByDefault`  | `false`                                                            | Show only current branch on open                                                           |
+| `showStatusBarItem`           | `true`                                                             | Show status bar button                                                                     |
+| `showUncommittedChanges`      | `true`                                                             | Show uncommitted changes node                                                              |
+| `tabIconColourTheme`          | `"colour"`                                                         | `"colour"` or `"grey"`                                                                     |
 
 ## Installation
 

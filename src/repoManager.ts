@@ -275,7 +275,10 @@ export class RepoManager {
 
     this.createEventPaths.push(path);
     if (this.processCreateEventsTimeout !== null) clearTimeout(this.processCreateEventsTimeout);
-    this.processCreateEventsTimeout = setTimeout(() => this.processCreateEvents(), WATCHER_DEBOUNCE_MS);
+    this.processCreateEventsTimeout = setTimeout(
+      () => this.processCreateEvents(),
+      WATCHER_DEBOUNCE_MS
+    );
   }
   private onWatcherChange(uri: vscode.Uri) {
     let path = getPathFromUri(uri);
@@ -285,7 +288,10 @@ export class RepoManager {
 
     this.changeEventPaths.push(path);
     if (this.processChangeEventsTimeout !== null) clearTimeout(this.processChangeEventsTimeout);
-    this.processChangeEventsTimeout = setTimeout(() => this.processChangeEvents(), WATCHER_DEBOUNCE_MS);
+    this.processChangeEventsTimeout = setTimeout(
+      () => this.processChangeEvents(),
+      WATCHER_DEBOUNCE_MS
+    );
   }
   private onWatcherDelete(uri: vscode.Uri) {
     let path = getPathFromUri(uri);
