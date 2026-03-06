@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-03-07
+
+### Fixed
+
+- Align Beads / Git Graph toolbar button positions across both views
+- Unify switch and refresh button icon treatment across Beads / Git Graph
+- Add a packaged Activity Bar icon asset for reliable local installation
+
 ## [0.1.7] - 2026-03-07
 
 ### Added
@@ -30,7 +38,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/thinksyncs/beads-git-graph/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/thinksyncs/beads-git-graph/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/thinksyncs/beads-git-graph/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/thinksyncs/beads-git-graph/compare/v0.1.6...v0.1.7
 [0.1.1]: https://github.com/thinksyncs/beads-git-graph/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/thinksyncs/beads-git-graph/releases/tag/v0.1.0
