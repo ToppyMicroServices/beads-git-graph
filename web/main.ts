@@ -112,6 +112,9 @@ class GitGraphView {
       this.refresh(true);
     });
     this.scrollShadowElem = <HTMLInputElement>document.getElementById("scrollShadow")!;
+    document.getElementById("beadsBtn")!.addEventListener("click", () => {
+      sendMessage({ command: "focusBeadsView" } as any);
+    });
     document.getElementById("refreshBtn")!.addEventListener("click", () => {
       this.refresh(true);
     });

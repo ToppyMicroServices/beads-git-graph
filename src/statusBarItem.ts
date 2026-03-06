@@ -27,9 +27,13 @@ export class StatusBarItem {
   }
 
   public refresh() {
-    if (getConfig().showStatusBarItem() && this.numRepos > 0) {
-      this.statusBarItem.show();
+    if (getConfig().showStatusBarItem()) {
       this.beadsStatusBarItem.show();
+      if (this.numRepos > 0) {
+        this.statusBarItem.show();
+      } else {
+        this.statusBarItem.hide();
+      }
     } else {
       this.statusBarItem.hide();
       this.beadsStatusBarItem.hide();

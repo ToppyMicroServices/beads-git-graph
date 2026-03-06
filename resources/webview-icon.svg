@@ -7,8 +7,8 @@
 	<line x1="14" y1="5" x2="14" y2="19" stroke="#A78BFA" stroke-width="2.2" stroke-linecap="round"/>
 	<line x1="18" y1="5" x2="18" y2="19" stroke="#FF5DA2" stroke-width="2.2" stroke-linecap="round"/>
 
-	<circle cx="6" cy="5" r="1.8" fill="#4C9AFF"/>
-	<circle cx="10" cy="5" r="1.8" fill="#2EC4B6"/>
-	<circle cx="14" cy="5" r="1.8" fill="#A78BFA"/>
-	<circle cx="18" cy="5" r="1.8" fill="#FF5DA2"/>
+	<circle cx="6" cy="7" r="1.8" fill="#4C9AFF"/>
+	<circle cx="10" cy="12" r="1.8" fill="#2EC4B6"/>
+	<circle cx="14" cy="9" r="1.8" fill="#A78BFA"/>
+	<circle cx="18" cy="15" r="1.8" fill="#FF5DA2"/>
 </svg>

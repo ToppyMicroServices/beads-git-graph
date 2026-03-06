@@ -320,6 +320,9 @@ export class GitGraphView {
           case "openFile":
             await this.openFile(msg.repo, msg.filePath, msg.commitHash ?? null);
             break;
+          case "focusBeadsView":
+            await vscode.commands.executeCommand("beads-git-graph.beadsView.focus");
+            break;
         }
         this.repoFileWatcher.unmute();
       },
@@ -388,6 +391,7 @@ export class GitGraphView {
 				<span id="branchControl"><span class="unselectable">Branch: </span><div id="branchSelect" class="dropdown"></div></span>
 				<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" value="1" checked>Show Remote Branches</label>
         <label id="featOnlyControl"><input type="checkbox" id="featOnlyCheckbox" value="1">Feat Only</label>
+				<div id="beadsBtn" class="roundedBtn">Beads</div>
 				<div id="refreshBtn" class="roundedBtn">Refresh</div>
 			</div>
 			<div id="content">

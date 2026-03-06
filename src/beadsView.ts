@@ -572,7 +572,7 @@ for (const button of Array.from(document.getElementsByClassName('commitLink'))) 
   });
 }
 for (const row of Array.from(document.querySelectorAll('tbody tr'))) {
-  row.addEventListener('click', (event) => {
+  const selectRow = (event) => {
     const target = event.target;
     if (target && target.closest && target.closest('button')) return;
     if (selectedRow) {
@@ -580,13 +580,25 @@ for (const row of Array.from(document.querySelectorAll('tbody tr'))) {
     }
     selectedRow = row;
     row.classList.add('selected');
-    try {
-      const encoded = row.dataset.item;
-      renderDetails(encoded ? JSON.parse(decodeURIComponent(encoded)) : null);
-    } catch {
+
+    const encoded = row.dataset.item;
+    if (!encoded) {
       renderDetails(null);
+      return;
     }
-  });
+    try {
+      renderDetails(JSON.parse(decodeURIComponent(encoded)));
+    } catch {
+      try {
+        renderDetails(JSON.parse(encoded));
+      } catch {
+        renderDetails(null);
+      }
+    }
+  };
+
+  row.addEventListener('click', selectRow);
+  row.addEventListener('dblclick', selectRow);
 }
 renderFilterChips();
 applySort();

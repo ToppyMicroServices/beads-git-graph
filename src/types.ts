@@ -376,6 +376,10 @@ export interface RequestResetFileToRevision {
   filePath: string;
 }
 
+export interface RequestFocusBeadsView {
+  command: "focusBeadsView";
+}
+
 export interface ResponseResetFileToRevision {
   command: "resetFileToRevision";
   status: GitCommandStatus;
@@ -406,7 +410,8 @@ export type RequestMessage =
   | RequestViewFileAtRevision
   | RequestViewDiffWithWorkingFile
   | RequestOpenFile
-  | RequestResetFileToRevision;
+  | RequestResetFileToRevision
+  | RequestFocusBeadsView;
 
 export type ResponseMessage =
   | ResponseAddTag
