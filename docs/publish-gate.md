@@ -6,21 +6,19 @@ This gate must be green before Marketplace publication.
 
 - Keep existing command IDs and settings keys under `beads-git-graph.*` for now.
 - Keep Beads identity in UI and marketplace metadata.
-- Prefix migration plan:
-  - Add `beads-git-graph.*` aliases first.
-  - Keep old IDs as compatibility aliases.
-  - Migrate in a later release (suggested: `0.2.0`) with deprecation notes.
+- No additional prefix migration is currently planned.
 
 ## 2) Identity Final Check
 
 Validate all of the following point to the active project repository:
 
-- `publisher`
+- `publisher` (`ToppyMicroServices`)
 - `name` (extension ID)
 - `displayName`
 - `repository`
 - `homepage`
 - `bugs.url`
+- README badges and release links
 - icon and branding are not confusable with upstream
 
 ## 3) CI Security Gate (Stop-the-line)
@@ -36,7 +34,7 @@ Required checks:
 
 ## 4) Release Ops Lock-in
 
-- Initial Marketplace release target: `0.1.0` (new identity track)
+- Marketplace publication should use the current package version and changelog line, without resetting the version track.
 - Maintain and review:
   - `CHANGELOG.md`
   - `SECURITY.md`
@@ -51,3 +49,8 @@ At least one clear Beads-first capability must be visible in release notes and s
 
 - Beads Graph view (`.beads` auto-detect + list)
 - or Beads↔Git linkage workflow
+
+## 6) Language Note
+
+- Japanese-language examples or supplemental notes are acceptable when they reflect the maintainer's native language.
+- They must not imply Japan-specific support, preferential treatment, or a narrower intended audience.

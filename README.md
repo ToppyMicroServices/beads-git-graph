@@ -4,12 +4,12 @@
   </samp>
 </div>
 
-[![](https://img.shields.io/github/license/thinksyncs/beads-git-graph)](https://github.com/thinksyncs/beads-git-graph?tab=MIT-1-ov-file)
-[![GitHub release](https://img.shields.io/github/v/release/thinksyncs/beads-git-graph)](https://github.com/thinksyncs/beads-git-graph/releases)
+[![MIT License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](./LICENSE)
+[![Version 0.1.9](https://img.shields.io/badge/version-0.1.9-0366d6?style=flat-square)](./CHANGELOG.md)
 
-<sub>Acknowledgement: This project builds on prior work including [Git Graph](https://github.com/mhutchie/vscode-git-graph) and [neo-git-graph](https://github.com/asispts/neo-git-graph), and appreciates their maintainers' efforts, including security improvements.</sub>
+<sub>Acknowledgement: This project builds on prior work from [Git Graph](https://github.com/mhutchie/vscode-git-graph) and [neo-git-graph](https://github.com/asispts/neo-git-graph), and it remains grateful for the work of their maintainers, including security improvements.</sub>
 
-<sub>This fork was continued because the upstream fork was no longer being actively updated, and this project prioritizes timely maintenance, dependency review, and security-focused fixes.</sub>
+<sub>This project continues independently from [neo-git-graph](https://github.com/asispts/neo-git-graph), because that fork was no longer updated regularly, with an emphasis on timely maintenance, dependency review, and security-focused fixes.</sub>
 
 ## Core Principles
 
@@ -19,41 +19,42 @@
 
 ## Project Identity (Required for Marketplace)
 
-- This project is **Beads Git Graph** (independent project identity).
-- It is **not** an upstream-following mirror of `mhutchie/vscode-git-graph`.
-- It keeps full repository history while operating under its own roadmap and release policy.
-- As noted in `beads-git-graph`, this project uses MIT-licensed historical source from Git Graph (up to the last MIT commit).
-- This repository was forked from [neo-git-graph](https://github.com/asispts/neo-git-graph) and is maintained independently as Beads Git Graph.
+- This project is **Beads Git Graph**, with its own independent identity.
+- It is **not** an upstream-tracking mirror of `mhutchie/vscode-git-graph`.
+- It preserves the full repository history while following its own roadmap and release policy.
+- It uses the MIT-licensed history of Git Graph up to the last MIT-licensed commit.
+- This repository continues from [neo-git-graph](https://github.com/asispts/neo-git-graph) and is now maintained independently as Beads Git Graph.
 
 ## Compatibility Policy (Before Full Prefix Migration)
 
 - Command IDs and setting keys use the `beads-git-graph.*` prefix and will remain stable to avoid breaking existing user keybindings and settings.
-- UI-facing naming is Beads-branded (`Beads Git Graph`) to prevent marketplace identity collision.
+- UI-facing naming uses the Beads brand (`Beads Git Graph`) to avoid marketplace identity collisions.
 - No additional prefix migration is currently planned.
 
 ## Provenance
 
 The original [Git Graph](https://github.com/mhutchie/vscode-git-graph) by mhutchie changed its license in May 2019.
 Everything after [commit 4af8583](https://github.com/mhutchie/vscode-git-graph/commit/4af8583a42082b2c230d2c0187d4eaff4b69c665) is no longer MIT.
+This repository continues the line that later passed through [neo-git-graph](https://github.com/asispts/neo-git-graph).
 
-This project is based on the last MIT commit and:
+This project is based on the last MIT-licensed commit and:
 
-- Keeps MIT license
+- Keeps the MIT license
 - Adds devcontainer support
-- Improves codebase, tooling, and maintainability
-- Continues active maintenance where the prior fork had slowed, with a stronger emphasis on security review and corrective updates
-- **Adds Beads integration** — `.beads/` data auto-detection, `bd list` style issue table, Activity Bar entry, status bar shortcut, main-panel Git Graph ↔ Beads toggle, and visible progress percentages for in-progress items. See [Beads (bd)](https://github.com/steveyegge/beads) for more on the issue tracker.
+- Improves the codebase, tooling, and maintainability
+- Continues active maintenance where the prior fork had slowed, with stronger emphasis on security review and corrective updates
+- **Adds Beads integration**: `.beads/` data auto-detection, a `bd list`-style issue table, an Activity Bar entry, a status bar shortcut, a main-panel Git Graph ↔ Beads toggle, and visible progress percentages for in-progress items. See [Beads (bd)](https://github.com/steveyegge/beads) for more on the issue tracker.
 
 ## Features
 
-- **Graph view**: See branches, tags, and uncommitted changes in one graph
-- **Commit details**: Click a commit to see message, files, and diffs
+- **Graph view**: See branches, tags, and uncommitted changes in a single graph
+- **Commit details**: Click a commit to inspect its message, files, and diffs
 - **Branch actions**: Create, checkout, rename, delete, and merge
 - **Tag actions**: Create, delete, and push tags
 - **Commit actions**: Checkout, cherry-pick, revert, and reset
 - **Multi-repo**: Work with multiple repositories in one workspace
 - **Devcontainer ready**: Works in remote and container environments
-- **Beads Graph view**: Detects `.beads` data automatically, opens from the Activity Bar, and shows a `bd list` style table
+- **Beads Graph view**: Detects `.beads` data automatically, opens from the Activity Bar, and shows a `bd list`-style table
 - **Main-panel toggle**: Switch between Git Graph and Beads from matching toolbar buttons without leaving the editor area
 - **Progress visibility**: Shows numeric progress percentages for `in_progress` Beads items when progress is written in notes such as `進捗: 35%` or `progress: 35%`
 - **Conventional Commit assist**: Normalizes and classifies commit types (with alias handling), colors recognized types, and supports `Feat Only` filtering
@@ -64,6 +65,12 @@ This project is based on the last MIT commit and:
 - No avatar fetching or other external profile lookups are performed.
 - Privacy-first by default, with no telemetry and no profile-enrichment lookups.
 - Security-first maintenance, including active review and corrective updates.
+- Security review is performed with enterprise use cases in mind, but adopters remain responsible for their own validation, deployment decisions, and incident handling.
+
+## Language Note
+
+Some examples, notes, or supplemental text may appear in Japanese because it is the maintainer's native language.
+This does not imply Japan-specific support, preferential treatment, or a narrower target audience.
 
 ## Configuration
 
@@ -93,16 +100,17 @@ All settings use the `beads-git-graph` prefix.
 
 Search for `beads-git-graph` in Extensions.
 
-- Marketplace identity (`publisher.name`) must be unique before publish.
+- Marketplace publisher target: `ToppyMicroServices`
+- Active release repository: `ToppyMicroServices/beads-git-graph`
 
 ## Local Testing
 
 - Package a local VSIX with `pnpm dlx @vscode/vsce package`
-- Install it into VS Code with `code --install-extension beads-git-graph-<version>.vsix --force`
+- Install it in VS Code with `code --install-extension beads-git-graph-<version>.vsix --force`
 - Reload VS Code and confirm the Activity Bar icon, Git Graph ↔ Beads toolbar toggle, and Beads progress display
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
-> Based on MIT-licensed historical source from Git Graph, but maintained as an independent project and not an upstream-tracking distribution.
+> Based on MIT-licensed historical source from Git Graph, and maintained as an independent project rather than an upstream-tracking distribution.

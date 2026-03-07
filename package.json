@@ -14,14 +14,14 @@
     "git history",
     "git log"
   ],
-  "homepage": "https://github.com/thinksyncs/beads-git-graph",
+  "homepage": "https://github.com/ToppyMicroServices/beads-git-graph",
   "bugs": {
-    "url": "https://github.com/thinksyncs/beads-git-graph/issues"
+    "url": "https://github.com/ToppyMicroServices/beads-git-graph/issues"
   },
   "license": "MIT",
   "author": {
-    "name": "thinksyncs",
-    "url": "https://github.com/thinksyncs"
+    "name": "ToppyMicroServices",
+    "url": "https://github.com/ToppyMicroServices"
   },
   "contributors": [
     {
@@ -35,9 +35,9 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/thinksyncs/beads-git-graph.git"
+    "url": "https://github.com/ToppyMicroServices/beads-git-graph.git"
   },
-  "publisher": "thinksyncs",
+  "publisher": "ToppyMicroServices",
   "main": "./out/extension.js",
   "scripts": {
     "typecheck": "tsc -p ./src --noEmit && tsc -p ./web --noEmit",
@@ -46,8 +46,8 @@
     "compile": "pnpm run clean && pnpm run compile-src && pnpm run compile-web",
     "compile-src": "esbuild --bundle src/extension.ts --outfile=out/extension.js --platform=node --format=cjs --target=es6 --external:vscode --minify",
     "compile-web": "esbuild --bundle web/main.ts --outfile=out/web.min.js --minify --target=es6 --format=iife",
-    "package": "pnpm run clean && vsce package",
-    "package-and-install": "pnpm run clean && vsce package && node ./.vscode/install-package.js",
+    "package": "pnpm run clean && pnpm dlx @vscode/vsce package",
+    "package-and-install": "pnpm run clean && pnpm dlx @vscode/vsce package && node ./.vscode/install-package.js",
     "format": "oxfmt --check",
     "format:fix": "oxfmt .",
     "lint": "oxlint",

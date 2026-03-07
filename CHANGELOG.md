@@ -46,9 +46,9 @@
 
 Initial release
 
-[Unreleased]: https://github.com/thinksyncs/beads-git-graph/compare/v0.1.9...HEAD
-[0.1.9]: https://github.com/thinksyncs/beads-git-graph/compare/v0.1.8...v0.1.9
-[0.1.8]: https://github.com/thinksyncs/beads-git-graph/compare/v0.1.7...v0.1.8
-[0.1.7]: https://github.com/thinksyncs/beads-git-graph/compare/v0.1.6...v0.1.7
-[0.1.1]: https://github.com/thinksyncs/beads-git-graph/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/thinksyncs/beads-git-graph/releases/tag/v0.1.0
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.8...v0.1.9
+[0.1.8]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.6...v0.1.7
+[0.1.1]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/ToppyMicroServices/beads-git-graph/releases/tag/v0.1.0

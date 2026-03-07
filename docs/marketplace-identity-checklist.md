@@ -6,14 +6,16 @@ This checklist is mandatory before publishing this extension to VS Code Marketpl
 
 - Project name is set to `beads-git-graph`.
 - Display name does not imply official upstream ownership.
-- `publisher.name` pair is unique in target marketplace.
+- `publisher.name` pair (`ToppyMicroServices.beads-git-graph`) is unique in target marketplace.
+- Active repository is `ToppyMicroServices/beads-git-graph`.
 - Repository naming is aligned (`beads-git-graph`) while preserving git history.
 
 ## 2) Provenance Clarity
 
 - README clearly states:
-  - based on MIT historical source from `mhutchie/vscode-git-graph`
-  - this project is independent and not upstream-tracking
+  - based on the MIT-licensed history of `mhutchie/vscode-git-graph` up to the last MIT-licensed commit
+  - continued from [neo-git-graph](https://github.com/asispts/neo-git-graph)
+  - this project is independent and not an upstream-tracking distribution
 - Any marketplace description avoids ambiguity or endorsement implication.
 
 ## 3) License and Attribution
@@ -28,9 +30,14 @@ This checklist is mandatory before publishing this extension to VS Code Marketpl
 - No branding that can be mistaken for upstream official release.
 - Changelog/release notes mention independent maintenance policy.
 
-## 5) Operational Note
+## 5) Language Neutrality
 
-Repository rename should be done by repository administrators, e.g.:
+- Any Japanese-language examples or supplemental notes exist because Japanese is the maintainer's native language.
+- They do not imply Japan-specific support, preferential treatment, or a different target audience.
+
+## 6) Operational Note
+
+If a further repository rename is ever needed, it should be done by repository administrators, e.g.:
 
 ```bash
 gh repo rename beads-git-graph --yes

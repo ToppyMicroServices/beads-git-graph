@@ -45,6 +45,16 @@ We prioritize issues that could lead to:
 
 Lower-severity issues may be addressed opportunistically.
 
+## Security Review Scope and Responsibility
+
+This project is maintained with security review in mind, including use in enterprise environments.
+However, it is provided on an as-is basis under the project license, and the maintainers cannot accept responsibility for operational incidents, damages, losses, or compliance outcomes arising from its use.
+
+Organizations adopting this extension are responsible for their own evaluation, testing, deployment controls, and incident response processes before production use.
+
+Any supplemental Japanese-language notes are included because Japanese is the maintainer's native language.
+They do not imply Japan-specific support, preferential treatment, or a different security posture for any particular region or user group.
+
 ## Security Best Practices for Contributors
 
 - Avoid adding new dependencies unless necessary.
