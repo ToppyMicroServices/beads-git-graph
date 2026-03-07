@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-03-07
+
+### Changed
+
+- Reissue release tag so the corrected publish workflow can deploy to VS Marketplace with token-gated targets
+
 ## [0.1.11] - 2026-03-07
 
 ### Changed
@@ -64,7 +70,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.8...v0.1.9
