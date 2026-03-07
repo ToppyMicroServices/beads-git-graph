@@ -386,7 +386,7 @@ export class GitGraphView {
       body = `<body style="${colorVars}">
 			<div id="controls">
 				<span id="repoControl"><span class="unselectable">Repo: </span><div id="repoSelect" class="dropdown"></div></span>
-				<span id="branchControl"><span class="unselectable">Branch: </span><div id="branchSelect" class="dropdown"></div></span>
+        <span id="branchControl" hidden aria-hidden="true"><div id="branchSelect" class="dropdown"></div></span>
 				<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" value="1" checked>Show Remote</label>
         <span id="typeFilterControl"><span class="unselectable">Type: </span><select id="typeFilterSelect"><option value="all">All</option><option value="feat">feat</option><option value="fix">fix</option><option value="docs">docs</option><option value="chore">chore</option><option value="refactor">refactor</option><option value="perf">perf</option><option value="test">test</option><option value="build">build</option><option value="ci">ci</option><option value="style">style</option><option value="revert">revert</option><option value="other">other</option></select></span>
         <div id="beadsBtn" class="roundedBtn iconBtn" title="Beads" aria-label="Beads">
@@ -394,6 +394,7 @@ export class GitGraphView {
             <path d="M7 5.5v13M7 6h4M7 12h6M7 18h10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M11 6h6M13 12h4M19 18h0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
           </svg>
+          <span class="toolbarActionLabel">Beads</span>
         </div>
 				<div id="refreshBtn" class="roundedBtn iconBtn" title="Refresh" aria-label="Refresh">
 					<svg class="toolbarActionIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

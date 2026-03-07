@@ -1,9 +1,12 @@
+import * as cp from "node:child_process";
+
 import * as vscode from "vscode";
 
 import {
   type BeadItem,
   beadShortDate,
   beadStatusLabel,
+  buildBeadHierarchy,
   extractBeadItems,
   normalizeBeadPriority,
   normalizeBeadStatus,
@@ -14,12 +17,131 @@ import { escapeHtml, getNonce } from "./utils";
 
 interface BeadGroup {
   workspace: string;
+  workspacePath: string;
   items: BeadItem[];
 }
 
 interface BeadLoadResult {
   groups: BeadGroup[];
   errors: { source: string; message: string }[];
+}
+
+interface BeadRenderItem {
+  item: BeadItem;
+  parentId: string | null;
+  epicId: string | null;
+  depth: number;
+  orderIndex: number;
+  guideColumns: boolean[];
+  isLastSibling: boolean;
+}
+
+interface BeadHierarchyOrderItem {
+  item: BeadItem;
+  parentId: string | null;
+  epicId: string | null;
+  depth: number;
+  orderIndex: number;
+}
+
+function beadUpdatedTimestamp(updatedAt: string) {
+  const updatedTs = Date.parse(updatedAt);
+  return Number.isNaN(updatedTs) ? 0 : updatedTs;
+}
+
+function flattenBeadHierarchy(items: BeadItem[]): BeadRenderItem[] {
+  const hierarchy: BeadHierarchyOrderItem[] = buildBeadHierarchy(items).map(
+    (entry, orderIndex) => ({
+      ...entry,
+      orderIndex
+    })
+  );
+  const rowsById = new Map(hierarchy.map((entry) => [entry.item.id, entry]));
+  const childrenByParent = new Map<string, BeadHierarchyOrderItem[]>();
+  const subtreeUpdatedCache = new Map<string, number>();
+
+  for (const entry of hierarchy) {
+    if (entry.parentId !== null && rowsById.has(entry.parentId)) {
+      const children = childrenByParent.get(entry.parentId) ?? [];
+      children.push(entry);
+      childrenByParent.set(entry.parentId, children);
+    }
+  }
+
+  const getSubtreeUpdatedTimestamp = (
+    entry: BeadHierarchyOrderItem,
+    visiting: Set<string>
+  ): number => {
+    const cached = subtreeUpdatedCache.get(entry.item.id);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    if (visiting.has(entry.item.id)) {
+      return beadUpdatedTimestamp(entry.item.updatedAt);
+    }
+
+    visiting.add(entry.item.id);
+
+    let latest = beadUpdatedTimestamp(entry.item.updatedAt);
+    for (const child of childrenByParent.get(entry.item.id) ?? []) {
+      latest = Math.max(latest, getSubtreeUpdatedTimestamp(child, visiting));
+    }
+
+    visiting.delete(entry.item.id);
+    subtreeUpdatedCache.set(entry.item.id, latest);
+    return latest;
+  };
+
+  const compareEntries = (a: BeadHierarchyOrderItem, b: BeadHierarchyOrderItem) => {
+    const updatedDelta =
+      getSubtreeUpdatedTimestamp(b, new Set<string>()) -
+      getSubtreeUpdatedTimestamp(a, new Set<string>());
+    if (updatedDelta !== 0) {
+      return updatedDelta;
+    }
+
+    return a.orderIndex - b.orderIndex;
+  };
+
+  const roots = hierarchy
+    .filter((entry) => entry.parentId === null || !rowsById.has(entry.parentId))
+    .sort(compareEntries);
+  const ordered: BeadRenderItem[] = [];
+  const visited = new Set<string>();
+
+  const appendSubtree = (
+    entry: BeadHierarchyOrderItem,
+    guideColumns: boolean[],
+    isLastSibling: boolean
+  ) => {
+    if (visited.has(entry.item.id)) {
+      return;
+    }
+
+    visited.add(entry.item.id);
+    ordered.push({
+      ...entry,
+      guideColumns,
+      isLastSibling
+    });
+
+    const children = [...(childrenByParent.get(entry.item.id) ?? [])].sort(compareEntries);
+    const childGuideColumns = entry.depth > 0 ? [...guideColumns, !isLastSibling] : [];
+    for (let i = 0; i < children.length; i++) {
+      appendSubtree(children[i], childGuideColumns, i === children.length - 1);
+    }
+  };
+
+  for (let i = 0; i < roots.length; i++) {
+    appendSubtree(roots[i], [], i === roots.length - 1);
+  }
+
+  for (const entry of hierarchy) {
+    appendSubtree(entry, [], true);
+  }
+
+  return ordered;
 }
 
 export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -177,6 +299,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           if (items.length > 0) {
             groups.push({
               workspace: folder.name,
+              workspacePath: folder.uri.fsPath,
               items
             });
           }
@@ -198,6 +321,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private getHtml(webview: vscode.Webview, result: BeadLoadResult) {
     const nonce = getNonce();
     const rows = result.groups;
+    const showWorkspaceLabel = rows.length > 1;
 
     let bodyHtml = "";
     if (rows.length === 0) {
@@ -206,8 +330,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     } else {
       bodyHtml = rows
         .map((group) => {
-          const itemRows = group.items
-            .map((item) => {
+          const itemRows = flattenBeadHierarchy(group.items)
+            .map(({ item, parentId, epicId, depth, orderIndex, guideColumns, isLastSibling }) => {
               const normalizedStatus = normalizeBeadStatus(item.status);
               const statusLabel = beadStatusLabel(normalizedStatus);
               const progressLabel =
@@ -216,7 +340,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
                   : "";
               const normalizedPriority = normalizeBeadPriority(item.priority);
               const normalizedType = normalizeBeadType(item.type);
-              const updatedTs = Date.parse(item.updatedAt);
+              const updatedTs = beadUpdatedTimestamp(item.updatedAt);
               const typeSortOrder =
                 normalizedType === "epic"
                   ? 0
@@ -229,11 +353,17 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
                         : 9;
               const prioritySortOrder = parseInt(normalizedPriority.substring(1), 10);
               const shortUpdated = beadShortDate(item.updatedAt);
-              return `<tr class="beadRow" data-status="${escapeHtml(normalizedStatus)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(item)))}" data-updated-ts="${Number.isNaN(updatedTs) ? 0 : updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
+              const serializedItem = {
+                ...item,
+                parentId: parentId ?? "",
+                epicId: epicId ?? ""
+              };
+              const treeWidth = depth > 0 ? depth * 18 : 0;
+              return `<tr class="beadRow" data-id="${escapeHtml(item.id)}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-parent-id="${escapeHtml(parentId ?? "")}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" data-order-index="${orderIndex}" data-guide-columns="${guideColumns.map((value) => (value ? "1" : "0")).join("")}" data-last-sibling="${isLastSibling ? "1" : "0"}" data-status="${escapeHtml(normalizedStatus)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(serializedItem)))}" data-updated-ts="${updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td><div class="titleCell" style="--tree-width:${treeWidth}px"><div class="titleContent"><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div></div></div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
             })
             .join("");
 
-          return `<section><div class="meta"><strong>${escapeHtml(group.workspace)}</strong></div><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></section>`;
+          return `<section>${showWorkspaceLabel ? `<div class="meta"><strong>${escapeHtml(group.workspace)}</strong></div>` : ""}<div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div></section>`;
         })
         .join("");
     }
@@ -251,11 +381,13 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:4px;background:var(--vscode-editor-background);}
-.toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px;margin-bottom:6px;}
+.toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px;margin-bottom:2px;}
 .toolbarMain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;}
 .toolbarActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:0 0 auto;}
+.toolbarStatsRow{display:flex;justify-content:flex-end;margin:0 0 6px;}
 .preset{height:24px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));border-radius:6px;padding:0 6px;font-size:11px;}
 .chips{display:flex;gap:6px;flex-wrap:wrap;}
+.chips:empty{display:none;}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;font-size:11px;border:1px solid var(--vscode-panel-border);background:rgba(128,128,128,.12);}
 .chip .remove{background:transparent;border:none;color:inherit;cursor:pointer;line-height:1;padding:0;font-size:12px;opacity:.8;}
 .chip.status-open{border-left:3px solid #10b981;}
@@ -267,27 +399,42 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);paddin
 .menuPopup.open{display:block;}
 .menuPopup button{display:block;width:100%;margin:2px 0;text-align:left;background:transparent;color:var(--vscode-menu-foreground);border:1px solid transparent;padding:4px 6px;border-radius:4px;}
 .menuPopup button:hover{background:var(--vscode-menu-selectionBackground);color:var(--vscode-menu-selectionForeground);}
+.contextMenu{display:none;position:fixed;z-index:40;min-width:140px;background:var(--vscode-menu-background);border:1px solid var(--vscode-menu-border, var(--vscode-panel-border));box-shadow:0 6px 18px var(--vscode-widget-shadow);padding:4px;border-radius:6px;}
+.contextMenu.open{display:block;}
+.contextMenu button{display:block;width:100%;margin:0;text-align:left;background:transparent;color:var(--vscode-menu-foreground);border:1px solid transparent;padding:6px 8px;border-radius:4px;}
+.contextMenu button:hover:not(:disabled){background:var(--vscode-menu-selectionBackground);color:var(--vscode-menu-selectionForeground);}
+.contextMenu button:disabled{opacity:.45;cursor:default;}
 button{border:1px solid var(--vscode-button-border,transparent);background:var(--vscode-button-background);color:var(--vscode-button-foreground);padding:4px 8px;cursor:pointer;border-radius:6px;font-size:11px;}
 button:hover{background:var(--vscode-button-hoverBackground);}
-.actionBtn{display:inline-flex;align-items:center;justify-content:center;height:24px;padding:0;border-radius:11px;background:rgba(128,128,128,.1);border:1px solid rgba(128,128,128,.5);}
+.actionBtn{display:inline-flex;align-items:center;justify-content:center;height:24px;padding:0 10px;border-radius:11px;background:rgba(128,128,128,.1);border:1px solid rgba(128,128,128,.5);gap:6px;}
 .actionBtn:hover{background:rgba(128,128,128,.2);}
-#openGitGraph{width:60px;}
+#openGitGraph{min-width:74px;}
 #refresh{width:80px;font-size:14px;line-height:1;}
 .toolbarIcon{display:block;color:var(--vscode-button-foreground);}
 .toolbarIcon.switchIcon{width:18px;height:18px;}
 .toolbarIcon.refreshIcon{width:18px;height:18px;}
+.toolbarActionLabel{color:var(--vscode-button-foreground);font-size:11px;line-height:1;}
 .meta{display:grid;grid-template-columns:1fr;font-size:11px;opacity:.9;margin:6px 0 4px;gap:6px;align-items:center;}
-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
-th,td{text-align:left;border-bottom:1px solid var(--vscode-panel-border);padding:4px 4px;vertical-align:middle;}
-th{font-size:11px;font-weight:600;opacity:.9;}
-th:nth-child(1){width:56px;}th:nth-child(3){width:72px;}th:nth-child(4){width:38px;}th:nth-child(5){width:72px;}
+section{margin-bottom:10px;}
+.tableWrap{position:relative;}
+.hierarchyOverlay{position:absolute;inset:0;z-index:0;width:100%;height:100%;pointer-events:none;overflow:visible;}
+table{position:relative;z-index:1;width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;}
+th,td{text-align:left;border-bottom:1px solid var(--vscode-panel-border);padding:4px 4px;vertical-align:middle;font-size:13px;}
+th{position:sticky;top:0;z-index:2;font-weight:700;line-height:18px;padding:6px 12px;opacity:.95;background:var(--vscode-editor-background);box-shadow:0 1px 0 var(--vscode-panel-border);}
+th:nth-child(1){width:52px;}th:nth-child(3){width:72px;}th:nth-child(4){width:38px;}th:nth-child(5){width:72px;}
 .sortToggle{display:inline-flex;align-items:center;gap:4px;background:transparent;border:none;color:inherit;padding:0;cursor:pointer;font:inherit;}
 .sortToggle:hover{text-decoration:underline;}
 .beadRow{cursor:pointer;}
 .beadRow:hover{background:rgba(128,128,128,.08);}
 .beadRow.selected{background:rgba(128,128,128,.18);}
 .beadId{font-size:10px;color:var(--vscode-descriptionForeground);margin-bottom:1px;}
-.beadTitle{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.titleCell{position:relative;min-width:0;padding-left:calc(var(--tree-width, 0px) + 4px);}
+.titleContent{min-width:0;}
+.hierarchyGuideShadow{fill:none;stroke:rgba(0,0,0,.18);stroke-width:3.8;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;opacity:.45;}
+.hierarchyGuideLine{fill:none;stroke:var(--vscode-textLink-foreground, #4da3ff);stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;opacity:1;}
+.hierarchyGuideNodeShadow{fill:rgba(0,0,0,.22);vector-effect:non-scaling-stroke;opacity:.4;}
+.hierarchyGuideNode{fill:var(--vscode-textLink-foreground, #4da3ff);vector-effect:non-scaling-stroke;opacity:1;}
+.beadTitle{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .statusCell{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .typeBadge,.statusBadge,.priorityBadge{display:inline-flex;align-items:center;justify-content:center;padding:1px 5px;border-radius:999px;font-size:10px;font-weight:600;white-space:nowrap;}
 .progressText{font-size:10px;font-weight:700;color:var(--vscode-textLink-foreground);white-space:nowrap;}
@@ -311,9 +458,9 @@ th:nth-child(1){width:56px;}th:nth-child(3){width:72px;}th:nth-child(4){width:38
 .errors{margin-top:10px;padding-top:8px;border-top:1px solid var(--vscode-panel-border);font-size:12px;}
 .errors ul{margin:6px 0 0;padding-left:18px;}
 .commitLink{font-size:11px;padding:2px 6px;}
-.stats{font-size:11px;opacity:.85;margin-bottom:8px;}
-.details{margin:8px 0 12px;padding:8px;border:1px solid var(--vscode-panel-border);font-size:12px;background:var(--vscode-editor-background);border-radius:6px;}
-.details.empty{opacity:.75;}
+.stats{font-size:11px;opacity:.85;margin:0;white-space:nowrap;}
+.inlineDetailsRow td{padding:0 4px 8px;border-bottom:none;}
+.details{margin:0;padding:8px;border:1px solid var(--vscode-panel-border);font-size:12px;background:var(--vscode-editor-background);border-radius:6px;}
 .details h3{margin:0 0 6px;font-size:13px;}
 .detailsGrid{display:grid;grid-template-columns:100px 1fr;gap:4px 8px;}
 .detailsGrid .key{opacity:.75;}
@@ -325,7 +472,11 @@ code{font-family:var(--vscode-editor-font-family);}
 <div class="toolbar">
   <div class="toolbarMain">
     <select id="preset" class="preset">
-      <option value="default" selected>Default</option>
+      <option value="default" selected>Default (Active)</option>
+      <option value="open">Open</option>
+      <option value="wip">WIP</option>
+      <option value="blocked">Blocked</option>
+      <option value="closed">Closed</option>
       <option value="all">All</option>
     </select>
     <div id="chips" class="chips"></div>
@@ -343,6 +494,7 @@ code{font-family:var(--vscode-editor-font-family);}
         <circle cx="7" cy="16.5" r="2.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
         <circle cx="18" cy="12" r="2.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
       </svg>
+      <span class="toolbarActionLabel">Git</span>
     </button>
     <button id="refresh" class="actionBtn" type="button" title="Refresh" aria-label="Refresh">
       <svg class="toolbarIcon refreshIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -351,20 +503,75 @@ code{font-family:var(--vscode-editor-font-family);}
     </button>
   </div>
 </div>
-<div class="stats" id="stats"></div>
-<div id="details" class="details empty">Click a bead row to view details (show-like info).</div>
+<div class="toolbarStatsRow"><div class="stats" id="stats"></div></div>
+<div id="rowContextMenu" class="contextMenu"><button id="closeBeadAction" type="button">Close</button></div>
 ${bodyHtml}
 ${errorHtml}
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 const STATUS_LABELS = { open: 'Open', in_progress: 'In Progress', blocked: 'Blocked', closed: 'Closed', other: 'Other' };
-let activeFilters = new Set(['open', 'in_progress', 'blocked']);
+const ALL_FILTERS = ['open', 'in_progress', 'blocked', 'closed', 'other'];
+const PRESET_FILTERS = {
+  default: ['open', 'in_progress', 'blocked'],
+  open: ['open'],
+  wip: ['in_progress'],
+  blocked: ['blocked'],
+  closed: ['closed'],
+  all: ALL_FILTERS
+};
+let activeFilters = new Set(PRESET_FILTERS.default);
 let selectedRow = null;
+let expandedDetailsRow = null;
+let contextMenuRow = null;
 let sortState = { key: 'updated', desc: true };
-const details = document.getElementById('details');
 const chips = document.getElementById('chips');
 const preset = document.getElementById('preset');
 const filterMenu = document.getElementById('filterMenu');
+const clearFilters = document.getElementById('clearFilters');
+const rowContextMenu = document.getElementById('rowContextMenu');
+const closeBeadAction = document.getElementById('closeBeadAction');
+
+function decodeRowItem(row) {
+  const encoded = row.dataset.item;
+  if (!encoded) {
+    return null;
+  }
+  try {
+    return JSON.parse(decodeURIComponent(encoded));
+  } catch {
+    try {
+      return JSON.parse(encoded);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function closeContextMenu() {
+  rowContextMenu.classList.remove('open');
+  contextMenuRow = null;
+}
+
+function openContextMenu(row, event) {
+  contextMenuRow = row;
+  const item = decodeRowItem(row);
+  closeBeadAction.disabled = !item || (row.dataset.status || '') === 'closed';
+  rowContextMenu.style.left = event.clientX + 'px';
+  rowContextMenu.style.top = event.clientY + 'px';
+  rowContextMenu.classList.add('open');
+}
+
+function setsEqual(values, expected) {
+  if (values.size !== expected.length) return false;
+  return expected.every((value) => values.has(value));
+}
+
+function getPresetValue() {
+  for (const [presetKey, presetFilters] of Object.entries(PRESET_FILTERS)) {
+    if (setsEqual(activeFilters, presetFilters)) return presetKey;
+  }
+  return '';
+}
 
 function statusChipClass(status) {
   return 'chip status-' + status;
@@ -390,6 +597,15 @@ function renderFilterMenu() {
 }
 
 function renderFilterChips() {
+  const presetValue = getPresetValue();
+  preset.value = presetValue;
+  clearFilters.style.display = presetValue === '' ? '' : 'none';
+  if (presetValue !== '') {
+    chips.innerHTML = '';
+    renderFilterMenu();
+    return;
+  }
+
   chips.innerHTML = Array.from(activeFilters)
     .map((status) =>
       '<span class="' + statusChipClass(status) + '">' +
@@ -410,11 +626,7 @@ function renderFilterChips() {
 }
 
 function applyPreset(value) {
-  if (value === 'all') {
-    activeFilters = new Set(['open', 'in_progress', 'blocked', 'closed', 'other']);
-  } else {
-    activeFilters = new Set(['open', 'in_progress', 'blocked']);
-  }
+  activeFilters = new Set(PRESET_FILTERS[value] || PRESET_FILTERS.default);
   renderFilterChips();
   applyFilters();
 }
@@ -428,23 +640,22 @@ function esc(value) {
     .replace(/'/g, '&#39;');
 }
 
-function renderDetails(item) {
-  if (!item) {
-    details.classList.add('empty');
-    details.textContent = 'Click a bead row to view details (show-like info).';
-    return;
-  }
-  details.classList.remove('empty');
+function renderDetailsMarkup(item) {
   const commit = item.commitHash && item.commitHash !== ''
     ? '<button class="commitLink" data-commit="' + esc(item.commitHash) + '">' + esc(item.commitHash.substring(0, 8)) + '</button>'
     : '-';
   const progress = item.status === 'in_progress' && item.progress !== null
     ? String(item.progress) + '%'
     : '-';
-  details.innerHTML =
+  const parent = item.parentId && item.parentId !== '' ? item.parentId : '-';
+  const epic = item.epicId && item.epicId !== '' && item.epicId !== item.id ? item.epicId : '-';
+  return '' +
+    '<div class="details">' +
     '<h3>' + esc(item.id) + ' — ' + esc(item.title) + '</h3>' +
     '<div class="detailsGrid">' +
       '<div class="key">Type</div><div>' + esc(item.type || '-') + '</div>' +
+      '<div class="key">Parent</div><div>' + esc(parent) + '</div>' +
+      '<div class="key">Epic</div><div>' + esc(epic) + '</div>' +
       '<div class="key">Status</div><div>' + esc(item.status || '-') + '</div>' +
       '<div class="key">Progress</div><div>' + esc(progress) + '</div>' +
       '<div class="key">Priority</div><div>' + esc(item.priority || '-') + '</div>' +
@@ -455,17 +666,42 @@ function renderDetails(item) {
       '<div class="key">Commit</div><div>' + commit + '</div>' +
     '</div>' +
     '<div class="detailsDescription"><strong>Notes</strong><br>' + esc(item.notes || '-') + '</div>' +
-    '<div class="detailsDescription"><strong>Description</strong><br>' + esc(item.description || '-') + '</div>';
 
-  for (const button of Array.from(details.getElementsByClassName('commitLink'))) {
+    '<div class="detailsDescription"><strong>Description</strong><br>' + esc(item.description || '-') + '</div>' +
+    '</div>';
+}
+
+function bindCommitLinks(scope) {
+  for (const button of Array.from(scope.getElementsByClassName('commitLink'))) {
     button.addEventListener('click', () => {
       vscode.postMessage({ command: 'openGitGraphForCommit', commitHash: button.dataset.commit });
     });
   }
 }
 
+function removeExpandedDetails() {
+  if (!expandedDetailsRow) {
+    return;
+  }
+  expandedDetailsRow.remove();
+  expandedDetailsRow = null;
+}
+
+function expandDetailsRow(row, item) {
+  removeExpandedDetails();
+  const detailsRow = document.createElement('tr');
+  detailsRow.className = 'inlineDetailsRow';
+  const detailsCell = document.createElement('td');
+  detailsCell.colSpan = 5;
+  detailsCell.innerHTML = renderDetailsMarkup(item);
+  detailsRow.appendChild(detailsCell);
+  row.insertAdjacentElement('afterend', detailsRow);
+  bindCommitLinks(detailsRow);
+  expandedDetailsRow = detailsRow;
+}
+
 function applyFilters() {
-  const rows = Array.from(document.querySelectorAll('tbody tr'));
+  const rows = Array.from(document.querySelectorAll('tbody .beadRow'));
   let visibleCount = 0;
   for (const row of rows) {
     const status = row.dataset.status || '';
@@ -473,7 +709,16 @@ function applyFilters() {
     row.style.display = visible ? '' : 'none';
     if (visible) visibleCount++;
   }
+  if (selectedRow && selectedRow.style.display === 'none') {
+    selectedRow.classList.remove('selected');
+    selectedRow = null;
+    removeExpandedDetails();
+  }
+  if (contextMenuRow && contextMenuRow.style.display === 'none') {
+    closeContextMenu();
+  }
   document.getElementById('stats').textContent = visibleCount + ' / ' + rows.length + ' beads shown';
+  renderHierarchyOverlays();
 }
 
 function getSortValue(row, key) {
@@ -482,21 +727,148 @@ function getSortValue(row, key) {
   return parseInt(row.dataset.updatedTs || '0', 10);
 }
 
+function compareRows(a, b) {
+  const aValue = getSortValue(a, sortState.key);
+  const bValue = getSortValue(b, sortState.key);
+  if (aValue !== bValue) {
+    return sortState.desc ? bValue - aValue : aValue - bValue;
+  }
+
+  const aOrder = parseInt(a.dataset.orderIndex || '0', 10);
+  const bOrder = parseInt(b.dataset.orderIndex || '0', 10);
+  return aOrder - bOrder;
+}
+
 function applySort() {
   for (const tbody of Array.from(document.querySelectorAll('tbody'))) {
-    const rows = Array.from(tbody.querySelectorAll('tr'));
-    rows.sort((a, b) => {
-      const aValue = getSortValue(a, sortState.key);
-      const bValue = getSortValue(b, sortState.key);
-      return sortState.desc ? bValue - aValue : aValue - bValue;
-    });
+    const rows = Array.from(tbody.querySelectorAll('.beadRow'));
+    const rowById = new Map();
+    const childrenByParent = new Map();
     for (const row of rows) {
+      rowById.set(row.dataset.id || '', row);
+    }
+    for (const row of rows) {
+      const parentId = row.dataset.parentId || '';
+      if (parentId !== '' && rowById.has(parentId)) {
+        const siblings = childrenByParent.get(parentId) || [];
+        siblings.push(row);
+        childrenByParent.set(parentId, siblings);
+      }
+    }
+
+    const visited = new Set();
+    const appendRow = (row) => {
+      const id = row.dataset.id || '';
+      if (visited.has(id)) {
+        return;
+      }
+      visited.add(id);
       tbody.appendChild(row);
+      if (selectedRow === row && expandedDetailsRow) {
+        tbody.appendChild(expandedDetailsRow);
+      }
+      const children = (childrenByParent.get(id) || []).sort(compareRows);
+      for (const child of children) {
+        appendRow(child);
+      }
+    };
+
+    const roots = rows
+      .filter((row) => {
+        const parentId = row.dataset.parentId || '';
+        return parentId === '' || !rowById.has(parentId);
+      })
+      .sort(compareRows);
+
+    for (const root of roots) {
+      appendRow(root);
+    }
+    for (const row of rows) {
+      appendRow(row);
     }
   }
   for (const icon of Array.from(document.querySelectorAll('.sortIcon'))) {
     const key = icon.dataset.sortKey;
     icon.textContent = key === sortState.key ? (sortState.desc ? '▼' : '▲') : ' ';
+  }
+  renderHierarchyOverlays();
+}
+
+function renderHierarchyOverlays() {
+  const step = 18;
+  const paddingBase = 4;
+  for (const wrap of Array.from(document.querySelectorAll('.tableWrap'))) {
+    const overlay = wrap.querySelector('.hierarchyOverlay');
+    const tbody = wrap.querySelector('tbody');
+    if (!overlay || !tbody) {
+      continue;
+    }
+
+    const visibleRows = Array.from(tbody.querySelectorAll('.beadRow')).filter((row) => row.style.display !== 'none');
+    if (visibleRows.length === 0) {
+      overlay.innerHTML = '';
+      continue;
+    }
+
+    const wrapRect = wrap.getBoundingClientRect();
+    const width = Math.max(1, Math.round(wrapRect.width));
+    const height = Math.max(1, Math.round(wrapRect.height));
+    overlay.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+
+    let shadowPaths = '';
+    let linePaths = '';
+    let nodes = '';
+
+    for (const row of visibleRows) {
+      const depth = parseInt(row.dataset.depth || '0', 10);
+      if (!Number.isFinite(depth) || depth < 1) {
+        continue;
+      }
+
+      const titleCell = row.querySelector('.titleCell');
+      if (!titleCell) {
+        continue;
+      }
+
+      const titleRect = titleCell.getBoundingClientRect();
+      const rowRect = row.getBoundingClientRect();
+      const cellLeft = titleRect.left - wrapRect.left;
+      const xBase = cellLeft + paddingBase;
+      const topY = rowRect.top - wrapRect.top + 2;
+      const bottomY = rowRect.bottom - wrapRect.top - 2;
+      const midY = (topY + bottomY) / 2;
+      const currentX = xBase + (depth - 0.5) * step;
+      const endX = xBase + depth * step + 1;
+      const guideColumns = (row.dataset.guideColumns || '').split('').map((value) => value === '1');
+      const isLastSibling = row.dataset.lastSibling === '1';
+      const curveStartY = midY - Math.min(15, (bottomY - topY) * 0.34);
+      const controlY = midY - Math.min(8, (bottomY - topY) * 0.16);
+      const elbowX = Math.min(endX, currentX + 11);
+
+      for (let i = 0; i < guideColumns.length; i++) {
+        if (!guideColumns[i]) {
+          continue;
+        }
+        const x = xBase + (i + 0.5) * step;
+        const segment = 'M' + x.toFixed(1) + ' ' + topY.toFixed(1) + ' V ' + bottomY.toFixed(1);
+        shadowPaths += '<path class="hierarchyGuideShadow" d="' + segment + '" />';
+        linePaths += '<path class="hierarchyGuideLine" d="' + segment + '" />';
+      }
+
+      const branchSegment = isLastSibling
+        ? 'M' + currentX.toFixed(1) + ' ' + topY.toFixed(1) + ' V ' + curveStartY.toFixed(1) +
+          ' C ' + currentX.toFixed(1) + ' ' + controlY.toFixed(1) + ' ' + (currentX + 2).toFixed(1) + ' ' + midY.toFixed(1) + ' ' + elbowX.toFixed(1) + ' ' + midY.toFixed(1) + ' H ' + endX.toFixed(1)
+        : 'M' + currentX.toFixed(1) + ' ' + topY.toFixed(1) + ' V ' + curveStartY.toFixed(1) +
+          ' C ' + currentX.toFixed(1) + ' ' + controlY.toFixed(1) + ' ' + (currentX + 2).toFixed(1) + ' ' + midY.toFixed(1) + ' ' + elbowX.toFixed(1) + ' ' + midY.toFixed(1) + ' H ' + endX.toFixed(1) +
+          ' M' + currentX.toFixed(1) + ' ' + midY.toFixed(1) + ' V ' + bottomY.toFixed(1);
+
+      shadowPaths += '<path class="hierarchyGuideShadow" d="' + branchSegment + '" />';
+      linePaths += '<path class="hierarchyGuideLine" d="' + branchSegment + '" />';
+      nodes += '<circle class="hierarchyGuideNodeShadow" cx="' + currentX.toFixed(1) + '" cy="' + midY.toFixed(1) + '" r="3.7" />' +
+        '<circle class="hierarchyGuideNode" cx="' + currentX.toFixed(1) + '" cy="' + midY.toFixed(1) + '" r="2.15" />';
+    }
+
+    overlay.innerHTML = shadowPaths + linePaths + nodes;
   }
 }
 
@@ -504,7 +876,6 @@ document.getElementById('addFilter').addEventListener('click', () => {
   filterMenu.classList.toggle('open');
 });
 document.getElementById('clearFilters').addEventListener('click', () => {
-  preset.value = 'default';
   applyPreset('default');
 });
 preset.addEventListener('change', () => {
@@ -514,7 +885,33 @@ document.addEventListener('click', (event) => {
   if (!event.target.closest('.menu')) {
     filterMenu.classList.remove('open');
   }
+  if (!event.target.closest('.contextMenu')) {
+    closeContextMenu();
+  }
 });
+document.addEventListener('contextmenu', (event) => {
+  const row = event.target.closest ? event.target.closest('.beadRow') : null;
+  if (!row) {
+    closeContextMenu();
+    return;
+  }
+  event.preventDefault();
+  openContextMenu(row, event);
+});
+closeBeadAction.addEventListener('click', () => {
+  if (!contextMenuRow) {
+    return;
+  }
+  const item = decodeRowItem(contextMenuRow);
+  const issueId = contextMenuRow.dataset.id || '';
+  const workspacePath = contextMenuRow.dataset.workspacePath || '';
+  closeContextMenu();
+  if (!item || issueId === '' || workspacePath === '') {
+    return;
+  }
+  vscode.postMessage({ command: 'closeBead', issueId, workspacePath, title: item.title || '' });
+});
+window.addEventListener('resize', renderHierarchyOverlays);
 document.getElementById('refresh').addEventListener('click', () => {
   vscode.postMessage({ command: 'refresh' });
 });
@@ -532,35 +929,29 @@ for (const button of Array.from(document.querySelectorAll('.sortToggle'))) {
     applySort();
   });
 }
-for (const button of Array.from(document.getElementsByClassName('commitLink'))) {
-  button.addEventListener('click', () => {
-    vscode.postMessage({ command: 'openGitGraphForCommit', commitHash: button.dataset.commit });
-  });
-}
 for (const row of Array.from(document.querySelectorAll('tbody tr'))) {
   const selectRow = (event) => {
     const target = event.target;
     if (target && target.closest && target.closest('button')) return;
+    if (selectedRow === row) {
+      row.classList.remove('selected');
+      selectedRow = null;
+      removeExpandedDetails();
+      return;
+    }
     if (selectedRow) {
       selectedRow.classList.remove('selected');
     }
+    removeExpandedDetails();
     selectedRow = row;
     row.classList.add('selected');
 
-    const encoded = row.dataset.item;
-    if (!encoded) {
-      renderDetails(null);
+    const item = decodeRowItem(row);
+    if (!item) {
+      removeExpandedDetails();
       return;
     }
-    try {
-      renderDetails(JSON.parse(decodeURIComponent(encoded)));
-    } catch {
-      try {
-        renderDetails(JSON.parse(encoded));
-      } catch {
-        renderDetails(null);
-      }
-    }
+    expandDetailsRow(row, item);
   };
 
   row.addEventListener('click', selectRow);
@@ -574,7 +965,14 @@ applyFilters();
 </html>`;
   }
 
-  public async handleMessage(message: { command?: string; uri?: string; commitHash?: string }) {
+  public async handleMessage(message: {
+    command?: string;
+    uri?: string;
+    commitHash?: string;
+    issueId?: string;
+    workspacePath?: string;
+    title?: string;
+  }) {
     if (message.command === "refresh") {
       await this.refresh();
       return;
@@ -596,6 +994,60 @@ applyFilters();
       vscode.window.showInformationMessage(
         `Opened Git Graph. Commit hash copied to clipboard: ${commitHash.substring(0, 8)}`
       );
+      return;
     }
+
+    if (
+      message.command === "closeBead" &&
+      typeof message.issueId === "string" &&
+      typeof message.workspacePath === "string"
+    ) {
+      const issueId = message.issueId.trim();
+      const workspacePath = message.workspacePath.trim();
+      if (issueId === "" || workspacePath === "") {
+        return;
+      }
+
+      const confirmation = await vscode.window.showWarningMessage(
+        `Close bead ${issueId}${message.title ? `: ${message.title}` : ""}?`,
+        { modal: true },
+        "Close"
+      );
+      if (confirmation !== "Close") {
+        return;
+      }
+
+      try {
+        await this.runBdCommand(["close", issueId], workspacePath);
+        await this.runBdCommand(["sync", "--flush-only"], workspacePath);
+        await this.refresh();
+        vscode.window.showInformationMessage(`Closed bead ${issueId}.`);
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : "Unable to close bead.";
+        vscode.window.showErrorMessage(messageText);
+      }
+    }
+  }
+
+  private runBdCommand(args: string[], cwd: string) {
+    return new Promise<void>((resolve, reject) => {
+      const child = cp.spawn("bd", args, { cwd });
+      let stderr = "";
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+      child.on("error", (error) => {
+        reject(error);
+      });
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        reject(
+          new Error(stderr.trim() || `bd ${args.join(" ")} failed with exit code ${code ?? -1}.`)
+        );
+      });
+    });
   }
 }

@@ -5,7 +5,7 @@
 </div>
 
 [![MIT License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](./LICENSE)
-[![Version 0.1.12](https://img.shields.io/badge/version-0.1.12-0366d6?style=flat-square)](./CHANGELOG.md)
+[![Version 0.1.18](https://img.shields.io/badge/version-0.1.18-0366d6?style=flat-square)](./CHANGELOG.md)
 
 <sub>Acknowledgement: This project builds on prior work from [Git Graph](https://github.com/mhutchie/vscode-git-graph) and [neo-git-graph](https://github.com/asispts/neo-git-graph), and it remains grateful for the work of their maintainers, including security improvements.</sub>
 

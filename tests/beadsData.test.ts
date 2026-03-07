@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  beadPickParentId,
   beadPickProgress,
   beadsAsArray,
   beadShortDate,
   beadStatusLabel,
+  buildBeadHierarchy,
   extractBeadItems,
   normalizeBeadPriority,
   normalizeBeadStatus,
@@ -62,6 +64,7 @@ describe("toBeadItem", () => {
       labels: "ux, beads",
       createdAt: "2026-03-07T00:00:00Z",
       updatedAt: "2026-03-07T01:00:00Z",
+      parentId: "",
       commitHash: "abcdef1234567"
     });
   });
@@ -80,6 +83,7 @@ describe("toBeadItem", () => {
         tags: ["parser"],
         created_at: "2026-03-06T10:00:00Z",
         modified_at: "2026-03-07T11:30:00Z",
+        parent_id: "neo-1",
         commit_hash: "1234567890abcdef"
       })
     ).toMatchObject({
@@ -89,6 +93,7 @@ describe("toBeadItem", () => {
       status: "blocked",
       progress: 80,
       priority: "2",
+      parentId: "neo-1",
       notes: "progress: 80%",
       labels: "parser",
       commitHash: "1234567890abcdef"
@@ -98,6 +103,24 @@ describe("toBeadItem", () => {
   it("returns null when id or title is missing", () => {
     expect(toBeadItem({ title: "No id" })).toBeNull();
     expect(toBeadItem({ id: "neo-3" })).toBeNull();
+  });
+
+  it("extracts parent ids from bd dependency metadata", () => {
+    expect(
+      toBeadItem({
+        id: "neo-4",
+        title: "Child task",
+        dependencies: [
+          {
+            issue_id: "neo-4",
+            depends_on_id: "neo-epic",
+            type: "parent-child"
+          }
+        ]
+      })
+    ).toMatchObject({
+      parentId: "neo-epic"
+    });
   });
 });
 
@@ -123,7 +146,70 @@ describe("extractBeadItems", () => {
   });
 });
 
+describe("buildBeadHierarchy", () => {
+  it("infers dotted task ids under an epic", () => {
+    const items = [
+      toBeadItem({ id: "vscode-markdown-pdf-8cp.2", title: "Subtask", type: "task" }),
+      toBeadItem({ id: "vscode-markdown-pdf-8cp", title: "Epic", type: "epic" }),
+      toBeadItem({ id: "vscode-markdown-pdf-8cp.1", title: "Task", type: "task" })
+    ].filter((item) => item !== null);
+
+    const hierarchy = buildBeadHierarchy(items);
+    const byId = new Map(hierarchy.map((entry) => [entry.item.id, entry]));
+
+    expect(byId.get("vscode-markdown-pdf-8cp")).toMatchObject({
+      parentId: null,
+      epicId: "vscode-markdown-pdf-8cp",
+      depth: 0
+    });
+    expect(byId.get("vscode-markdown-pdf-8cp.1")).toMatchObject({
+      parentId: "vscode-markdown-pdf-8cp",
+      epicId: "vscode-markdown-pdf-8cp",
+      depth: 1
+    });
+    expect(byId.get("vscode-markdown-pdf-8cp.2")).toMatchObject({
+      parentId: "vscode-markdown-pdf-8cp",
+      epicId: "vscode-markdown-pdf-8cp",
+      depth: 1
+    });
+  });
+
+  it("prefers explicit parent ids and keeps nested subtasks", () => {
+    const items = [
+      toBeadItem({ id: "neo-epic", title: "Epic", type: "epic" }),
+      toBeadItem({ id: "neo-task", title: "Task", type: "task", parentId: "neo-epic" }),
+      toBeadItem({ id: "neo-task.1", title: "Subtask", type: "task" })
+    ].filter((item) => item !== null);
+
+    const hierarchy = buildBeadHierarchy(items);
+    const byId = new Map(hierarchy.map((entry) => [entry.item.id, entry]));
+
+    expect(byId.get("neo-task")).toMatchObject({
+      parentId: "neo-epic",
+      epicId: "neo-epic",
+      depth: 1
+    });
+    expect(byId.get("neo-task.1")).toMatchObject({
+      parentId: "neo-task",
+      epicId: "neo-epic",
+      depth: 2
+    });
+  });
+});
+
 describe("bead normalization helpers", () => {
+  it("reads parent ids from explicit fields or dependency metadata", () => {
+    expect(beadPickParentId({ parent_id: "neo-epic" })).toBe("neo-epic");
+    expect(
+      beadPickParentId({
+        dependencies: [{ depends_on_id: "neo-parent", type: "parent-child" }]
+      })
+    ).toBe("neo-parent");
+    expect(
+      beadPickParentId({ dependencies: [{ depends_on_id: "neo-parent", type: "blocks" }] })
+    ).toBe("");
+  });
+
   it("extracts progress percentages from direct fields or notes", () => {
     expect(beadPickProgress({ progress: 42 })).toBe(42);
     expect(beadPickProgress({ progress: "65%" })).toBe(65);

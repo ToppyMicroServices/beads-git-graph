@@ -12,6 +12,14 @@ export interface BeadItem {
   assignee: string;
   labels: string;
   createdAt: string;
+  parentId: string;
+}
+
+export interface BeadHierarchyItem {
+  item: BeadItem;
+  parentId: string | null;
+  epicId: string | null;
+  depth: number;
 }
 
 export function beadsAsArray(parsed: unknown): unknown[] {
@@ -65,6 +73,51 @@ export function beadPickStringArray(
     }
   }
   return fallback;
+}
+
+export function beadPickParentId(record: Record<string, unknown>) {
+  const explicitParentId = beadPickString(
+    record,
+    [
+      "parentId",
+      "parent_id",
+      "parent",
+      "parentKey",
+      "parent_key",
+      "parentIssueId",
+      "parent_issue_id",
+      "epicId",
+      "epic_id"
+    ],
+    ""
+  );
+  if (explicitParentId !== "") {
+    return explicitParentId;
+  }
+
+  const dependencies = record.dependencies;
+  if (!Array.isArray(dependencies)) {
+    return "";
+  }
+
+  for (const dependency of dependencies) {
+    if (typeof dependency !== "object" || dependency === null) {
+      continue;
+    }
+
+    const dependencyRecord = dependency as Record<string, unknown>;
+    const dependencyType = beadPickString(dependencyRecord, ["type"], "").toLowerCase();
+    if (dependencyType !== "parent-child") {
+      continue;
+    }
+
+    const parentId = beadPickString(dependencyRecord, ["depends_on_id", "dependsOnId"], "");
+    if (parentId !== "") {
+      return parentId;
+    }
+  }
+
+  return "";
 }
 
 export function beadPickProgress(record: Record<string, unknown>): number | null {
@@ -126,6 +179,7 @@ export function toBeadItem(item: unknown): BeadItem | null {
     labels: beadPickStringArray(record, ["labels", "tags"], "-"),
     createdAt: beadPickString(record, ["created_at", "createdAt", "created"], "-"),
     updatedAt: beadPickString(record, ["updated_at", "updatedAt", "updated", "modified_at"], "-"),
+    parentId: beadPickParentId(record),
     commitHash: beadPickString(record, ["commitHash", "commit_hash", "commit"], "")
   };
 }
@@ -143,6 +197,93 @@ export function extractBeadItems(parsed: unknown): BeadItem[] {
       return bTime - aTime;
     }
     return a.id.localeCompare(b.id);
+  });
+}
+
+function inferParentIdFromId(id: string, knownIds: Set<string>) {
+  const lastDot = id.lastIndexOf(".");
+  if (lastDot <= 0) {
+    return null;
+  }
+
+  const candidate = id.slice(0, lastDot).trim();
+  return candidate !== "" && knownIds.has(candidate) ? candidate : null;
+}
+
+export function buildBeadHierarchy(items: BeadItem[]): BeadHierarchyItem[] {
+  const knownIds = new Set(items.map((item) => item.id));
+  const itemsById = new Map(items.map((item) => [item.id, item]));
+  const parentCache = new Map<string, string | null>();
+  const ancestryCache = new Map<string, { depth: number; epicId: string | null }>();
+
+  const resolveParentId = (item: BeadItem) => {
+    const cached = parentCache.get(item.id);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const explicitParentId = item.parentId.trim();
+    const resolvedParentId =
+      explicitParentId !== "" && explicitParentId !== item.id && knownIds.has(explicitParentId)
+        ? explicitParentId
+        : inferParentIdFromId(item.id, knownIds);
+
+    parentCache.set(item.id, resolvedParentId);
+    return resolvedParentId;
+  };
+
+  const resolveAncestry = (
+    itemId: string,
+    visiting: Set<string>
+  ): { depth: number; epicId: string | null } => {
+    const cached = ancestryCache.get(itemId);
+    if (cached) {
+      return cached;
+    }
+
+    if (visiting.has(itemId)) {
+      const fallback = { depth: 0, epicId: null };
+      ancestryCache.set(itemId, fallback);
+      return fallback;
+    }
+
+    const item = itemsById.get(itemId);
+    if (!item) {
+      return { depth: 0, epicId: null };
+    }
+
+    visiting.add(itemId);
+
+    const parentId = resolveParentId(item);
+    let depth = 0;
+    let epicId: string | null = normalizeBeadType(item.type) === "epic" ? item.id : null;
+
+    if (parentId !== null) {
+      const parent = itemsById.get(parentId);
+      if (parent) {
+        const parentMeta = resolveAncestry(parentId, visiting);
+        depth = parentMeta.depth + 1;
+        epicId =
+          parentMeta.epicId ?? (normalizeBeadType(parent.type) === "epic" ? parent.id : epicId);
+      }
+    }
+
+    visiting.delete(itemId);
+
+    const resolved = { depth, epicId };
+    ancestryCache.set(itemId, resolved);
+    return resolved;
+  };
+
+  return items.map((item) => {
+    const parentId = resolveParentId(item);
+    const ancestry = resolveAncestry(item.id, new Set<string>());
+    return {
+      item,
+      parentId,
+      epicId: ancestry.epicId,
+      depth: ancestry.depth
+    };
   });
 }
 
