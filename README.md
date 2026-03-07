@@ -42,7 +42,7 @@ This project is based on the last MIT commit and:
 - Adds devcontainer support
 - Improves codebase, tooling, and maintainability
 - Continues active maintenance where the prior fork had slowed, with a stronger emphasis on security review and corrective updates
-- **Adds Beads integration** — `.beads/` data auto-detection, `bd list` style issue table in a dedicated panel, status bar shortcut, and Git Graph ↔ Beads view toggle. See [Beads (bd)](https://github.com/steveyegge/beads) for more on the issue tracker.
+- **Adds Beads integration** — `.beads/` data auto-detection, `bd list` style issue table, Activity Bar entry, status bar shortcut, main-panel Git Graph ↔ Beads toggle, and visible progress percentages for in-progress items. See [Beads (bd)](https://github.com/steveyegge/beads) for more on the issue tracker.
 
 ## Features
 
@@ -53,7 +53,9 @@ This project is based on the last MIT commit and:
 - **Commit actions**: Checkout, cherry-pick, revert, and reset
 - **Multi-repo**: Work with multiple repositories in one workspace
 - **Devcontainer ready**: Works in remote and container environments
-- **Beads Graph view**: Detects `.beads` data automatically and shows a `bd list` style table
+- **Beads Graph view**: Detects `.beads` data automatically, opens from the Activity Bar, and shows a `bd list` style table
+- **Main-panel toggle**: Switch between Git Graph and Beads from matching toolbar buttons without leaving the editor area
+- **Progress visibility**: Shows numeric progress percentages for `in_progress` Beads items when progress is written in notes such as `進捗: 35%` or `progress: 35%`
 - **Conventional Commit assist**: Normalizes and classifies commit types (with alias handling), colors recognized types, and supports `Feat Only` filtering
 
 ## Security & Privacy
@@ -92,6 +94,12 @@ All settings use the `beads-git-graph` prefix.
 Search for `beads-git-graph` in Extensions.
 
 - Marketplace identity (`publisher.name`) must be unique before publish.
+
+## Local Testing
+
+- Package a local VSIX with `pnpm dlx @vscode/vsce package`
+- Install it into VS Code with `code --install-extension beads-git-graph-<version>.vsix --force`
+- Reload VS Code and confirm the Activity Bar icon, Git Graph ↔ Beads toolbar toggle, and Beads progress display
 
 ## License
 

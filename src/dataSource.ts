@@ -20,7 +20,6 @@ const gitLogSeparator = "XX7Nal-YARtTpjCikii9nJxER19D6diSyk-AWkPb";
 
 export class DataSource {
   private gitPath!: string;
-  private gitExecPath!: string;
   private gitLogFormat!: string;
   private gitCommitDetailsFormat!: string;
 
@@ -31,7 +30,6 @@ export class DataSource {
 
   public registerGitPath() {
     this.gitPath = getConfig().gitPath();
-    this.gitExecPath = this.gitPath.indexOf(" ") > -1 ? '"' + this.gitPath + '"' : this.gitPath;
   }
 
   public generateGitCommandFormats() {
@@ -43,7 +41,7 @@ export class DataSource {
 
   public getBranches(repo: string, showRemoteBranches: boolean) {
     return new Promise<{ branches: string[]; head: string | null; error: boolean }>((resolve) => {
-      this.execGit("branch" + (showRemoteBranches ? " -a" : ""), repo, (err, stdout) => {
+      this.execGit(["branch", ...(showRemoteBranches ? ["-a"] : [])], repo, (err, stdout) => {
         let branchData = {
           branches: <string[]>[],
           head: <string | null>null,
@@ -160,59 +158,71 @@ export class DataSource {
   public commitDetails(repo: string, commitHash: string) {
     return new Promise<GitCommitDetails | null>((resolve) => {
       Promise.all([
-        new Promise<GitCommitDetails>((resolve, reject) =>
-          this.execGit(
-            "show --quiet " + commitHash + ' --format="' + this.gitCommitDetailsFormat + '"',
-            repo,
-            (err, stdout) => {
-              if (err) {
-                reject();
-              } else {
-                let lines = stdout.split(eolRegex);
-                let lastLine = lines.length - 1;
-                while (lines.length > 0 && lines[lastLine] === "") lastLine--;
-                let commitInfo = lines[0].split(gitLogSeparator);
-                resolve({
-                  hash: commitInfo[0],
-                  parents: commitInfo[1].split(" "),
-                  author: commitInfo[2],
-                  email: commitInfo[3],
-                  date: parseInt(commitInfo[4]),
-                  committer: commitInfo[5],
-                  body: lines.slice(1, lastLine + 1).join("\n"),
-                  fileChanges: []
-                });
-              }
-            }
-          )
+        this.spawnGit(
+          ["show", "--quiet", commitHash, `--format=${this.gitCommitDetailsFormat}`],
+          repo,
+          (stdout) => {
+            let lines = stdout.split(eolRegex);
+            let lastLine = lines.length - 1;
+            while (lines.length > 0 && lines[lastLine] === "") lastLine--;
+            let commitInfo = lines[0].split(gitLogSeparator);
+            return {
+              hash: commitInfo[0],
+              parents: commitInfo[1].split(" "),
+              author: commitInfo[2],
+              email: commitInfo[3],
+              date: parseInt(commitInfo[4]),
+              committer: commitInfo[5],
+              body: lines.slice(1, lastLine + 1).join("\n"),
+              fileChanges: []
+            };
+          },
+          null
         ),
-        new Promise<string[]>((resolve, reject) =>
-          this.execGit(
-            "diff-tree --name-status -r -m --root --find-renames --diff-filter=AMDR " + commitHash,
-            repo,
-            (err, stdout) => {
-              if (err) reject();
-              else resolve(stdout.split(eolRegex));
-            }
-          )
+        this.spawnGit(
+          [
+            "diff-tree",
+            "--name-status",
+            "-r",
+            "-m",
+            "--root",
+            "--find-renames",
+            "--diff-filter=AMDR",
+            commitHash
+          ],
+          repo,
+          (stdout) => stdout.split(eolRegex),
+          null
         ),
-        new Promise<string[]>((resolve, reject) =>
-          this.execGit(
-            "diff-tree --numstat -r -m --root --find-renames --diff-filter=AMDR " + commitHash,
-            repo,
-            (err, stdout) => {
-              if (err) reject();
-              else resolve(stdout.split(eolRegex));
-            }
-          )
+        this.spawnGit(
+          [
+            "diff-tree",
+            "--numstat",
+            "-r",
+            "-m",
+            "--root",
+            "--find-renames",
+            "--diff-filter=AMDR",
+            commitHash
+          ],
+          repo,
+          (stdout) => stdout.split(eolRegex),
+          null
         )
       ])
         .then((results) => {
-          let details = results[0],
-            fileLookup: { [file: string]: number } = {};
+          const details = results[0] as GitCommitDetails | null;
+          const nameStatusLines = results[1] as string[] | null;
+          const numStatLines = results[2] as string[] | null;
+          let fileLookup: { [file: string]: number } = {};
 
-          for (let i = 1; i < results[1].length - 1; i++) {
-            let line = results[1][i].split("\t");
+          if (details === null || nameStatusLines === null || numStatLines === null) {
+            resolve(null);
+            return;
+          }
+
+          for (let i = 1; i < nameStatusLines.length - 1; i++) {
+            let line = nameStatusLines[i].split("\t");
             if (line.length < 2) break;
             let oldFilePath = getPathFromStr(line[1]),
               newFilePath = getPathFromStr(line[line.length - 1]);
@@ -226,8 +236,8 @@ export class DataSource {
             });
           }
 
-          for (let i = 1; i < results[2].length - 1; i++) {
-            let line = results[2][i].split("\t");
+          for (let i = 1; i < numStatLines.length - 1; i++) {
+            let line = numStatLines[i].split("\t");
             if (line.length !== 3) break;
             let fileName = line[2].replace(/(.*){.* => (.*)}/, "$1$2").replace(/.* => (.*)/, "$1");
             if (typeof fileLookup[fileName] === "number") {
@@ -286,7 +296,7 @@ export class DataSource {
 
   public async getRemoteUrl(repo: string) {
     return new Promise<string | null>((resolve) => {
-      this.execGit("config --get remote.origin.url", repo, (err, stdout) => {
+      this.execGit(["config", "--get", "remote.origin.url"], repo, (err, stdout) => {
         resolve(!err ? stdout.split(eolRegex)[0] : null);
       });
     });
@@ -294,7 +304,7 @@ export class DataSource {
 
   public isGitRepository(path: string) {
     return new Promise<boolean>((resolve) => {
-      this.execGit("rev-parse --git-dir", path, (err) => {
+      this.execGit(["rev-parse", "--git-dir"], path, (err) => {
         resolve(!err);
       });
     });
@@ -339,7 +349,7 @@ export class DataSource {
   }
 
   public checkoutCommit(repo: string, commitHash: string) {
-    return this.runGitCommand("checkout " + commitHash, repo);
+    return this.runGitCommandSpawn(["checkout", commitHash], repo);
   }
 
   public deleteBranch(repo: string, branchName: string, forceDelete: boolean) {
@@ -361,25 +371,28 @@ export class DataSource {
   }
 
   public mergeCommit(repo: string, commitHash: string, createNewCommit: boolean) {
-    return this.runGitCommand("merge " + commitHash + (createNewCommit ? " --no-ff" : ""), repo);
+    return this.runGitCommandSpawn(
+      ["merge", commitHash, ...(createNewCommit ? ["--no-ff"] : [])],
+      repo
+    );
   }
 
   public cherrypickCommit(repo: string, commitHash: string, parentIndex: number) {
-    return this.runGitCommand(
-      "cherry-pick " + commitHash + (parentIndex > 0 ? " -m " + parentIndex : ""),
+    return this.runGitCommandSpawn(
+      ["cherry-pick", commitHash, ...(parentIndex > 0 ? ["-m", String(parentIndex)] : [])],
       repo
     );
   }
 
   public revertCommit(repo: string, commitHash: string, parentIndex: number) {
-    return this.runGitCommand(
-      "revert --no-edit " + commitHash + (parentIndex > 0 ? " -m " + parentIndex : ""),
+    return this.runGitCommandSpawn(
+      ["revert", "--no-edit", commitHash, ...(parentIndex > 0 ? ["-m", String(parentIndex)] : [])],
       repo
     );
   }
 
   public resetToCommit(repo: string, commitHash: string, resetMode: GitResetMode) {
-    return this.runGitCommand("reset --" + resetMode + " " + commitHash, repo);
+    return this.runGitCommandSpawn(["reset", `--${resetMode}`, commitHash], repo);
   }
 
   public resetFileToRevision(repo: string, commitHash: string, filePath: string) {
@@ -390,7 +403,7 @@ export class DataSource {
     return new Promise<GitRefData>((resolve) => {
       const hiddenBranchPatterns = this.getHiddenBranchPatterns();
       this.execGit(
-        "show-ref " + (showRemoteBranches ? "" : "--heads --tags") + " -d --head",
+        ["show-ref", ...(showRemoteBranches ? [] : ["--heads", "--tags"]), "-d", "--head"],
         repo,
         (err, stdout) => {
           let refData: GitRefData = { head: null, refs: [] };
@@ -510,37 +523,22 @@ export class DataSource {
 
   private getGitUnsavedChanges(repo: string) {
     return new Promise<GitUnsavedChanges | null>((resolve) => {
-      this.execGit("status -s --branch --untracked-files --porcelain", repo, (err, stdout) => {
-        if (!err) {
-          let lines = stdout.split(eolRegex);
-          resolve(
-            lines.length > 2
-              ? { branch: lines[0].substring(3).split("...")[0], changes: lines.length - 2 }
-              : null
-          );
-        } else {
-          resolve(null);
-        }
-      });
-    });
-  }
-
-  private runGitCommand(command: string, repo: string) {
-    return new Promise<GitCommandStatus>((resolve) => {
-      this.execGit(command, repo, (err, stdout, stderr) => {
-        if (!err) {
-          resolve(null);
-        } else {
-          let lines;
-          if (stdout !== "" || stderr !== "") {
-            lines = (stdout !== "" ? stdout : stderr !== "" ? stderr : "").split(eolRegex);
+      this.execGit(
+        ["status", "-s", "--branch", "--untracked-files", "--porcelain"],
+        repo,
+        (err, stdout) => {
+          if (!err) {
+            let lines = stdout.split(eolRegex);
+            resolve(
+              lines.length > 2
+                ? { branch: lines[0].substring(3).split("...")[0], changes: lines.length - 2 }
+                : null
+            );
           } else {
-            lines = err.message.split(eolRegex);
-            lines.shift();
+            resolve(null);
           }
-          resolve(lines.slice(0, lines.length - 1).join("\n"));
         }
-      });
+      );
     });
   }
 
@@ -573,11 +571,11 @@ export class DataSource {
   }
 
   private execGit(
-    command: string,
+    args: string[],
     repo: string,
     callback: { (error: Error | null, stdout: string, stderr: string): void }
   ) {
-    cp.exec(this.gitExecPath + " " + command, { cwd: repo }, callback);
+    cp.execFile(this.gitPath, args, { cwd: repo }, callback);
   }
 
   private spawnGit<T>(
