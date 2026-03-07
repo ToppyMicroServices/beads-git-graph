@@ -100,8 +100,10 @@ export function isDbSyncBranchName(branchName: string): boolean {
     normalized.endsWith("/beads-sync") ||
     normalized.startsWith("beads-sync/") ||
     normalized.includes("/beads-sync/") ||
-    normalized.startsWith("beads") ||
-    normalized.includes("/beads") ||
+    normalized === "beads" ||
+    normalized.endsWith("/beads") ||
+    normalized.startsWith("beads/") ||
+    normalized.includes("/beads/") ||
     normalized.startsWith("db/") ||
     normalized.includes("/db/")
   );

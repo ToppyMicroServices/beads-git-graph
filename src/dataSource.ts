@@ -515,8 +515,27 @@ export class DataSource {
   }
 
   private isHiddenBranch(branchName: string, hiddenBranchPatterns: RegExp[]) {
+    const candidates = [branchName];
+
+    if (branchName.startsWith("remotes/")) {
+      const withoutRemotes = branchName.substring(8);
+      candidates.push(withoutRemotes);
+
+      const remoteSeparator = withoutRemotes.indexOf("/");
+      if (remoteSeparator !== -1) {
+        candidates.push(withoutRemotes.substring(remoteSeparator + 1));
+      }
+    } else {
+      const remoteSeparator = branchName.indexOf("/");
+      if (remoteSeparator !== -1) {
+        candidates.push(branchName.substring(remoteSeparator + 1));
+      }
+    }
+
     for (let i = 0; i < hiddenBranchPatterns.length; i++) {
-      if (hiddenBranchPatterns[i].test(branchName)) return true;
+      for (let j = 0; j < candidates.length; j++) {
+        if (hiddenBranchPatterns[i].test(candidates[j])) return true;
+      }
     }
     return false;
   }

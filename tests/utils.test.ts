@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 // We test the pure functions from src/utils.ts that don't depend on vscode.
@@ -87,6 +90,22 @@ function arraysEqual<T>(a: T[], b: T[], equalElements: (a: T, b: T) => boolean) 
   return true;
 }
 
+function isDbSyncBranchName(branchName: string): boolean {
+  const normalized = branchName.startsWith("remotes/") ? branchName.substring(8) : branchName;
+  return (
+    normalized === "beads-sync" ||
+    normalized.endsWith("/beads-sync") ||
+    normalized.startsWith("beads-sync/") ||
+    normalized.includes("/beads-sync/") ||
+    normalized === "beads" ||
+    normalized.endsWith("/beads") ||
+    normalized.startsWith("beads/") ||
+    normalized.includes("/beads/") ||
+    normalized.startsWith("db/") ||
+    normalized.includes("/db/")
+  );
+}
+
 describe("escapeHtml", () => {
   it("escapes all special HTML characters", () => {
     expect(escapeHtml('<script>alert("xss")</script>')).toBe(
@@ -163,5 +182,39 @@ describe("arraysEqual", () => {
     const caseInsensitive = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
     expect(arraysEqual(["A", "B"], ["a", "b"], caseInsensitive)).toBe(true);
     expect(arraysEqual(["A", "B"], ["a", "c"], caseInsensitive)).toBe(false);
+  });
+});
+
+describe("isDbSyncBranchName", () => {
+  it("matches local and remote beads sync branches", () => {
+    expect(isDbSyncBranchName("beads-sync")).toBe(true);
+    expect(isDbSyncBranchName("remotes/origin/beads-sync")).toBe(true);
+    expect(isDbSyncBranchName("origin/beads-sync")).toBe(true);
+  });
+
+  it("matches beads and db prefixed maintenance branches", () => {
+    expect(isDbSyncBranchName("beads/maintenance")).toBe(true);
+    expect(isDbSyncBranchName("feature/beads-sync/archive")).toBe(true);
+    expect(isDbSyncBranchName("db/snapshots")).toBe(true);
+    expect(isDbSyncBranchName("remotes/origin/db/archive")).toBe(true);
+  });
+
+  it("does not match ordinary development branches", () => {
+    expect(isDbSyncBranchName("main")).toBe(false);
+    expect(isDbSyncBranchName("feature/beads-ui")).toBe(false);
+    expect(isDbSyncBranchName("beads-ui")).toBe(false);
+    expect(isDbSyncBranchName("release/0.1.9")).toBe(false);
+  });
+});
+
+describe("package.json hiddenBranchPatterns", () => {
+  it("hides beads and db sync branches by default", () => {
+    const packageJsonPath = join(__dirname, "..", "package.json");
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+    const patterns = packageJson.contributes.configuration.properties[
+      "beads-git-graph.hiddenBranchPatterns"
+    ].default;
+
+    expect(patterns).toEqual(["^beads$", "^beads/", "^beads-sync$", "^db/", "^beads-sync/"]);
   });
 });

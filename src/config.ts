@@ -95,7 +95,8 @@ class Config {
 
   public hiddenBranchPatterns() {
     return this.workspaceConfiguration.get("hiddenBranchPatterns", [
-      "^beads",
+      "^beads$",
+      "^beads/",
       "^beads-sync$",
       "^db/",
       "^beads-sync/"
