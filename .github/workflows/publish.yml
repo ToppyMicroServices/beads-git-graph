@@ -12,6 +12,9 @@ jobs:
   deploy:
     name: Deploy to ${{ matrix.name }}
     runs-on: ubuntu-latest
+    env:
+      VS_MARKETPLACE_TOKEN: ${{ secrets.VS_MARKETPLACE_TOKEN }}
+      OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
     strategy:
       matrix:
         include:
@@ -29,14 +32,14 @@ jobs:
       - run: corepack enable && pnpm install --frozen-lockfile
 
       - name: Publish to VS Marketplace
-        if: ${{ matrix.name == 'VS Marketplace' && secrets.VS_MARKETPLACE_TOKEN != '' }}
+        if: ${{ matrix.name == 'VS Marketplace' && env.VS_MARKETPLACE_TOKEN != '' }}
         uses: HaaLeo/publish-vscode-extension@v2
         with:
           pat: ${{ secrets.VS_MARKETPLACE_TOKEN }}
           registryUrl: https://marketplace.visualstudio.com
 
       - name: Publish to Open VSX
-        if: ${{ matrix.name == 'Open VSX' && secrets.OPEN_VSX_TOKEN != '' }}
+        if: ${{ matrix.name == 'Open VSX' && env.OPEN_VSX_TOKEN != '' }}
         uses: HaaLeo/publish-vscode-extension@v2
         with:
           pat: ${{ secrets.OPEN_VSX_TOKEN }}
