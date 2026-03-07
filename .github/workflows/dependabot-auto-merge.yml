@@ -1,0 +1,65 @@
+name: Dependabot Auto Merge
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  mark-patch-updates:
+    if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ensure automerge label exists
+        run: gh label create automerge --color 0E8A16 --description "Dependabot patch updates eligible for auto-merge" || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Label patch updates for auto-merge
+        if: ${{ steps.metadata.outputs.update-type == 'version-update:semver-patch' }}
+        run: gh pr edit "$PR_URL" --add-label automerge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+
+      - name: Remove automerge label from non-patch updates
+        if: ${{ steps.metadata.outputs.update-type != 'version-update:semver-patch' }}
+        run: gh pr edit "$PR_URL" --remove-label automerge || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+
+  merge-patch-updates:
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.actor.login == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge labeled patch updates after CI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          if [[ -z "$PR_NUMBER" ]]; then
+            echo "No associated pull request found"
+            exit 0
+          fi
+
+          labels=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
+          if ! grep -qx 'automerge' <<<"$labels"; then
+            echo "PR is not marked for auto-merge"
+            exit 0
+          fi
+
+          gh pr merge "$PR_NUMBER" --squash --delete-branch
