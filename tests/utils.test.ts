@@ -211,9 +211,9 @@ describe("package.json hiddenBranchPatterns", () => {
   it("hides beads and db sync branches by default", () => {
     const packageJsonPath = join(__dirname, "..", "package.json");
     const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
-    const patterns = packageJson.contributes.configuration.properties[
-      "beads-git-graph.hiddenBranchPatterns"
-    ].default;
+    const patterns =
+      packageJson.contributes.configuration.properties["beads-git-graph.hiddenBranchPatterns"]
+        .default;
 
     expect(patterns).toEqual(["^beads$", "^beads/", "^beads-sync$", "^db/", "^beads-sync/"]);
   });
