@@ -4,9 +4,10 @@ permissions:
   contents: read
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types:
+      - published
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -23,6 +24,8 @@ jobs:
           - name: Open VSX
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6

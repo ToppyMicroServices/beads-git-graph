@@ -13,7 +13,7 @@ import {
   RequestMessage,
   ResponseMessage
 } from "./types";
-import { abbrevCommit, copyToClipboard, getNonce } from "./utils";
+import { abbrevCommit, copyToClipboard, escapeHtml, getNonce } from "./utils";
 
 export class GitGraphView {
   public static currentPanel: GitGraphView | undefined;
@@ -75,6 +75,12 @@ export class GitGraphView {
     const { viewColumn } = GitGraphView.currentPanel.panel;
     GitGraphView.currentPanel.dispose();
     return viewColumn;
+  }
+
+  public static refreshCurrentPanel() {
+    if (GitGraphView.currentPanel) {
+      void GitGraphView.currentPanel.update();
+    }
   }
 
   private constructor(
@@ -350,7 +356,7 @@ export class GitGraphView {
     this.panel.webview.html = await this.getHtmlForWebview();
   }
 
-  private getHtmlForWebview() {
+  private async getHtmlForWebview() {
     const config = getConfig(),
       nonce = getNonce();
     const viewState: GitGraphViewState = {
@@ -372,6 +378,7 @@ export class GitGraphView {
       preferMainBranchByDefault: config.preferMainBranchByDefault(),
       showCurrentBranchByDefault: config.showCurrentBranchByDefault()
     };
+    const gitStatus = await this.dataSource.getGitExecutableStatus();
 
     let body,
       numRepos = Object.keys(viewState.repos).length,
@@ -382,7 +389,15 @@ export class GitGraphView {
       colorParams +=
         '[data-color="' + i + '"]{--git-graph-color:var(--git-graph-color' + i + ");} ";
     }
-    if (numRepos > 0) {
+    if (!gitStatus.available) {
+      body = `<body class="unableToLoad" style="${colorVars}">
+			<h2>Git executable not found</h2>
+			<p>Beads Git Graph could not start because the configured Git executable is unavailable.</p>
+			<p><strong>Configured path:</strong> <code>${escapeHtml(this.dataSource.getGitPath())}</code></p>
+			<p>Set the Visual Studio Code setting "git.path" to a valid Git executable, or install Git so the configured command is available on PATH.</p>
+			${gitStatus.message ? `<p>${escapeHtml(gitStatus.message)}</p>` : ""}
+			</body>`;
+    } else if (numRepos > 0) {
       body = `<body style="${colorVars}">
 			<div id="controls">
 				<span id="repoControl"><span class="unselectable">Repo: </span><div id="repoSelect" class="dropdown"></div></span>
@@ -416,12 +431,12 @@ export class GitGraphView {
 			</body>`;
     } else {
       body = `<body class="unableToLoad" style="${colorVars}">
-			<h2>Unable to load Git Graph</h2>
-			<p>Either the current workspace does not contain a Git repository, or the Git executable could not be found.</p>
-			<p>If you are using a portable Git installation, make sure you have set the Visual Studio Code Setting "git.path" to the path of your portable installation (e.g. "C:\\Program Files\\Git\\bin\\git.exe" on Windows).</p>
+      <h2>No Git repositories found</h2>
+      <p>The configured Git executable is available, but the current workspace does not contain any Git repositories.</p>
+      <p>Open a folder with a Git repository, or initialize one with <code>git init</code>.</p>
 			</body>`;
     }
-    this.isGraphViewLoaded = numRepos > 0;
+    this.isGraphViewLoaded = gitStatus.available && numRepos > 0;
 
     return `<!DOCTYPE html>
 		<html lang="en">

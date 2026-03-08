@@ -2,6 +2,8 @@ import * as cp from "node:child_process";
 
 import * as vscode from "vscode";
 
+import { type CommandAvailability, checkExecutable } from "./commandAvailability";
+import { getConfig } from "./config";
 import {
   type BeadItem,
   beadShortDate,
@@ -15,14 +17,26 @@ import {
 import { GitGraphView } from "./gitGraphView";
 import { escapeHtml, getNonce } from "./utils";
 
+type CreateBeadType = "task" | "feature" | "bug" | "epic" | "chore";
+type CreateBeadStatus = "open" | "in_progress" | "blocked" | "closed";
+type CreateBeadPriority = "P0" | "P1" | "P2" | "P3" | "P4";
+
 interface BeadGroup {
   workspace: string;
   workspacePath: string;
   items: BeadItem[];
 }
 
+interface EmptyBeadWorkspace {
+  workspace: string;
+  workspacePath: string;
+}
+
 interface BeadLoadResult {
   groups: BeadGroup[];
+  emptyWorkspaces: EmptyBeadWorkspace[];
+  unavailableWorkspaces: EmptyBeadWorkspace[];
+  bdExecutableStatus: CommandAvailability;
   errors: { source: string; message: string }[];
 }
 
@@ -156,6 +170,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
     this.watchers = [
+      vscode.workspace.createFileSystemWatcher("**/.beads/beads.db*"),
+      vscode.workspace.createFileSystemWatcher("**/.beads/config.yaml"),
+      vscode.workspace.createFileSystemWatcher("**/.beads/metadata.json"),
       vscode.workspace.createFileSystemWatcher("**/.beads/*.json"),
       vscode.workspace.createFileSystemWatcher("**/.beads/*.jsonl")
     ];
@@ -268,52 +285,65 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private async loadBeads(): Promise<BeadLoadResult> {
     const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
     const groups: BeadGroup[] = [];
+    const emptyWorkspaces: EmptyBeadWorkspace[] = [];
+    const unavailableWorkspaces: EmptyBeadWorkspace[] = [];
     const errors: { source: string; message: string }[] = [];
+    const bdExecutableStatus = await checkExecutable(getConfig().bdPath());
 
     for (const folder of workspaceFolders) {
-      const jsonPattern = new vscode.RelativePattern(folder, ".beads/*.json");
-      const jsonlPattern = new vscode.RelativePattern(folder, ".beads/*.jsonl");
-      const files = [
-        ...(await vscode.workspace.findFiles(jsonPattern, "**/node_modules/**")),
-        ...(await vscode.workspace.findFiles(jsonlPattern, "**/node_modules/**"))
-      ];
-      const uniqueFiles = new Map(files.map((file) => [file.toString(), file]));
+      const workspaceInfo = {
+        workspace: folder.name,
+        workspacePath: folder.uri.fsPath
+      };
+      const legacyFiles = await this.findLegacyBeadFiles(folder);
+      const beadsDirUri = vscode.Uri.joinPath(folder.uri, ".beads");
+      const hasBeadsDirectory = await this.pathExists(beadsDirUri);
 
-      for (const fileUri of uniqueFiles.values()) {
-        const basename = fileUri.path.split("/").pop() ?? "";
-        if (basename.startsWith("sync_base") || basename.startsWith(".")) {
-          continue;
-        }
+      if (hasBeadsDirectory && bdExecutableStatus.available) {
         try {
-          const raw = await vscode.workspace.fs.readFile(fileUri);
-          const text = Buffer.from(raw).toString("utf8");
-          const parsed = fileUri.path.endsWith(".jsonl")
-            ? text
-                .split(/\r?\n/)
-                .map((line) => line.trim())
-                .filter((line) => line !== "")
-                .map((line) => JSON.parse(line))
-            : JSON.parse(text);
-          const items = extractBeadItems(parsed);
-
-          if (items.length > 0) {
+          const cliItems = await this.loadBdItemsFromCli(folder.uri.fsPath);
+          if (cliItems.length > 0) {
             groups.push({
-              workspace: folder.name,
-              workspacePath: folder.uri.fsPath,
-              items
+              ...workspaceInfo,
+              items: cliItems
+            });
+          } else {
+            emptyWorkspaces.push(workspaceInfo);
+          }
+          continue;
+        } catch (error) {
+          if (legacyFiles.length === 0) {
+            errors.push({
+              source: vscode.workspace.asRelativePath(beadsDirUri, false),
+              message:
+                error instanceof Error ? error.message : "Unable to read Beads data via bd list"
             });
           }
-        } catch (error) {
-          errors.push({
-            source: vscode.workspace.asRelativePath(fileUri, false),
-            message: error instanceof Error ? error.message : "Unable to parse JSON"
-          });
         }
+      }
+
+      const legacyResult = await this.loadLegacyWorkspaceItems(legacyFiles);
+      errors.push(...legacyResult.errors);
+
+      if (legacyResult.items.length > 0) {
+        groups.push({
+          ...workspaceInfo,
+          items: legacyResult.items
+        });
+      } else if (legacyResult.hasFiles) {
+        emptyWorkspaces.push(workspaceInfo);
+      } else if (hasBeadsDirectory && !bdExecutableStatus.available) {
+        unavailableWorkspaces.push(workspaceInfo);
       }
     }
 
     return {
       groups: groups.sort((a, b) => a.workspace.localeCompare(b.workspace)),
+      emptyWorkspaces: emptyWorkspaces.sort((a, b) => a.workspace.localeCompare(b.workspace)),
+      unavailableWorkspaces: unavailableWorkspaces.sort((a, b) =>
+        a.workspace.localeCompare(b.workspace)
+      ),
+      bdExecutableStatus,
       errors
     };
   }
@@ -321,14 +351,23 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private getHtml(webview: vscode.Webview, result: BeadLoadResult) {
     const nonce = getNonce();
     const rows = result.groups;
-    const showWorkspaceLabel = rows.length > 1;
+    const showWorkspaceLabel =
+      rows.length + result.emptyWorkspaces.length + result.unavailableWorkspaces.length > 1;
 
     let bodyHtml = "";
-    if (rows.length === 0) {
-      bodyHtml =
-        '<div class="empty">.beads data was not found. Add <code>.beads/beads.json</code> or <code>.beads/issues.jsonl</code> to show a bd list style table.</div>';
+    if (
+      rows.length === 0 &&
+      result.emptyWorkspaces.length === 0 &&
+      result.unavailableWorkspaces.length === 0
+    ) {
+      if (!result.bdExecutableStatus.available) {
+        bodyHtml = `<div class="empty">The Beads CLI could not be found. Set <code>beads-git-graph.bdPath</code> to a valid executable or install <code>bd</code> so it is available on PATH.${result.bdExecutableStatus.message ? `<br><br>${escapeHtml(result.bdExecutableStatus.message)}` : ""}</div>`;
+      } else {
+        bodyHtml =
+          '<div class="empty">Beads is not initialized in this workspace. Run <code>bd init</code> to create <code>.beads</code>, or add legacy <code>.beads/beads.json</code> or <code>.beads/issues.jsonl</code> data.</div>';
+      }
     } else {
-      bodyHtml = rows
+      const populatedHtml = rows
         .map((group) => {
           const itemRows = flattenBeadHierarchy(group.items)
             .map(({ item, parentId, epicId, depth, orderIndex, guideColumns, isLastSibling }) => {
@@ -363,9 +402,23 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
             })
             .join("");
 
-          return `<section>${showWorkspaceLabel ? `<div class="meta"><strong>${escapeHtml(group.workspace)}</strong></div>` : ""}<div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div></section>`;
+          return `<section data-workspace-path="${escapeHtml(group.workspacePath)}">${showWorkspaceLabel ? `<div class="meta"><strong>${escapeHtml(group.workspace)}</strong></div>` : ""}<div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div></section>`;
         })
         .join("");
+      const emptyHtml = result.emptyWorkspaces
+        .map(
+          (workspace) =>
+            `<section data-workspace-path="${escapeHtml(workspace.workspacePath)}">${showWorkspaceLabel ? `<div class="meta"><strong>${escapeHtml(workspace.workspace)}</strong></div>` : ""}<div class="empty">Beads is initialized, but no issues exist yet. Run <code>bd create &quot;Title&quot;</code> to add one.</div></section>`
+        )
+        .join("");
+      const unavailableHtml = result.unavailableWorkspaces
+        .map(
+          (workspace) =>
+            `<section data-workspace-path="${escapeHtml(workspace.workspacePath)}">${showWorkspaceLabel ? `<div class="meta"><strong>${escapeHtml(workspace.workspace)}</strong></div>` : ""}<div class="empty">Beads is initialized, but the configured <code>bd</code> executable is unavailable, so current <code>.beads</code> data cannot be loaded. Set <code>beads-git-graph.bdPath</code> to a valid executable or install <code>bd</code> on PATH.</div></section>`
+        )
+        .join("");
+
+      bodyHtml = populatedHtml + emptyHtml + unavailableHtml;
     }
 
     const errorHtml =
@@ -468,7 +521,7 @@ th:nth-child(1){width:52px;}th:nth-child(3){width:72px;}th:nth-child(4){width:38
 code{font-family:var(--vscode-editor-font-family);}
 </style>
 </head>
-<body>
+<body data-bd-available="${result.bdExecutableStatus.available ? "1" : "0"}">
 <div class="toolbar">
   <div class="toolbarMain">
     <select id="preset" class="preset">
@@ -504,7 +557,7 @@ code{font-family:var(--vscode-editor-font-family);}
   </div>
 </div>
 <div class="toolbarStatsRow"><div class="stats" id="stats"></div></div>
-<div id="rowContextMenu" class="contextMenu"><button id="closeBeadAction" type="button">Close</button></div>
+<div id="rowContextMenu" class="contextMenu"><button id="createBeadAction" type="button">Create</button><button id="closeBeadAction" type="button">Close</button></div>
 ${bodyHtml}
 ${errorHtml}
 <script nonce="${nonce}">
@@ -523,13 +576,16 @@ let activeFilters = new Set(PRESET_FILTERS.default);
 let selectedRow = null;
 let expandedDetailsRow = null;
 let contextMenuRow = null;
+let contextMenuWorkspacePath = '';
 let sortState = { key: 'updated', desc: true };
 const chips = document.getElementById('chips');
 const preset = document.getElementById('preset');
 const filterMenu = document.getElementById('filterMenu');
 const clearFilters = document.getElementById('clearFilters');
 const rowContextMenu = document.getElementById('rowContextMenu');
+const createBeadAction = document.getElementById('createBeadAction');
 const closeBeadAction = document.getElementById('closeBeadAction');
+const bdAvailable = document.body.dataset.bdAvailable === '1';
 
 function decodeRowItem(row) {
   const encoded = row.dataset.item;
@@ -550,11 +606,14 @@ function decodeRowItem(row) {
 function closeContextMenu() {
   rowContextMenu.classList.remove('open');
   contextMenuRow = null;
+  contextMenuWorkspacePath = '';
 }
 
-function openContextMenu(row, event) {
+function openContextMenu(row, workspacePath, event) {
   contextMenuRow = row;
-  const item = decodeRowItem(row);
+  contextMenuWorkspacePath = workspacePath || '';
+  const item = row ? decodeRowItem(row) : null;
+  createBeadAction.disabled = !bdAvailable || contextMenuWorkspacePath === '';
   closeBeadAction.disabled = !item || (row.dataset.status || '') === 'closed';
   rowContextMenu.style.left = event.clientX + 'px';
   rowContextMenu.style.top = event.clientY + 'px';
@@ -891,12 +950,24 @@ document.addEventListener('click', (event) => {
 });
 document.addEventListener('contextmenu', (event) => {
   const row = event.target.closest ? event.target.closest('.beadRow') : null;
-  if (!row) {
+  const section = event.target.closest ? event.target.closest('section[data-workspace-path]') : null;
+  if (!row && !section) {
     closeContextMenu();
     return;
   }
   event.preventDefault();
-  openContextMenu(row, event);
+  const workspacePath = row
+    ? (row.dataset.workspacePath || '')
+    : (section ? (section.dataset.workspacePath || '') : '');
+  openContextMenu(row, workspacePath, event);
+});
+createBeadAction.addEventListener('click', () => {
+  const workspacePath = contextMenuWorkspacePath;
+  closeContextMenu();
+  if (!bdAvailable || workspacePath === '') {
+    return;
+  }
+  vscode.postMessage({ command: 'createBead', workspacePath });
 });
 closeBeadAction.addEventListener('click', () => {
   if (!contextMenuRow) {
@@ -998,6 +1069,20 @@ applyFilters();
     }
 
     if (
+      message.command === "createBead" &&
+      typeof message.workspacePath === "string" &&
+      message.workspacePath.trim() !== ""
+    ) {
+      try {
+        await this.promptAndCreateBead(message.workspacePath.trim());
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : "Unable to create bead.";
+        vscode.window.showErrorMessage(messageText);
+      }
+      return;
+    }
+
+    if (
       message.command === "closeBead" &&
       typeof message.issueId === "string" &&
       typeof message.workspacePath === "string"
@@ -1029,10 +1114,222 @@ applyFilters();
     }
   }
 
+  private async promptAndCreateBead(workspacePath: string) {
+    const type = await this.pickCreateBeadType();
+    if (!type) {
+      return;
+    }
+
+    const title = await vscode.window.showInputBox({
+      title: "Create Bead",
+      prompt: "Title",
+      placeHolder: "Implement create action",
+      ignoreFocusOut: true,
+      validateInput: (value) => (value.trim() === "" ? "Title is required." : undefined)
+    });
+    if (title === undefined) {
+      return;
+    }
+
+    const status = await this.pickCreateBeadStatus();
+    if (!status) {
+      return;
+    }
+
+    const priority = await this.pickCreateBeadPriority();
+    if (!priority) {
+      return;
+    }
+
+    const bead = await this.createBead(workspacePath, {
+      type,
+      title: title.trim(),
+      status,
+      priority
+    });
+    await this.refresh();
+    vscode.window.showInformationMessage(`Created bead ${bead.id}.`);
+  }
+
+  private async pickCreateBeadType(): Promise<CreateBeadType | undefined> {
+    const selection = await vscode.window.showQuickPick(
+      [
+        { label: "Task", value: "task" as const },
+        { label: "Feature", value: "feature" as const },
+        { label: "Bug", value: "bug" as const },
+        { label: "Epic", value: "epic" as const },
+        { label: "Chore", value: "chore" as const }
+      ],
+      {
+        title: "Create Bead",
+        placeHolder: "Type",
+        ignoreFocusOut: true
+      }
+    );
+
+    return selection?.value;
+  }
+
+  private async pickCreateBeadStatus(): Promise<CreateBeadStatus | undefined> {
+    const selection = await vscode.window.showQuickPick(
+      [
+        { label: "Open", value: "open" as const },
+        { label: "In Progress", value: "in_progress" as const },
+        { label: "Blocked", value: "blocked" as const },
+        { label: "Closed", value: "closed" as const }
+      ],
+      {
+        title: "Create Bead",
+        placeHolder: "Status",
+        ignoreFocusOut: true
+      }
+    );
+
+    return selection?.value;
+  }
+
+  private async pickCreateBeadPriority(): Promise<CreateBeadPriority | undefined> {
+    const selection = await vscode.window.showQuickPick(
+      [
+        { label: "P0", value: "P0" as const },
+        { label: "P1", value: "P1" as const },
+        { label: "P2", value: "P2" as const },
+        { label: "P3", value: "P3" as const },
+        { label: "P4", value: "P4" as const }
+      ],
+      {
+        title: "Create Bead",
+        placeHolder: "Priority",
+        ignoreFocusOut: true
+      }
+    );
+
+    return selection?.value;
+  }
+
+  private async createBead(
+    workspacePath: string,
+    values: {
+      type: CreateBeadType;
+      title: string;
+      status: CreateBeadStatus;
+      priority: CreateBeadPriority;
+    }
+  ) {
+    const stdout = await this.runBdCommand(
+      [
+        "create",
+        "--json",
+        "--type",
+        values.type,
+        "--priority",
+        values.priority,
+        "--title",
+        values.title
+      ],
+      workspacePath
+    );
+    const bead = this.parseCreatedBead(stdout);
+
+    if (values.status === "closed") {
+      await this.runBdCommand(["close", bead.id], workspacePath);
+    } else if (values.status !== "open") {
+      await this.runBdCommand(["update", bead.id, "--status", values.status], workspacePath);
+    }
+
+    await this.runBdCommand(["sync", "--flush-only"], workspacePath);
+    return bead;
+  }
+
+  private parseCreatedBead(stdout: string): { id: string } {
+    const trimmed = stdout.trim();
+    const jsonText = trimmed.startsWith("{")
+      ? trimmed
+      : (trimmed.match(/\{[\s\S]*\}\s*$/)?.[0] ?? "");
+
+    if (jsonText === "") {
+      throw new Error("Unable to read the created bead id from bd create.");
+    }
+
+    const parsed = JSON.parse(jsonText) as { id?: unknown };
+    if (typeof parsed.id !== "string" || parsed.id.trim() === "") {
+      throw new Error("bd create did not return a valid bead id.");
+    }
+
+    return { id: parsed.id.trim() };
+  }
+
+  private async pathExists(uri: vscode.Uri) {
+    try {
+      await vscode.workspace.fs.stat(uri);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async findLegacyBeadFiles(folder: vscode.WorkspaceFolder) {
+    const jsonPattern = new vscode.RelativePattern(folder, ".beads/*.json");
+    const jsonlPattern = new vscode.RelativePattern(folder, ".beads/*.jsonl");
+    const files = [
+      ...(await vscode.workspace.findFiles(jsonPattern, "**/node_modules/**")),
+      ...(await vscode.workspace.findFiles(jsonlPattern, "**/node_modules/**"))
+    ];
+
+    return [...new Map(files.map((file) => [file.toString(), file])).values()].filter((fileUri) => {
+      const basename = fileUri.path.split("/").pop() ?? "";
+      return !basename.startsWith("sync_base") && !basename.startsWith(".");
+    });
+  }
+
+  private async loadLegacyWorkspaceItems(files: vscode.Uri[]) {
+    const items: BeadItem[] = [];
+    const errors: { source: string; message: string }[] = [];
+
+    for (const fileUri of files) {
+      try {
+        const raw = await vscode.workspace.fs.readFile(fileUri);
+        const text = Buffer.from(raw).toString("utf8");
+        const parsed = fileUri.path.endsWith(".jsonl")
+          ? text
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter((line) => line !== "")
+              .map((line) => JSON.parse(line))
+          : JSON.parse(text);
+        items.push(...extractBeadItems(parsed));
+      } catch (error) {
+        errors.push({
+          source: vscode.workspace.asRelativePath(fileUri, false),
+          message: error instanceof Error ? error.message : "Unable to parse JSON"
+        });
+      }
+    }
+
+    const uniqueItems = [...new Map(items.map((item) => [item.id, item])).values()];
+
+    return {
+      hasFiles: files.length > 0,
+      items: uniqueItems,
+      errors
+    };
+  }
+
+  private async loadBdItemsFromCli(cwd: string) {
+    const stdout = await this.runBdCommand(["list", "--json", "--limit", "0", "--all"], cwd);
+    const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
+    return extractBeadItems(parsed);
+  }
+
   private runBdCommand(args: string[], cwd: string) {
-    return new Promise<void>((resolve, reject) => {
-      const child = cp.spawn("bd", args, { cwd });
+    return new Promise<string>((resolve, reject) => {
+      const bdPath = getConfig().bdPath();
+      const child = cp.spawn(bdPath, args, { cwd });
+      let stdout = "";
       let stderr = "";
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString();
+      });
       child.stderr.on("data", (chunk) => {
         stderr += chunk.toString();
       });
@@ -1041,11 +1338,13 @@ applyFilters();
       });
       child.on("close", (code) => {
         if (code === 0) {
-          resolve();
+          resolve(stdout);
           return;
         }
         reject(
-          new Error(stderr.trim() || `bd ${args.join(" ")} failed with exit code ${code ?? -1}.`)
+          new Error(
+            stderr.trim() || `${bdPath} ${args.join(" ")} failed with exit code ${code ?? -1}.`
+          )
         );
       });
     });

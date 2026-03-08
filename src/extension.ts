@@ -80,6 +80,9 @@ export function activate(context: vscode.ExtensionContext) {
         repoManager.maxDepthOfRepoSearchChanged();
       } else if (e.affectsConfiguration("git.path")) {
         dataSource.registerGitPath();
+        GitGraphView.refreshCurrentPanel();
+      } else if (e.affectsConfiguration("beads-git-graph.bdPath")) {
+        beadsViewProvider.refresh();
       }
     }),
     repoManager

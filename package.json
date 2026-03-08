@@ -1,7 +1,7 @@
 {
   "name": "beads-git-graph",
   "displayName": "Beads Git Graph",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "Independent VS Code Git graph extension with Beads support, based on the last MIT commit of Git Graph.",
   "categories": [
     "SCM Providers",
@@ -342,6 +342,11 @@
           "type": "boolean",
           "default": true,
           "description": "Show uncommitted changes (set to false to decrease load time on large repositories)."
+        },
+        "beads-git-graph.bdPath": {
+          "type": "string",
+          "default": "bd",
+          "description": "Path or command name for the Beads CLI executable used by the Beads view."
         },
         "beads-git-graph.tabIconColourTheme": {
           "type": "string",

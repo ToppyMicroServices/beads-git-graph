@@ -127,6 +127,10 @@ class Config {
     return this.workspaceConfiguration.get("tabIconColourTheme", "colour");
   }
 
+  public bdPath(): string {
+    return this.workspaceConfiguration.get("bdPath", "bd");
+  }
+
   public gitPath(): string {
     const path = vscode.workspace.getConfiguration("git").get("path", null);
     return path !== null ? path : "git";

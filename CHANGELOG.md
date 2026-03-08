@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-03-08
+
+### Added
+
+- Added a right-click Create action in the Beads list that prompts for type, title, status, and priority before creating an issue
+
+### Changed
+
+- Detect missing `git` and missing `bd` executables explicitly so Git Graph and Beads can distinguish tool setup problems from missing repositories or uninitialized `.beads` data
+- Added a configurable `beads-git-graph.bdPath` setting for locating the Beads CLI
+
 ## [0.1.18] - 2026-03-08
 
 ### Changed
@@ -107,7 +118,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.18...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.19...HEAD
+[0.1.19]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.15...v0.1.16

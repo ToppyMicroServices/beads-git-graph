@@ -1,5 +1,6 @@
 import * as cp from "node:child_process";
 
+import { checkExecutable } from "./commandAvailability";
 import { classifyCommitSubject } from "./commitTypes";
 import { getConfig } from "./config";
 import {
@@ -30,6 +31,14 @@ export class DataSource {
 
   public registerGitPath() {
     this.gitPath = getConfig().gitPath();
+  }
+
+  public getGitPath() {
+    return this.gitPath;
+  }
+
+  public getGitExecutableStatus() {
+    return checkExecutable(this.gitPath);
   }
 
   public generateGitCommandFormats() {
