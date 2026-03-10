@@ -57,7 +57,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.3.5",
-    "@types/vscode": "~1.109.0",
+    "@types/vscode": "~1.110.0",
     "dompurify": "^3.3.2",
     "esbuild": "^0.27.3",
     "eslint-plugin-simple-import-sort": "^12.1.1",
