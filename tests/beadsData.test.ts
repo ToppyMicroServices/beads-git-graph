@@ -7,7 +7,9 @@ import {
   beadShortDate,
   beadStatusLabel,
   buildBeadHierarchy,
+  diffBeadItems,
   extractBeadItems,
+  mergeBeadItems,
   normalizeBeadPriority,
   normalizeBeadStatus,
   normalizeBeadType,
@@ -193,6 +195,104 @@ describe("buildBeadHierarchy", () => {
       parentId: "neo-task",
       epicId: "neo-epic",
       depth: 2
+    });
+  });
+
+  it("restores parent-child hierarchy from JSONL metadata when CLI items omit dependencies", () => {
+    const cliItems = extractBeadItems([
+      {
+        id: "neo-task-a",
+        title: "Task A",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:00:00Z"
+      },
+      {
+        id: "neo-task-b",
+        title: "Task B",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:01:00Z"
+      },
+      {
+        id: "neo-late-epic",
+        title: "Late epic",
+        issue_type: "epic",
+        updated_at: "2026-03-10T00:02:00Z"
+      }
+    ]);
+    const jsonlItems = extractBeadItems([
+      {
+        id: "neo-task-a",
+        title: "Task A",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:00:00Z",
+        dependencies: [{ depends_on_id: "neo-late-epic", type: "parent-child" }]
+      },
+      {
+        id: "neo-task-b",
+        title: "Task B",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:01:00Z",
+        dependencies: [{ depends_on_id: "neo-late-epic", type: "parent-child" }]
+      },
+      {
+        id: "neo-late-epic",
+        title: "Late epic",
+        issue_type: "epic",
+        updated_at: "2026-03-10T00:02:00Z"
+      }
+    ]);
+
+    const hierarchy = buildBeadHierarchy(mergeBeadItems(cliItems, jsonlItems));
+    const byId = new Map(hierarchy.map((entry) => [entry.item.id, entry]));
+
+    expect(byId.get("neo-task-a")).toMatchObject({
+      parentId: "neo-late-epic",
+      epicId: "neo-late-epic",
+      depth: 1
+    });
+    expect(byId.get("neo-task-b")).toMatchObject({
+      parentId: "neo-late-epic",
+      epicId: "neo-late-epic",
+      depth: 1
+    });
+  });
+
+  it("detects differences between local bd items and issues.jsonl", () => {
+    const localItems = extractBeadItems([
+      {
+        id: "neo-sync-a",
+        title: "Task A",
+        issue_type: "task",
+        status: "in_progress",
+        updated_at: "2026-03-10T00:00:00Z"
+      },
+      {
+        id: "neo-sync-only-local",
+        title: "Local only",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:01:00Z"
+      }
+    ]);
+    const jsonlItems = extractBeadItems([
+      {
+        id: "neo-sync-a",
+        title: "Task A",
+        issue_type: "task",
+        status: "open",
+        updated_at: "2026-03-10T00:00:00Z"
+      },
+      {
+        id: "neo-sync-only-jsonl",
+        title: "JSONL only",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:02:00Z"
+      }
+    ]);
+
+    expect(diffBeadItems(localItems, jsonlItems)).toEqual({
+      missingFromPrimary: ["neo-sync-only-jsonl"],
+      missingFromSecondary: ["neo-sync-only-local"],
+      changed: [{ id: "neo-sync-a", fields: ["status"] }]
     });
   });
 });

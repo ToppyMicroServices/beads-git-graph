@@ -22,6 +22,12 @@ export interface BeadHierarchyItem {
   depth: number;
 }
 
+export interface BeadCollectionDiff {
+  missingFromPrimary: string[];
+  missingFromSecondary: string[];
+  changed: Array<{ id: string; fields: string[] }>;
+}
+
 export function beadsAsArray(parsed: unknown): unknown[] {
   if (Array.isArray(parsed)) {
     return parsed;
@@ -285,6 +291,84 @@ export function buildBeadHierarchy(items: BeadItem[]): BeadHierarchyItem[] {
       depth: ancestry.depth
     };
   });
+}
+
+export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem[]): BeadItem[] {
+  if (fallbackItems.length === 0) {
+    return primaryItems;
+  }
+
+  const fallbackById = new Map(fallbackItems.map((item) => [item.id, item]));
+  const merged = primaryItems.map((item) => {
+    const fallback = fallbackById.get(item.id);
+    if (!fallback) {
+      return item;
+    }
+
+    return {
+      ...fallback,
+      ...item,
+      parentId: item.parentId.trim() !== "" ? item.parentId : fallback.parentId
+    };
+  });
+
+  const seenIds = new Set(merged.map((item) => item.id));
+  for (const fallback of fallbackItems) {
+    if (!seenIds.has(fallback.id)) {
+      merged.push(fallback);
+    }
+  }
+
+  return merged;
+}
+
+export function diffBeadItems(primaryItems: BeadItem[], secondaryItems: BeadItem[]): BeadCollectionDiff {
+  const primaryById = new Map(primaryItems.map((item) => [item.id, item]));
+  const secondaryById = new Map(secondaryItems.map((item) => [item.id, item]));
+  const comparableFields: Array<keyof BeadItem> = [
+    "title",
+    "type",
+    "status",
+    "progress",
+    "priority",
+    "updatedAt",
+    "description",
+    "notes",
+    "assignee",
+    "labels",
+    "createdAt",
+    "parentId",
+    "commitHash"
+  ];
+  const missingFromPrimary: string[] = [];
+  const missingFromSecondary: string[] = [];
+  const changed: Array<{ id: string; fields: string[] }> = [];
+
+  for (const id of secondaryById.keys()) {
+    if (!primaryById.has(id)) {
+      missingFromPrimary.push(id);
+    }
+  }
+
+  for (const id of primaryById.keys()) {
+    const primary = primaryById.get(id);
+    const secondary = secondaryById.get(id);
+    if (!secondary) {
+      missingFromSecondary.push(id);
+      continue;
+    }
+
+    const fields = comparableFields.filter((field) => primary?.[field] !== secondary[field]);
+    if (fields.length > 0) {
+      changed.push({ id, fields });
+    }
+  }
+
+  return {
+    missingFromPrimary: missingFromPrimary.sort((a, b) => a.localeCompare(b)),
+    missingFromSecondary: missingFromSecondary.sort((a, b) => a.localeCompare(b)),
+    changed: changed.sort((a, b) => a.id.localeCompare(b.id))
+  };
 }
 
 export function normalizeBeadStatus(status: string) {
