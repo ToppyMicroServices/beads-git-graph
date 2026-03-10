@@ -501,7 +501,7 @@ section{margin-bottom:10px;}
 table{position:relative;z-index:1;width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;}
 th,td{text-align:left;border-bottom:1px solid var(--vscode-panel-border);padding:4px 4px;vertical-align:middle;font-size:13px;}
 th{position:sticky;top:0;z-index:2;font-weight:700;line-height:18px;padding:6px 4px;opacity:.95;background:var(--vscode-editor-background);box-shadow:0 1px 0 var(--vscode-panel-border);}
-th:nth-child(1){width:52px;}th:nth-child(3){width:72px;}th:nth-child(4){width:38px;}th:nth-child(5){width:72px;}
+th:nth-child(1){width:52px;}th:nth-child(3){width:78px;}th:nth-child(4){width:56px;}th:nth-child(5){width:84px;}
 .sortToggle{display:inline-flex;align-items:center;justify-content:flex-start;width:100%;gap:4px;background:transparent;border:none;color:inherit;padding:0;cursor:pointer;font:inherit;}
 .sortToggle:hover{text-decoration:underline;}
 .beadRow{cursor:pointer;}
@@ -517,6 +517,7 @@ th:nth-child(1){width:52px;}th:nth-child(3){width:72px;}th:nth-child(4){width:38
 .beadTitle{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .statusCell{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .typeBadge,.statusBadge,.priorityBadge{display:inline-flex;align-items:center;justify-content:center;padding:1px 5px;border-radius:999px;font-size:10px;font-weight:600;white-space:nowrap;}
+.priorityBadge{min-width:34px;}
 .progressText{font-size:10px;font-weight:700;color:var(--vscode-textLink-foreground);white-space:nowrap;}
 .type-feature{background:#16a34a;color:#fff;}
 .type-bug{background:#dc2626;color:#fff;}
@@ -534,7 +535,7 @@ th:nth-child(1){width:52px;}th:nth-child(3){width:72px;}th:nth-child(4){width:38
 .priority-p3{background:#22c55e;color:#fff;}
 .priority-p4{background:#6b7280;color:#fff;}
 .empty{font-size:12px;line-height:1.5;opacity:.9;}
-.updatedCell{font-size:10px;white-space:nowrap;}
+.updatedCell{font-size:10px;white-space:nowrap;text-align:right;}
 .warnings,.errors{margin-top:10px;padding-top:8px;border-top:1px solid var(--vscode-panel-border);font-size:12px;}
 .warnings ul,.errors ul{margin:6px 0 0;padding-left:18px;}
 .warnings strong{color:var(--vscode-editorWarning-foreground, var(--vscode-textLink-foreground));}
@@ -916,8 +917,6 @@ function renderHierarchyOverlays() {
 
     let shadowPaths = '';
     let linePaths = '';
-    let nodes = '';
-
     for (const row of visibleRows) {
       const depth = parseInt(row.dataset.depth || '0', 10);
       if (!Number.isFinite(depth) || depth < 1) {
@@ -963,11 +962,9 @@ function renderHierarchyOverlays() {
 
       shadowPaths += '<path class="hierarchyGuideShadow" d="' + branchSegment + '" />';
       linePaths += '<path class="hierarchyGuideLine" d="' + branchSegment + '" />';
-      nodes += '<circle class="hierarchyGuideNodeShadow" cx="' + currentX.toFixed(1) + '" cy="' + midY.toFixed(1) + '" r="3.7" />' +
-        '<circle class="hierarchyGuideNode" cx="' + currentX.toFixed(1) + '" cy="' + midY.toFixed(1) + '" r="2.15" />';
     }
 
-    overlay.innerHTML = shadowPaths + linePaths + nodes;
+    overlay.innerHTML = shadowPaths + linePaths;
   }
 }
 
