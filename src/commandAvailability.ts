@@ -35,7 +35,7 @@ export function checkExecutable(
     });
     child.on("error", (error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") {
-        finish(false, `Executable \"${command}\" could not be found.`);
+        finish(false, `Executable "${command}" could not be found.`);
         return;
       }
 

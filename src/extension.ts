@@ -1,5 +1,3 @@
-import * as path from "node:path";
-
 import * as vscode from "vscode";
 
 import { BeadsViewProvider } from "./beadsView";
@@ -9,6 +7,7 @@ import { ExtensionState } from "./extensionState";
 import { GitGraphView } from "./gitGraphView";
 import { RepoManager } from "./repoManager";
 import { StatusBarItem } from "./statusBarItem";
+import { isPathWithinRoot } from "./utils";
 
 export function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel("Beads Git Graph");
@@ -50,11 +49,7 @@ export function activate(context: vscode.ExtensionContext) {
       const request = decodeDiffDocUri(sourceUri);
       const relativePath = request.filePath.replace(/^\/+/, "");
       const fileUri = vscode.Uri.joinPath(vscode.Uri.file(request.repo), relativePath);
-      const repoRoot = path.resolve(request.repo);
-      const resolvedTarget = path.resolve(fileUri.fsPath);
-      const repoPrefix = repoRoot.endsWith(path.sep) ? repoRoot : `${repoRoot}${path.sep}`;
-
-      if (resolvedTarget !== repoRoot && !resolvedTarget.startsWith(repoPrefix)) {
+      if (!isPathWithinRoot(request.repo, fileUri.fsPath)) {
         vscode.window.showWarningMessage("Refusing to open a file outside the repository root.");
         return;
       }

@@ -1,3 +1,5 @@
+import * as path from "node:path";
+
 import * as vscode from "vscode";
 
 const FS_REGEX = /\\/g;
@@ -21,6 +23,23 @@ export function getPathFromUri(uri: vscode.Uri) {
 
 export function getPathFromStr(str: string) {
   return str.replace(FS_REGEX, "/");
+}
+
+export function isPathWithinRoot(root: string, target: string) {
+  const resolvedRoot = path.resolve(root);
+  const resolvedTarget = path.resolve(target);
+  if (resolvedTarget === resolvedRoot) {
+    return true;
+  }
+
+  const rootPrefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : `${resolvedRoot}${path.sep}`;
+  return resolvedTarget.startsWith(rootPrefix);
+}
+
+export function resolvePathWithinRoot(root: string, targetPath: string) {
+  const relativePath = getPathFromStr(targetPath).replace(/^\/+/, "");
+  const resolvedTarget = path.resolve(root, relativePath);
+  return isPathWithinRoot(root, resolvedTarget) ? resolvedTarget : null;
 }
 
 export function escapeHtml(value: string) {

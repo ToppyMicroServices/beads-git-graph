@@ -1,19 +1,22 @@
 import * as cp from "node:child_process";
+import * as path from "node:path";
 
 import * as vscode from "vscode";
 
-import { type CommandAvailability, checkExecutable } from "./commandAvailability";
-import { getConfig } from "./config";
 import {
   type BeadItem,
   beadShortDate,
   beadStatusLabel,
   buildBeadHierarchy,
+  diffBeadItems,
   extractBeadItems,
+  mergeBeadItems,
   normalizeBeadPriority,
   normalizeBeadStatus,
   normalizeBeadType
 } from "./beadsData";
+import { checkExecutable,type CommandAvailability } from "./commandAvailability";
+import { getConfig } from "./config";
 import { GitGraphView } from "./gitGraphView";
 import { escapeHtml, getNonce } from "./utils";
 
@@ -32,12 +35,24 @@ interface EmptyBeadWorkspace {
   workspacePath: string;
 }
 
+interface BeadWarning {
+  source: string;
+  message: string;
+  workspacePath?: string;
+}
+
 interface BeadLoadResult {
   groups: BeadGroup[];
   emptyWorkspaces: EmptyBeadWorkspace[];
   unavailableWorkspaces: EmptyBeadWorkspace[];
   bdExecutableStatus: CommandAvailability;
   errors: { source: string; message: string }[];
+  warnings: BeadWarning[];
+}
+
+interface CliLoadResult {
+  items: BeadItem[];
+  warnings: BeadWarning[];
 }
 
 interface BeadRenderItem {
@@ -288,6 +303,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const emptyWorkspaces: EmptyBeadWorkspace[] = [];
     const unavailableWorkspaces: EmptyBeadWorkspace[] = [];
     const errors: { source: string; message: string }[] = [];
+    const warnings: BeadWarning[] = [];
     const bdExecutableStatus = await checkExecutable(getConfig().bdPath());
 
     for (const folder of workspaceFolders) {
@@ -301,7 +317,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
       if (hasBeadsDirectory && bdExecutableStatus.available) {
         try {
-          const cliItems = await this.loadBdItemsFromCli(folder.uri.fsPath);
+          const cliResult = await this.loadBdItemsFromCli(folder.uri.fsPath);
+          warnings.push(...cliResult.warnings);
+          const cliItems = cliResult.items;
           if (cliItems.length > 0) {
             groups.push({
               ...workspaceInfo,
@@ -344,7 +362,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         a.workspace.localeCompare(b.workspace)
       ),
       bdExecutableStatus,
-      errors
+      errors,
+      warnings
     };
   }
 
@@ -421,6 +440,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       bodyHtml = populatedHtml + emptyHtml + unavailableHtml;
     }
 
+    const warningHtml =
+      result.warnings.length > 0
+        ? `<div class="warnings"><strong>Sync warnings</strong><ul>${result.warnings.map((warning) => `<li>${escapeHtml(warning.source)}: ${escapeHtml(warning.message)}${warning.workspacePath ? ` <button class="warningAction" type="button" data-sync-workspace="${escapeHtml(warning.workspacePath)}">Sync Now</button>` : ""}</li>`).join("")}</ul></div>`
+        : "";
     const errorHtml =
       result.errors.length > 0
         ? `<div class="errors"><strong>Parse errors</strong><ul>${result.errors.map((error) => `<li>${escapeHtml(error.source)}: ${escapeHtml(error.message)}</li>`).join("")}</ul></div>`
@@ -459,8 +482,12 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);paddin
 .contextMenu button:disabled{opacity:.45;cursor:default;}
 button{border:1px solid var(--vscode-button-border,transparent);background:var(--vscode-button-background);color:var(--vscode-button-foreground);padding:4px 8px;cursor:pointer;border-radius:6px;font-size:11px;}
 button:hover{background:var(--vscode-button-hoverBackground);}
-.actionBtn{display:inline-flex;align-items:center;justify-content:center;height:24px;padding:0 10px;border-radius:11px;background:rgba(128,128,128,.1);border:1px solid rgba(128,128,128,.5);gap:6px;}
+.actionBtn{display:inline-flex;align-items:center;justify-content:center;height:24px;padding:0 10px;border-radius:11px;background:rgba(128,128,128,.1);border:1px solid rgba(128,128,128,.5);gap:6px;transition:border-color .18s ease, background-color .18s ease, box-shadow .18s ease;}
 .actionBtn:hover{background:rgba(128,128,128,.2);}
+#syncBeads{min-width:68px;}
+body[data-has-sync-warnings="1"] #syncBeads{border-color:var(--vscode-editorWarning-foreground, #f59e0b);background:rgba(245,158,11,.18);box-shadow:0 0 0 0 rgba(245,158,11,.32);animation:syncPulse 1.4s ease-in-out infinite;}
+body[data-has-sync-warnings="1"] #syncBeads .toolbarActionLabel{font-weight:700;}
+@keyframes syncPulse{0%{box-shadow:0 0 0 0 rgba(245,158,11,.34);}70%{box-shadow:0 0 0 8px rgba(245,158,11,0);}100%{box-shadow:0 0 0 0 rgba(245,158,11,0);}}
 #openGitGraph{min-width:74px;}
 #refresh{width:80px;font-size:14px;line-height:1;}
 .toolbarIcon{display:block;color:var(--vscode-button-foreground);}
@@ -473,9 +500,9 @@ section{margin-bottom:10px;}
 .hierarchyOverlay{position:absolute;inset:0;z-index:0;width:100%;height:100%;pointer-events:none;overflow:visible;}
 table{position:relative;z-index:1;width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;}
 th,td{text-align:left;border-bottom:1px solid var(--vscode-panel-border);padding:4px 4px;vertical-align:middle;font-size:13px;}
-th{position:sticky;top:0;z-index:2;font-weight:700;line-height:18px;padding:6px 12px;opacity:.95;background:var(--vscode-editor-background);box-shadow:0 1px 0 var(--vscode-panel-border);}
+th{position:sticky;top:0;z-index:2;font-weight:700;line-height:18px;padding:6px 4px;opacity:.95;background:var(--vscode-editor-background);box-shadow:0 1px 0 var(--vscode-panel-border);}
 th:nth-child(1){width:52px;}th:nth-child(3){width:72px;}th:nth-child(4){width:38px;}th:nth-child(5){width:72px;}
-.sortToggle{display:inline-flex;align-items:center;gap:4px;background:transparent;border:none;color:inherit;padding:0;cursor:pointer;font:inherit;}
+.sortToggle{display:inline-flex;align-items:center;justify-content:flex-start;width:100%;gap:4px;background:transparent;border:none;color:inherit;padding:0;cursor:pointer;font:inherit;}
 .sortToggle:hover{text-decoration:underline;}
 .beadRow{cursor:pointer;}
 .beadRow:hover{background:rgba(128,128,128,.08);}
@@ -508,8 +535,10 @@ th:nth-child(1){width:52px;}th:nth-child(3){width:72px;}th:nth-child(4){width:38
 .priority-p4{background:#6b7280;color:#fff;}
 .empty{font-size:12px;line-height:1.5;opacity:.9;}
 .updatedCell{font-size:10px;white-space:nowrap;}
-.errors{margin-top:10px;padding-top:8px;border-top:1px solid var(--vscode-panel-border);font-size:12px;}
-.errors ul{margin:6px 0 0;padding-left:18px;}
+.warnings,.errors{margin-top:10px;padding-top:8px;border-top:1px solid var(--vscode-panel-border);font-size:12px;}
+.warnings ul,.errors ul{margin:6px 0 0;padding-left:18px;}
+.warnings strong{color:var(--vscode-editorWarning-foreground, var(--vscode-textLink-foreground));}
+.warningAction{margin-left:8px;padding:1px 8px;font-size:11px;line-height:1.6;vertical-align:middle;}
 .commitLink{font-size:11px;padding:2px 6px;}
 .stats{font-size:11px;opacity:.85;margin:0;white-space:nowrap;}
 .inlineDetailsRow td{padding:0 4px 8px;border-bottom:none;}
@@ -521,7 +550,7 @@ th:nth-child(1){width:52px;}th:nth-child(3){width:72px;}th:nth-child(4){width:38
 code{font-family:var(--vscode-editor-font-family);}
 </style>
 </head>
-<body data-bd-available="${result.bdExecutableStatus.available ? "1" : "0"}">
+<body data-bd-available="${result.bdExecutableStatus.available ? "1" : "0"}" data-has-sync-warnings="${result.warnings.length > 0 ? "1" : "0"}">
 <div class="toolbar">
   <div class="toolbarMain">
     <select id="preset" class="preset">
@@ -540,6 +569,9 @@ code{font-family:var(--vscode-editor-font-family);}
     <button id="clearFilters" type="button">Clear</button>
   </div>
   <div class="toolbarActions">
+    <button id="syncBeads" class="actionBtn" type="button" title="Sync Beads" aria-label="Sync Beads">
+      <span class="toolbarActionLabel">Sync</span>
+    </button>
     <button id="openGitGraph" class="actionBtn" type="button" title="Git Graph" aria-label="Git Graph">
       <svg class="toolbarIcon switchIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M7 7.5v9M8 8h3.5l3.2 3.2M8 16h3.5l4.5-4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -559,6 +591,7 @@ code{font-family:var(--vscode-editor-font-family);}
 <div class="toolbarStatsRow"><div class="stats" id="stats"></div></div>
 <div id="rowContextMenu" class="contextMenu"><button id="createBeadAction" type="button">Create</button><button id="closeBeadAction" type="button">Close</button></div>
 ${bodyHtml}
+${warningHtml}
 ${errorHtml}
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
@@ -586,6 +619,13 @@ const rowContextMenu = document.getElementById('rowContextMenu');
 const createBeadAction = document.getElementById('createBeadAction');
 const closeBeadAction = document.getElementById('closeBeadAction');
 const bdAvailable = document.body.dataset.bdAvailable === '1';
+const hasSyncWarnings = document.body.dataset.hasSyncWarnings === '1';
+const syncBeadsButton = document.getElementById('syncBeads');
+
+if (hasSyncWarnings) {
+  syncBeadsButton.title = 'Sync Beads (differences detected)';
+  syncBeadsButton.setAttribute('aria-label', 'Sync Beads, differences detected');
+}
 
 function decodeRowItem(row) {
   const encoded = row.dataset.item;
@@ -986,9 +1026,21 @@ window.addEventListener('resize', renderHierarchyOverlays);
 document.getElementById('refresh').addEventListener('click', () => {
   vscode.postMessage({ command: 'refresh' });
 });
+document.getElementById('syncBeads').addEventListener('click', () => {
+  vscode.postMessage({ command: 'syncAllBeads' });
+});
 document.getElementById('openGitGraph').addEventListener('click', () => {
   vscode.postMessage({ command: 'openGitGraph' });
 });
+for (const button of Array.from(document.querySelectorAll('button[data-sync-workspace]'))) {
+  button.addEventListener('click', () => {
+    const workspacePath = button.dataset.syncWorkspace || '';
+    if (workspacePath === '') {
+      return;
+    }
+    vscode.postMessage({ command: 'syncBeads', workspacePath });
+  });
+}
 for (const button of Array.from(document.querySelectorAll('.sortToggle'))) {
   button.addEventListener('click', () => {
     const key = button.dataset.sortKey || 'updated';
@@ -1054,6 +1106,52 @@ applyFilters();
       return;
     }
 
+    if (message.command === "syncAllBeads") {
+      const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
+      const syncedWorkspaces: string[] = [];
+
+      for (const folder of workspaceFolders) {
+        const beadsDirUri = vscode.Uri.joinPath(folder.uri, ".beads");
+        if (!(await this.pathExists(beadsDirUri))) {
+          continue;
+        }
+
+        await this.runBdCommand(["sync"], folder.uri.fsPath);
+        syncedWorkspaces.push(folder.name);
+      }
+
+      await this.refresh();
+
+      if (syncedWorkspaces.length === 0) {
+        vscode.window.showWarningMessage("No Beads workspace was found to sync.");
+      } else {
+        vscode.window.showInformationMessage(
+          `Synced Beads data for ${syncedWorkspaces.join(", ")}.`
+        );
+      }
+      return;
+    }
+
+    if (message.command === "syncBeads" && typeof message.workspacePath === "string") {
+      const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath.trim());
+      if (workspacePath === null) {
+        vscode.window.showWarningMessage(
+          "Refusing to sync Beads data outside an initialized workspace folder."
+        );
+        return;
+      }
+
+      try {
+        await this.runBdCommand(["sync"], workspacePath);
+        await this.refresh();
+        vscode.window.showInformationMessage(`Synced Beads data for ${path.basename(workspacePath)}.`);
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : "Unable to sync Beads data.";
+        vscode.window.showErrorMessage(messageText);
+      }
+      return;
+    }
+
     if (message.command === "openGitGraphForCommit" && typeof message.commitHash === "string") {
       const commitHash = message.commitHash.trim();
       if (!/^[0-9a-f]{7,40}$/i.test(commitHash)) {
@@ -1073,8 +1171,16 @@ applyFilters();
       typeof message.workspacePath === "string" &&
       message.workspacePath.trim() !== ""
     ) {
+      const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath.trim());
+      if (workspacePath === null) {
+        vscode.window.showWarningMessage(
+          "Refusing to create a bead outside an initialized workspace folder."
+        );
+        return;
+      }
+
       try {
-        await this.promptAndCreateBead(message.workspacePath.trim());
+        await this.promptAndCreateBead(workspacePath);
       } catch (error) {
         const messageText = error instanceof Error ? error.message : "Unable to create bead.";
         vscode.window.showErrorMessage(messageText);
@@ -1088,8 +1194,13 @@ applyFilters();
       typeof message.workspacePath === "string"
     ) {
       const issueId = message.issueId.trim();
-      const workspacePath = message.workspacePath.trim();
-      if (issueId === "" || workspacePath === "") {
+      const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath.trim());
+      if (issueId === "" || workspacePath === null) {
+        if (workspacePath === null) {
+          vscode.window.showWarningMessage(
+            "Refusing to close a bead outside an initialized workspace folder."
+          );
+        }
         return;
       }
 
@@ -1268,6 +1379,24 @@ applyFilters();
     }
   }
 
+  private async resolveAuthorizedWorkspacePath(workspacePath: string) {
+    const normalizedPath = workspacePath.trim();
+    if (normalizedPath === "") {
+      return null;
+    }
+
+    const resolvedPath = path.resolve(normalizedPath);
+    const workspaceFolder = (vscode.workspace.workspaceFolders ?? []).find(
+      (folder) => path.resolve(folder.uri.fsPath) === resolvedPath
+    );
+    if (!workspaceFolder) {
+      return null;
+    }
+
+    const beadsDirUri = vscode.Uri.joinPath(workspaceFolder.uri, ".beads");
+    return (await this.pathExists(beadsDirUri)) ? workspaceFolder.uri.fsPath : null;
+  }
+
   private async findLegacyBeadFiles(folder: vscode.WorkspaceFolder) {
     const jsonPattern = new vscode.RelativePattern(folder, ".beads/*.json");
     const jsonlPattern = new vscode.RelativePattern(folder, ".beads/*.jsonl");
@@ -1315,16 +1444,69 @@ applyFilters();
     };
   }
 
-  private async loadBdItemsFromCli(cwd: string) {
+  private async loadBdItemsFromCli(cwd: string): Promise<CliLoadResult> {
     const stdout = await this.runBdCommand(["list", "--json", "--limit", "0", "--all"], cwd);
     const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
-    return extractBeadItems(parsed);
+    const cliItems = extractBeadItems(parsed);
+    const warnings: BeadWarning[] = [];
+
+    try {
+      const issueFileUri = vscode.Uri.file(path.join(cwd, ".beads", "issues.jsonl"));
+      const raw = await vscode.workspace.fs.readFile(issueFileUri);
+      const text = Buffer.from(raw).toString("utf8");
+      const legacyItems = extractBeadItems(
+        text
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line !== "")
+          .map((line) => JSON.parse(line))
+      );
+      const mergedItems = mergeBeadItems(cliItems, legacyItems);
+      const diff = diffBeadItems(mergedItems, legacyItems);
+
+      if (
+        diff.missingFromPrimary.length > 0 ||
+        diff.missingFromSecondary.length > 0 ||
+        diff.changed.length > 0
+      ) {
+        const details: string[] = [];
+        if (diff.missingFromPrimary.length > 0) {
+          details.push(`missing from local bd view: ${diff.missingFromPrimary.slice(0, 5).join(", ")}${diff.missingFromPrimary.length > 5 ? ", ..." : ""}`);
+        }
+        if (diff.missingFromSecondary.length > 0) {
+          details.push(`missing from issues.jsonl: ${diff.missingFromSecondary.slice(0, 5).join(", ")}${diff.missingFromSecondary.length > 5 ? ", ..." : ""}`);
+        }
+        if (diff.changed.length > 0) {
+          details.push(
+            `field differences: ${diff.changed
+              .slice(0, 3)
+              .map((entry) => `${entry.id} (${entry.fields.join(", ")})`)
+              .join("; ")}${diff.changed.length > 3 ? "; ..." : ""}`
+          );
+        }
+
+        warnings.push({
+          source: path.join(cwd, ".beads"),
+          workspacePath: cwd,
+          message: `Local bd state and issues.jsonl differ; run bd sync to reconcile. ${details.join(". ")}`
+        });
+      }
+
+      return { items: mergedItems, warnings };
+    } catch {
+      return { items: cliItems, warnings };
+    }
   }
 
-  private runBdCommand(args: string[], cwd: string) {
+  private async runBdCommand(args: string[], cwd: string) {
+    const workspacePath = await this.resolveAuthorizedWorkspacePath(cwd);
+    if (workspacePath === null) {
+      throw new Error("Refusing to run bd outside an initialized workspace folder.");
+    }
+
     return new Promise<string>((resolve, reject) => {
       const bdPath = getConfig().bdPath();
-      const child = cp.spawn(bdPath, args, { cwd });
+      const child = cp.spawn(bdPath, args, { cwd: workspacePath });
       let stdout = "";
       let stderr = "";
       child.stdout.on("data", (chunk) => {

@@ -460,9 +460,57 @@ export class DataSource {
     visibleBranches: string[] = [],
     commitTypeFilter: string = "all"
   ) {
-    let isFiltered = commitTypeFilter !== "all" && commitTypeFilter !== "";
-    let maxCount = isFiltered ? num * 8 : num;
-    let args = ["log", "--max-count=" + maxCount, "--format=" + this.gitLogFormat, "--date-order"];
+    const isFiltered = commitTypeFilter !== "all" && commitTypeFilter !== "";
+    if (!isFiltered) {
+      return this.spawnGit(
+        this.buildGitLogArgs(branch, num, showRemoteBranches, visibleBranches),
+        repo,
+        (stdout) => this.parseGitLogOutput(stdout, commitTypeFilter, num).commits,
+        []
+      );
+    }
+
+    return new Promise<GitCommit[]>((resolve) => {
+      void (async () => {
+        const chunkSize = Math.max(num * 4, 200);
+        const commits: GitCommit[] = [];
+        let skip = 0;
+
+        while (commits.length < num) {
+          const chunk = await this.spawnGit(
+            this.buildGitLogArgs(branch, chunkSize, showRemoteBranches, visibleBranches, skip),
+            repo,
+            (stdout) => this.parseGitLogOutput(stdout, commitTypeFilter),
+            { commits: [], rawCount: 0 }
+          );
+
+          commits.push(...chunk.commits);
+          if (chunk.rawCount < chunkSize) {
+            break;
+          }
+
+          skip += chunk.rawCount;
+        }
+
+        resolve(commits.slice(0, num));
+      })();
+    });
+  }
+
+  private buildGitLogArgs(
+    branch: string,
+    maxCount: number,
+    showRemoteBranches: boolean,
+    visibleBranches: string[] = [],
+    skip: number = 0
+  ) {
+    const args = [
+      "log",
+      "--max-count=" + maxCount,
+      ...(skip > 0 ? ["--skip=" + skip] : []),
+      "--format=" + this.gitLogFormat,
+      "--date-order"
+    ];
     if (branch !== "") {
       args.push(branch);
     } else if (visibleBranches.length > 0) {
@@ -471,40 +519,46 @@ export class DataSource {
       args.push("--branches", "--tags");
       if (showRemoteBranches) args.push("--remotes");
     }
+    return args;
+  }
 
-    return this.spawnGit(
-      args,
-      repo,
-      (stdout) => {
-        let lines = stdout.split(eolRegex);
-        let gitCommits: GitCommit[] = [];
-        for (let i = 0; i < lines.length - 1; i++) {
-          let line = lines[i].split(gitLogSeparator);
-          if (line.length !== 6) break;
-          const commit: GitCommit = {
-            hash: line[0],
-            parentHashes: line[1].split(" "),
-            author: line[2],
-            email: line[3],
-            date: parseInt(line[4]),
-            message: line[5]
-          };
-          if (!isFiltered) {
-            gitCommits.push(commit);
-          } else {
-            const commitType = classifyCommitSubject(commit.message);
-            if (commitTypeFilter === "other") {
-              if (commitType === null) gitCommits.push(commit);
-            } else {
-              if (commitType === commitTypeFilter) gitCommits.push(commit);
-            }
-          }
-          if (gitCommits.length >= num) break;
+  private parseGitLogOutput(stdout: string, commitTypeFilter: string, limit: number = Infinity) {
+    const lines = stdout.split(eolRegex);
+    const gitCommits: GitCommit[] = [];
+    let rawCount = 0;
+
+    for (let i = 0; i < lines.length - 1; i++) {
+      const line = lines[i].split(gitLogSeparator);
+      if (line.length !== 6) break;
+
+      rawCount++;
+      const commit: GitCommit = {
+        hash: line[0],
+        parentHashes: line[1].split(" "),
+        author: line[2],
+        email: line[3],
+        date: parseInt(line[4]),
+        message: line[5]
+      };
+
+      if (commitTypeFilter === "all" || commitTypeFilter === "") {
+        if (gitCommits.length < limit) {
+          gitCommits.push(commit);
         }
-        return gitCommits;
-      },
-      []
-    );
+        continue;
+      }
+
+      const commitType = classifyCommitSubject(commit.message);
+      if (commitTypeFilter === "other") {
+        if (commitType === null && gitCommits.length < limit) {
+          gitCommits.push(commit);
+        }
+      } else if (commitType === commitTypeFilter && gitCommits.length < limit) {
+        gitCommits.push(commit);
+      }
+    }
+
+    return { commits: gitCommits, rawCount };
   }
 
   private getHiddenBranchPatterns() {

@@ -13,7 +13,7 @@ import {
   RequestMessage,
   ResponseMessage
 } from "./types";
-import { abbrevCommit, copyToClipboard, escapeHtml, getNonce } from "./utils";
+import { abbrevCommit, copyToClipboard, escapeHtml, getNonce, resolvePathWithinRoot } from "./utils";
 
 export class GitGraphView {
   public static currentPanel: GitGraphView | undefined;
@@ -139,6 +139,13 @@ export class GitGraphView {
     this.panel.webview.onDidReceiveMessage(
       async (msg: RequestMessage) => {
         this.repoFileWatcher.mute();
+        const repo = "repo" in msg && typeof msg.repo === "string" ? msg.repo : null;
+        if (repo !== null && !this.isKnownRepo(repo)) {
+          vscode.window.showWarningMessage("Refusing to run an action for an unknown repository.");
+          this.repoFileWatcher.unmute();
+          return;
+        }
+
         switch (msg.command) {
           case "addTag":
             this.sendMessage({
@@ -473,6 +480,15 @@ export class GitGraphView {
     });
   }
 
+  private isKnownRepo(repo: string) {
+    return Object.prototype.hasOwnProperty.call(this.repoManager.getRepos(), repo);
+  }
+
+  private getWorkingTreeFileUri(repo: string, filePath: string) {
+    const resolvedTarget = resolvePathWithinRoot(repo, filePath);
+    return resolvedTarget === null ? null : vscode.Uri.file(resolvedTarget);
+  }
+
   private viewDiff(
     repo: string,
     commitHash: string,
@@ -522,8 +538,11 @@ export class GitGraphView {
       commitHash,
       filePath
     );
-    const relativePath = resolvedPath.replace(/^\/+/, "");
-    const workingFileUri = vscode.Uri.joinPath(vscode.Uri.file(repo), relativePath);
+    const workingFileUri = this.getWorkingTreeFileUri(repo, resolvedPath);
+    if (workingFileUri === null) {
+      vscode.window.showWarningMessage("Refusing to open a file outside the repository root.");
+      return;
+    }
     try {
       await vscode.commands.executeCommand(
         "vscode.diff",
@@ -542,8 +561,11 @@ export class GitGraphView {
       commitHash !== null
         ? await this.dataSource.resolveFilePathInWorkingTree(repo, commitHash, filePath)
         : filePath;
-    const relativePath = resolvedPath.replace(/^\/+/, "");
-    const fileUri = vscode.Uri.joinPath(vscode.Uri.file(repo), relativePath);
+    const fileUri = this.getWorkingTreeFileUri(repo, resolvedPath);
+    if (fileUri === null) {
+      vscode.window.showWarningMessage("Refusing to open a file outside the repository root.");
+      return;
+    }
     try {
       const document = await vscode.workspace.openTextDocument(fileUri);
       await vscode.window.showTextDocument(document, { preview: true });
