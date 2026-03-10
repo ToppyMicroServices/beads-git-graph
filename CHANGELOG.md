@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-03-11
+
+### Fixed
+
+- Harden Git / Beads webview message handling so actions only run against known repositories and initialized Beads workspaces
+- Keep commit-type filtering complete even when matching commits are sparse in history
+- Prevent dropdown HTML injection in the selected repo / branch label
+- Adjust Beads table spacing and remove hierarchy node dots for clearer rendering
+
+### Changed
+
+- Extract Beads hierarchy flattening into a shared module and add automated coverage for subtree ordering, guide metadata, and cycle handling
+
 ## [0.1.22] - 2026-03-10
 
 ### Changed
@@ -137,7 +150,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.22...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.23...HEAD
+[0.1.23]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.19...v0.1.20
