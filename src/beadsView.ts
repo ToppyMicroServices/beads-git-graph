@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 
 import {
   type BeadItem,
+  beadsAsArray,
   beadShortDate,
   beadStatusLabel,
   diffBeadItems,
@@ -12,7 +13,8 @@ import {
   mergeBeadItems,
   normalizeBeadPriority,
   normalizeBeadStatus,
-  normalizeBeadType
+  normalizeBeadType,
+  toBeadItem
 } from "./beadsData";
 import { beadUpdatedTimestamp, flattenBeadHierarchy } from "./beadsHierarchy";
 import { checkExecutable, type CommandAvailability } from "./commandAvailability";
@@ -1327,6 +1329,24 @@ applyFilters();
     const stdout = await this.runBdCommand(["list", "--json", "--limit", "0", "--all"], cwd);
     const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
     const cliItems = extractBeadItems(parsed);
+    const itemsNeedingParentLookup = new Set<string>(
+      beadsAsArray(parsed)
+        .map((item) => {
+          if (typeof item !== "object" || item === null) {
+            return null;
+          }
+
+          const record = item as Record<string, unknown>;
+          const normalizedItem = toBeadItem(record);
+          if (normalizedItem === null) {
+            return null;
+          }
+
+          const dependencyCount = record.dependency_count;
+          return typeof dependencyCount === "number" && dependencyCount > 0 ? normalizedItem.id : null;
+        })
+        .filter((id): id is string => id !== null)
+    );
     const warnings: BeadWarning[] = [];
 
     try {
@@ -1340,7 +1360,15 @@ applyFilters();
           .filter((line) => line !== "")
           .map((line) => JSON.parse(line))
       );
-      const mergedItems = mergeBeadItems(cliItems, legacyItems);
+      let mergedItems = mergeBeadItems(cliItems, legacyItems);
+      const missingParentIds = mergedItems
+        .filter((item) => item.parentId.trim() === "" && itemsNeedingParentLookup.has(item.id))
+        .map((item) => item.id);
+      if (missingParentIds.length > 0) {
+        const parentLookupItems = await this.loadBdShowItems(missingParentIds, cwd);
+        mergedItems = mergeBeadItems(mergedItems, parentLookupItems);
+      }
+
       const diff = diffBeadItems(mergedItems, legacyItems);
 
       if (
@@ -1373,8 +1401,28 @@ applyFilters();
 
       return { items: mergedItems, warnings };
     } catch {
-      return { items: cliItems, warnings };
+      const missingParentIds = cliItems
+        .filter((item) => item.parentId.trim() === "" && itemsNeedingParentLookup.has(item.id))
+        .map((item) => item.id);
+      if (missingParentIds.length === 0) {
+        return { items: cliItems, warnings };
+      }
+
+      const parentLookupItems = await this.loadBdShowItems(missingParentIds, cwd);
+      return { items: mergeBeadItems(cliItems, parentLookupItems), warnings };
     }
+  }
+
+  private async loadBdShowItems(issueIds: string[], cwd: string) {
+    const items = await Promise.all(
+      issueIds.map(async (issueId) => {
+        const stdout = await this.runBdCommand(["show", issueId, "--json"], cwd);
+        const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
+        return extractBeadItems(parsed);
+      })
+    );
+
+    return items.flat();
   }
 
   private async runBdCommand(args: string[], cwd: string) {

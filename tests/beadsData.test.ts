@@ -124,6 +124,24 @@ describe("toBeadItem", () => {
       parentId: "neo-epic"
     });
   });
+
+  it("accepts bd show style parent fields when they are present", () => {
+    expect(
+      toBeadItem({
+        id: "neo-5",
+        title: "Child task",
+        parent: "neo-late-epic",
+        dependencies: [
+          {
+            id: "neo-late-epic",
+            dependency_type: "parent-child"
+          }
+        ]
+      })
+    ).toMatchObject({
+      parentId: "neo-late-epic"
+    });
+  });
 });
 
 describe("extractBeadItems", () => {
