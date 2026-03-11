@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.1.24] - 2026-03-11
+
+### Fixed
+
+- Restore Beads hierarchy guide lines when parent metadata is missing from `bd list --json` and only available via per-issue lookup
+
 ## [0.1.23] - 2026-03-11
 
 ### Fixed
@@ -150,7 +156,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.23...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.24...HEAD
+[0.1.24]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.20...v0.1.21
