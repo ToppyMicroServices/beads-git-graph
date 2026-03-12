@@ -1,7 +1,7 @@
 {
   "name": "beads-git-graph",
   "displayName": "Beads Git Graph",
-  "version": "0.1.24",
+  "version": "0.1.25",
   "description": "Independent VS Code Git graph extension with Beads support, based on the last MIT commit of Git Graph.",
   "categories": [
     "SCM Providers",
