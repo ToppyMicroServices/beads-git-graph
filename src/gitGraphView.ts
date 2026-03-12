@@ -13,7 +13,13 @@ import {
   RequestMessage,
   ResponseMessage
 } from "./types";
-import { abbrevCommit, copyToClipboard, escapeHtml, getNonce, resolvePathWithinRoot } from "./utils";
+import {
+  abbrevCommit,
+  copyToClipboard,
+  escapeHtml,
+  getNonce,
+  resolvePathWithinRoot
+} from "./utils";
 
 export class GitGraphView {
   public static currentPanel: GitGraphView | undefined;

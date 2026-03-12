@@ -22,7 +22,9 @@ export function renderBeadsWebviewHtml(
   const rows = result.groups;
   const showWorkspaceLabel =
     rows.length + result.emptyWorkspaces.length + result.unavailableWorkspaces.length > 1;
-  const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "out", BEADS_WEBVIEW_SCRIPT));
+  const scriptUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "out", BEADS_WEBVIEW_SCRIPT)
+  );
 
   let bodyHtml = "";
   if (
@@ -44,7 +46,9 @@ export function renderBeadsWebviewHtml(
             const normalizedStatus = normalizeBeadStatus(item.status);
             const statusLabel = beadStatusLabel(normalizedStatus);
             const progressLabel =
-              normalizedStatus === "in_progress" && item.progress !== null ? `${item.progress}%` : "";
+              normalizedStatus === "in_progress" && item.progress !== null
+                ? `${item.progress}%`
+                : "";
             const normalizedPriority = normalizeBeadPriority(item.priority);
             const normalizedType = normalizeBeadType(item.type);
             const updatedTs = beadUpdatedTimestamp(item.updatedAt);

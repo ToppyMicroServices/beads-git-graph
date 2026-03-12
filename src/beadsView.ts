@@ -293,7 +293,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       try {
         await syncBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
         await this.refresh();
-        vscode.window.showInformationMessage(`Synced Beads data for ${path.basename(workspacePath)}.`);
+        vscode.window.showInformationMessage(
+          `Synced Beads data for ${path.basename(workspacePath)}.`
+        );
       } catch (error) {
         const messageText = error instanceof Error ? error.message : "Unable to sync Beads data.";
         vscode.window.showErrorMessage(messageText);
@@ -611,7 +613,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           }
 
           const dependencyCount = record.dependency_count;
-          return typeof dependencyCount === "number" && dependencyCount > 0 ? normalizedItem.id : null;
+          return typeof dependencyCount === "number" && dependencyCount > 0
+            ? normalizedItem.id
+            : null;
         })
         .filter((id): id is string => id !== null)
     );
@@ -646,10 +650,14 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       ) {
         const details: string[] = [];
         if (diff.missingFromPrimary.length > 0) {
-          details.push(`missing from local bd view: ${diff.missingFromPrimary.slice(0, 5).join(", ")}${diff.missingFromPrimary.length > 5 ? ", ..." : ""}`);
+          details.push(
+            `missing from local bd view: ${diff.missingFromPrimary.slice(0, 5).join(", ")}${diff.missingFromPrimary.length > 5 ? ", ..." : ""}`
+          );
         }
         if (diff.missingFromSecondary.length > 0) {
-          details.push(`missing from issues.jsonl: ${diff.missingFromSecondary.slice(0, 5).join(", ")}${diff.missingFromSecondary.length > 5 ? ", ..." : ""}`);
+          details.push(
+            `missing from issues.jsonl: ${diff.missingFromSecondary.slice(0, 5).join(", ")}${diff.missingFromSecondary.length > 5 ? ", ..." : ""}`
+          );
         }
         if (diff.changed.length > 0) {
           details.push(

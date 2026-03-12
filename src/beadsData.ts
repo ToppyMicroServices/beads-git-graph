@@ -322,7 +322,10 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
   return merged;
 }
 
-export function diffBeadItems(primaryItems: BeadItem[], secondaryItems: BeadItem[]): BeadCollectionDiff {
+export function diffBeadItems(
+  primaryItems: BeadItem[],
+  secondaryItems: BeadItem[]
+): BeadCollectionDiff {
   const primaryById = new Map(primaryItems.map((item) => [item.id, item]));
   const secondaryById = new Map(secondaryItems.map((item) => [item.id, item]));
   const comparableFields: Array<keyof BeadItem> = [

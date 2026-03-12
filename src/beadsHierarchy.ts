@@ -24,10 +24,12 @@ export function beadUpdatedTimestamp(updatedAt: string) {
 }
 
 export function flattenBeadHierarchy(items: BeadItem[]): BeadRenderItem[] {
-  const hierarchy: BeadHierarchyOrderItem[] = buildBeadHierarchy(items).map((entry, orderIndex) => ({
-    ...entry,
-    orderIndex
-  }));
+  const hierarchy: BeadHierarchyOrderItem[] = buildBeadHierarchy(items).map(
+    (entry, orderIndex) => ({
+      ...entry,
+      orderIndex
+    })
+  );
   const rowsById = new Map(hierarchy.map((entry) => [entry.item.id, entry]));
   const childrenByParent = new Map<string, BeadHierarchyOrderItem[]>();
   const subtreeUpdatedCache = new Map<string, number>();

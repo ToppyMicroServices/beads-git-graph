@@ -19,7 +19,9 @@ describe("isBeadsRequestMessage", () => {
   it("rejects malformed messages", () => {
     expect(isBeadsRequestMessage(null)).toBe(false);
     expect(isBeadsRequestMessage({ command: "syncBeads" })).toBe(false);
-    expect(isBeadsRequestMessage({ command: "openGitGraphForCommit", commitHash: 1234 })).toBe(false);
+    expect(isBeadsRequestMessage({ command: "openGitGraphForCommit", commitHash: 1234 })).toBe(
+      false
+    );
     expect(isBeadsRequestMessage({ command: "closeBead", issueId: "neo-1" })).toBe(false);
     expect(isBeadsRequestMessage({ command: "unknown" })).toBe(false);
   });
