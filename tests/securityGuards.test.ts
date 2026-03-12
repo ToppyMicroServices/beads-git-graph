@@ -24,17 +24,17 @@ function makeHash(index: number, fill: string) {
 
 describe("path safety helpers", () => {
   it("accepts files inside the repository root", () => {
-    const root = path.join(path.sep, "repo");
-    const target = path.join(root, "src", "index.ts");
+    const root = path.resolve(path.sep, "repo");
+    const target = path.resolve(root, "src", "index.ts");
 
     expect(isPathWithinRoot(root, target)).toBe(true);
     expect(resolvePathWithinRoot(root, "src/index.ts")).toBe(target);
   });
 
   it("rejects traversal outside the repository root", () => {
-    const root = path.join(path.sep, "repo");
+    const root = path.resolve(path.sep, "repo");
 
-    expect(isPathWithinRoot(root, path.join(path.sep, "tmp", "file.txt"))).toBe(false);
+    expect(isPathWithinRoot(root, path.resolve(path.sep, "tmp", "file.txt"))).toBe(false);
     expect(resolvePathWithinRoot(root, "../tmp/file.txt")).toBeNull();
   });
 });
