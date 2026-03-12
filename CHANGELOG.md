@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Flush `.beads/issues.jsonl` after Beads sync actions so Sync warnings clear immediately after `Sync` and `Sync Now`
+
 ## [0.1.24] - 2026-03-11
 
 ### Fixed

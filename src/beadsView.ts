@@ -12,6 +12,7 @@ import {
   toBeadItem
 } from "./beadsData";
 import { isBeadsRequestMessage } from "./beadsProtocol";
+import { syncBeadsWorkspace } from "./beadsSync";
 import {
   type BeadGroup,
   type BeadLoadResult,
@@ -264,7 +265,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           continue;
         }
 
-        await this.runBdCommand(["sync"], folder.uri.fsPath);
+        await syncBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), folder.uri.fsPath);
         syncedWorkspaces.push(folder.name);
       }
 
@@ -290,7 +291,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       }
 
       try {
-        await this.runBdCommand(["sync"], workspacePath);
+        await syncBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
         await this.refresh();
         vscode.window.showInformationMessage(`Synced Beads data for ${path.basename(workspacePath)}.`);
       } catch (error) {
