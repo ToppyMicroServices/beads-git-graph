@@ -63,6 +63,14 @@ export class RepoManager {
   }
 
   public dispose() {
+    if (this.processCreateEventsTimeout !== null) {
+      clearTimeout(this.processCreateEventsTimeout);
+      this.processCreateEventsTimeout = null;
+    }
+    if (this.processChangeEventsTimeout !== null) {
+      clearTimeout(this.processChangeEventsTimeout);
+      this.processChangeEventsTimeout = null;
+    }
     if (this.folderChangeHandler !== null) {
       this.folderChangeHandler.dispose();
       this.folderChangeHandler = null;

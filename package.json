@@ -45,7 +45,7 @@
     "clean": "rm -rf out",
     "compile": "pnpm run clean && pnpm run compile-src && pnpm run compile-web",
     "compile-src": "esbuild --bundle src/extension.ts --outfile=out/extension.js --platform=node --format=cjs --target=es6 --external:vscode --minify",
-    "compile-web": "esbuild --bundle web/main.ts --outfile=out/web.min.js --minify --target=es6 --format=iife",
+    "compile-web": "esbuild --bundle web/main.ts --outfile=out/web.min.js --minify --target=es6 --format=iife && esbuild --bundle web/beadsMain.ts --outfile=out/beadsWebview.min.js --minify --target=es6 --format=iife",
     "package": "pnpm run clean && pnpm dlx @vscode/vsce package",
     "package-and-install": "pnpm run clean && pnpm dlx @vscode/vsce package && node ./.vscode/install-package.js",
     "format": "oxfmt --check",

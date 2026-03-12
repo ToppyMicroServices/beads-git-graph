@@ -33,10 +33,15 @@ export class RepoFileWatcher {
   }
 
   public stop() {
+    if (this.refreshTimeout !== null) {
+      clearTimeout(this.refreshTimeout);
+      this.refreshTimeout = null;
+    }
     if (this.fsWatcher !== null) {
       this.fsWatcher.dispose();
       this.fsWatcher = null;
     }
+    this.repo = null;
   }
 
   public mute() {
