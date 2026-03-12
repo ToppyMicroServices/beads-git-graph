@@ -6,6 +6,10 @@
 
 - Flush `.beads/issues.jsonl` after Beads sync actions so Sync warnings clear immediately after `Sync` and `Sync Now`
 
+### Changed
+
+- Add a manual macOS / Windows smoke path in CI without making cross-platform checks run on every push
+
 ## [0.1.24] - 2026-03-11
 
 ### Fixed
