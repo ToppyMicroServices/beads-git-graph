@@ -62,7 +62,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "@types/node": "^25.4.0",
+    "@types/node": "^25.5.0",
     "@types/vscode": "~1.110.0",
     "dompurify": "^3.3.3",
     "esbuild": "^0.27.3",
