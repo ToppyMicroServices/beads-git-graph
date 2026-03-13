@@ -2,9 +2,12 @@
 
 ## [Unreleased]
 
+## [0.1.26] - 2026-03-14
+
 ### Changed
 
 - Rewrite Marketplace metadata and README copy to focus on what the extension does in VS Code
+- Replace the repository security policy with the coordinated disclosure policy for ToppyMicroServices OÜ
 
 ## [0.1.25] - 2026-03-12
 
@@ -170,7 +173,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.25...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.26...HEAD
+[0.1.26]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.22...v0.1.23
