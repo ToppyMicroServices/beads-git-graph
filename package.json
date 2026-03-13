@@ -2,17 +2,23 @@
   "name": "beads-git-graph",
   "displayName": "Beads Git Graph",
   "version": "0.1.25",
-  "description": "Independent VS Code Git graph extension with Beads support, based on the last MIT commit of Git Graph.",
+  "description": "View Git history, inspect commits, and manage Beads issues side by side in VS Code.",
   "categories": [
+    "Other",
     "SCM Providers",
     "Visualization"
   ],
   "keywords": [
+    "beads",
     "branch",
+    "commit graph",
     "git",
     "git graph",
     "git history",
-    "git log"
+    "git log",
+    "issue tracker",
+    "scm",
+    "visualize"
   ],
   "homepage": "https://github.com/ToppyMicroServices/beads-git-graph",
   "bugs": {

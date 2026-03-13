@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Rewrite Marketplace metadata and README copy to focus on what the extension does in VS Code
+
 ## [0.1.25] - 2026-03-12
 
 ### Fixed
