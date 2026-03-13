@@ -5,6 +5,8 @@
 
 Git graph and Beads issue tools in one VS Code extension.
 
+No telemetry. Privacy-first. Security-first.
+
 ## What It Does
 
 - Shows branches, tags, merges, and uncommitted changes in a Git graph
