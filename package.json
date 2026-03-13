@@ -1,7 +1,7 @@
 {
   "name": "beads-git-graph",
   "displayName": "Beads Git Graph",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Git graph and Beads issue tools for VS Code.",
   "categories": [
     "Other",
@@ -378,7 +378,7 @@
   ],
   "icon": "resources/icon.png",
   "engines": {
-    "vscode": "^1.109.0"
+    "vscode": "^1.110.0"
   },
   "packageManager": "pnpm@10.29.3"
 }

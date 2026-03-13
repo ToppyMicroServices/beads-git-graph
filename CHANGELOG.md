@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.1.27] - 2026-03-14
+
+### Changed
+
+- Raise the minimum supported VS Code engine to 1.110.0 so extension packaging matches the current VS Code type definitions
+
 ## [0.1.26] - 2026-03-14
 
 ### Changed
@@ -173,7 +179,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.26...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.27...HEAD
+[0.1.27]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.26...v0.1.27
 [0.1.26]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.23...v0.1.24
