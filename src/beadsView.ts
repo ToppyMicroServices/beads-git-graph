@@ -21,6 +21,7 @@ import {
   type EmptyBeadWorkspace
 } from "./beadsViewTypes";
 import { renderBeadsWebviewHtml } from "./beadsWebview";
+import { BranchSwitchSyncCoordinator } from "./branchSwitchSync";
 import { checkExecutable } from "./commandAvailability";
 import { getConfig } from "./config";
 import { GitGraphView } from "./gitGraphView";
@@ -38,10 +39,28 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private readonly panelDisposables: vscode.Disposable[] = [];
   private readonly viewDisposables: vscode.Disposable[] = [];
   private readonly watchers: vscode.FileSystemWatcher[];
+  private readonly branchWatchers = new Map<string, vscode.Disposable[]>();
+  private readonly branchSyncCoordinator: BranchSwitchSyncCoordinator;
   private readonly extensionUri: vscode.Uri;
 
   constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
+    this.branchSyncCoordinator = new BranchSwitchSyncCoordinator(
+      (workspacePath) => this.loadCurrentBranchKey(workspacePath),
+      (workspacePath) =>
+        syncBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath),
+      async () => {
+        await this.refresh();
+      },
+      async (workspacePath, error) => {
+        await this.refresh();
+        const messageText =
+          error instanceof Error ? error.message : "Unable to sync Beads data automatically.";
+        vscode.window.showWarningMessage(
+          `Automatic Beads sync after switching branches failed for ${path.basename(workspacePath)}: ${messageText}`
+        );
+      }
+    );
     this.watchers = [
       vscode.workspace.createFileSystemWatcher("**/.beads/beads.db*"),
       vscode.workspace.createFileSystemWatcher("**/.beads/config.yaml"),
@@ -50,19 +69,35 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       vscode.workspace.createFileSystemWatcher("**/.beads/*.jsonl")
     ];
 
-    this.disposables.push(vscode.workspace.onDidChangeWorkspaceFolders(() => this.refresh()));
+    this.disposables.push(
+      vscode.workspace.onDidChangeWorkspaceFolders((event) => {
+        for (const folder of event.removed) {
+          const workspacePath = folder.uri.fsPath;
+          this.stopWatchingBranch(workspacePath);
+          this.branchSyncCoordinator.forgetWorkspace(workspacePath);
+        }
+
+        void this.syncBranchWatchers();
+        void this.refresh();
+      })
+    );
 
     for (const watcher of this.watchers) {
       this.disposables.push(
         watcher,
-        watcher.onDidCreate(() => this.refresh()),
-        watcher.onDidChange(() => this.refresh()),
-        watcher.onDidDelete(() => this.refresh())
+        watcher.onDidCreate(() => this.handleBeadsFilesChanged()),
+        watcher.onDidChange(() => this.handleBeadsFilesChanged()),
+        watcher.onDidDelete(() => this.handleBeadsFilesChanged())
       );
     }
+
+    void this.syncBranchWatchers();
   }
 
   public dispose() {
+    for (const workspacePath of this.branchWatchers.keys()) {
+      this.stopWatchingBranch(workspacePath);
+    }
     this.disposeScoped(this.viewDisposables);
     this.disposeScoped(this.panelDisposables);
     this.webviewView = null;
@@ -165,6 +200,11 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     if (this.panel !== null) {
       this.panel.webview.html = this.getHtml(this.panel.webview, results);
     }
+  }
+
+  private handleBeadsFilesChanged() {
+    void this.syncBranchWatchers();
+    void this.refresh();
   }
 
   private async loadBeads(): Promise<BeadLoadResult> {
@@ -548,6 +588,69 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     return (await this.pathExists(beadsDirUri)) ? workspaceFolder.uri.fsPath : null;
   }
 
+  private async syncBranchWatchers() {
+    const trackedWorkspaces = new Set<string>();
+
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      const workspacePath = folder.uri.fsPath;
+      const beadsDirUri = vscode.Uri.joinPath(folder.uri, ".beads");
+      if (!(await this.pathExists(beadsDirUri))) {
+        this.stopWatchingBranch(workspacePath);
+        this.branchSyncCoordinator.forgetWorkspace(workspacePath);
+        continue;
+      }
+
+      trackedWorkspaces.add(workspacePath);
+      await this.ensureBranchWatcher(workspacePath);
+    }
+
+    for (const workspacePath of Array.from(this.branchWatchers.keys())) {
+      if (!trackedWorkspaces.has(workspacePath)) {
+        this.stopWatchingBranch(workspacePath);
+        this.branchSyncCoordinator.forgetWorkspace(workspacePath);
+      }
+    }
+  }
+
+  private async ensureBranchWatcher(workspacePath: string) {
+    if (this.branchWatchers.has(workspacePath)) {
+      return;
+    }
+
+    await this.branchSyncCoordinator.primeWorkspace(workspacePath);
+
+    const gitDir = await this.resolveGitDirectory(workspacePath);
+    if (gitDir === null) {
+      return;
+    }
+
+    const pattern = new vscode.RelativePattern(vscode.Uri.file(gitDir), "HEAD");
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+    const scheduleCheck = () => {
+      void this.branchSyncCoordinator.scheduleWorkspaceCheck(workspacePath);
+    };
+    const disposables: vscode.Disposable[] = [
+      watcher,
+      watcher.onDidCreate(scheduleCheck),
+      watcher.onDidChange(scheduleCheck),
+      watcher.onDidDelete(scheduleCheck)
+    ];
+
+    this.branchWatchers.set(workspacePath, disposables);
+  }
+
+  private stopWatchingBranch(workspacePath: string) {
+    const disposables = this.branchWatchers.get(workspacePath);
+    if (!disposables) {
+      return;
+    }
+
+    for (const disposable of disposables) {
+      disposable.dispose();
+    }
+    this.branchWatchers.delete(workspacePath);
+  }
+
   private async findLegacyBeadFiles(folder: vscode.WorkspaceFolder) {
     const jsonPattern = new vscode.RelativePattern(folder, ".beads/*.json");
     const jsonlPattern = new vscode.RelativePattern(folder, ".beads/*.jsonl");
@@ -701,6 +804,34 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     return items.flat();
   }
 
+  private async resolveGitDirectory(cwd: string) {
+    try {
+      const stdout = await this.runGitCommand(["rev-parse", "--git-dir"], cwd);
+      const gitDir = stdout.trim();
+      return gitDir === "" ? null : path.resolve(cwd, gitDir);
+    } catch {
+      return null;
+    }
+  }
+
+  private async loadCurrentBranchKey(cwd: string) {
+    try {
+      const stdout = await this.runGitCommand(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd);
+      const branch = stdout.trim();
+      if (branch !== "") {
+        return `branch:${branch}`;
+      }
+    } catch {}
+
+    try {
+      const stdout = await this.runGitCommand(["rev-parse", "--verify", "HEAD"], cwd);
+      const commitHash = stdout.trim();
+      return commitHash === "" ? null : `detached:${commitHash}`;
+    } catch {
+      return null;
+    }
+  }
+
   private async runBdCommand(args: string[], cwd: string) {
     const workspacePath = await this.resolveAuthorizedWorkspacePath(cwd);
     if (workspacePath === null) {
@@ -729,6 +860,35 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         reject(
           new Error(
             stderr.trim() || `${bdPath} ${args.join(" ")} failed with exit code ${code ?? -1}.`
+          )
+        );
+      });
+    });
+  }
+
+  private async runGitCommand(args: string[], cwd: string) {
+    return new Promise<string>((resolve, reject) => {
+      const gitPath = getConfig().gitPath();
+      const child = cp.spawn(gitPath, args, { cwd });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString();
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+      child.on("error", (error) => {
+        reject(error);
+      });
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolve(stdout);
+          return;
+        }
+        reject(
+          new Error(
+            stderr.trim() || `${gitPath} ${args.join(" ")} failed with exit code ${code ?? -1}.`
           )
         );
       });
