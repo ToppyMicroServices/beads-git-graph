@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-03-16
+
+### Fixed
+
+- Publish a single Universal VSIX to both registries and align local packaging with pnpm by disabling vsce dependency detection
+
 ## [0.1.28] - 2026-03-14
 
 ### Fixed

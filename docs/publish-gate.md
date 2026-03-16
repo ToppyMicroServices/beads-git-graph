@@ -42,6 +42,10 @@ Required checks:
 - Publish workflow must keep least privilege:
   - minimal `permissions`
   - no broad secret exposure in job env
+- Package the extension once and publish the same VSIX to both registries when possible.
+- This extension currently ships as Universal package content only; do not add platform `target` values unless native runtime dependencies are introduced.
+- If native dependencies are added later, switch to explicit platform targets and include `darwin-arm64` for Apple Silicon.
+- When using `HaaLeo/publish-vscode-extension` with pnpm, set `dependencies: false`.
 
 ## 5) Beads Value Proof
 

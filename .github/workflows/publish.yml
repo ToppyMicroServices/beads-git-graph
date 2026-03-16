@@ -11,38 +11,38 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to ${{ matrix.name }}
     runs-on: ubuntu-latest
-    env:
-      VS_MARKETPLACE_TOKEN: ${{ secrets.VS_MARKETPLACE_TOKEN }}
-      OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
-    strategy:
-      matrix:
-        include:
-          - name: VS Marketplace
-            registryUrl: https://marketplace.visualstudio.com
-          - name: Open VSX
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
       - run: corepack enable && pnpm install --frozen-lockfile
 
+      - name: Package VSIX
+        id: package_extension
+        uses: HaaLeo/publish-vscode-extension@v2
+        with:
+          pat: stub
+          dryRun: true
+          dependencies: false
+
+      - name: Publish to Open VSX
+        if: ${{ secrets.OPEN_VSX_TOKEN != '' }}
+        uses: HaaLeo/publish-vscode-extension@v2
+        with:
+          pat: ${{ secrets.OPEN_VSX_TOKEN }}
+          extensionFile: ${{ steps.package_extension.outputs.vsixPath }}
+
       - name: Publish to VS Marketplace
-        if: ${{ matrix.name == 'VS Marketplace' && env.VS_MARKETPLACE_TOKEN != '' }}
-        uses: HaaLeo/publish-vscode-extension@ca5561daa085dee804bf9f37fe0165785a9b14db # v2
+        if: ${{ secrets.VS_MARKETPLACE_TOKEN != '' }}
+        uses: HaaLeo/publish-vscode-extension@v2
         with:
           pat: ${{ secrets.VS_MARKETPLACE_TOKEN }}
           registryUrl: https://marketplace.visualstudio.com
-
-      - name: Publish to Open VSX
-        if: ${{ matrix.name == 'Open VSX' && env.OPEN_VSX_TOKEN != '' }}
-        uses: HaaLeo/publish-vscode-extension@ca5561daa085dee804bf9f37fe0165785a9b14db # v2
-        with:
-          pat: ${{ secrets.OPEN_VSX_TOKEN }}
+          extensionFile: ${{ steps.package_extension.outputs.vsixPath }}
