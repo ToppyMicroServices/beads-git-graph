@@ -33,14 +33,12 @@ jobs:
           dependencies: false
 
       - name: Publish to Open VSX
-        if: ${{ secrets.OPEN_VSX_TOKEN != '' }}
         uses: HaaLeo/publish-vscode-extension@v2
         with:
           pat: ${{ secrets.OPEN_VSX_TOKEN }}
           extensionFile: ${{ steps.package_extension.outputs.vsixPath }}
 
       - name: Publish to VS Marketplace
-        if: ${{ secrets.VS_MARKETPLACE_TOKEN != '' }}
         uses: HaaLeo/publish-vscode-extension@v2
         with:
           pat: ${{ secrets.VS_MARKETPLACE_TOKEN }}
