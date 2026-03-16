@@ -7,15 +7,15 @@ on:
     workflows: ["CI"]
     types: [completed]
 
-permissions: read-all
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   mark-patch-updates:
     if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
     runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      pull-requests: write
     steps:
       - name: Fetch Dependabot metadata
         id: metadata
@@ -45,9 +45,6 @@ jobs:
   merge-patch-updates:
     if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.actor.login == 'dependabot[bot]' }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
       - name: Merge labeled patch updates after CI
         env:
