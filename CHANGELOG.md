@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.1.30] - 2026-03-18
+
+### Changed
+
+- Add repo-specific Git remote selection for multi-remote repositories and use the selected remote for graph filtering and tag pushes
+
 ## [0.1.29] - 2026-03-16
 
 ### Fixed
@@ -191,7 +197,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.28...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.30...HEAD
+[0.1.30]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.29...v0.1.30
 [0.1.28]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.27...v0.1.28
 [0.1.27]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.26...v0.1.27
 [0.1.26]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.25...v0.1.26
