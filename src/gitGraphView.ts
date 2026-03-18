@@ -233,6 +233,8 @@ export class GitGraphView {
               command: "loadBranches",
               branches: branchData.branches,
               head: branchData.head,
+              remotes: branchData.remotes,
+              defaultRemote: branchData.defaultRemote,
               hard: msg.hard,
               isRepo: isRepo
             });
@@ -250,6 +252,7 @@ export class GitGraphView {
                 msg.branchName,
                 msg.maxCommits,
                 msg.showRemoteBranches,
+                msg.selectedRemote,
                 msg.commitTypeFilter
               )),
               hard: msg.hard
@@ -284,7 +287,7 @@ export class GitGraphView {
           case "pushTag":
             this.sendMessage({
               command: "pushTag",
-              status: await this.dataSource.pushTag(msg.repo, msg.tagName)
+              status: await this.dataSource.pushTag(msg.repo, msg.tagName, msg.remoteName)
             });
             break;
           case "renameBranch":
@@ -414,6 +417,7 @@ export class GitGraphView {
       body = `<body style="${colorVars}">
 			<div id="controls">
 				<span id="repoControl"><span class="unselectable">Repo: </span><div id="repoSelect" class="dropdown"></div></span>
+        <span id="remoteControl"><span class="unselectable">Remote: </span><div id="remoteSelect" class="dropdown"></div></span>
         <span id="branchControl" hidden aria-hidden="true"><div id="branchSelect" class="dropdown"></div></span>
 				<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" value="1" checked>Show Remote</label>
         <span id="typeFilterControl"><span class="unselectable">Type: </span><select id="typeFilterSelect"><option value="all">All</option><option value="feat">feat</option><option value="fix">fix</option><option value="docs">docs</option><option value="chore">chore</option><option value="refactor">refactor</option><option value="perf">perf</option><option value="test">test</option><option value="build">build</option><option value="ci">ci</option><option value="style">style</option><option value="revert">revert</option><option value="other">other</option></select></span>

@@ -38,6 +38,7 @@ export interface GitRefData {
 export type GitRepoSet = Record<string, GitRepoState>;
 export interface GitRepoState {
   columnWidths: number[] | null;
+  selectedRemote: string | null;
 }
 
 export interface GitUnsavedChanges {
@@ -203,6 +204,8 @@ export interface ResponseLoadBranches {
   command: "loadBranches";
   branches: string[];
   head: string | null;
+  remotes: string[];
+  defaultRemote: string | null;
   hard: boolean;
   isRepo: boolean;
 }
@@ -213,6 +216,7 @@ export interface RequestLoadCommits {
   branchName: string;
   maxCommits: number;
   showRemoteBranches: boolean;
+  selectedRemote: string | null;
   commitTypeFilter: string;
   hard: boolean;
 }
@@ -260,6 +264,7 @@ export interface RequestPushTag {
   command: "pushTag";
   repo: string;
   tagName: string;
+  remoteName: string | null;
 }
 export interface ResponsePushTag {
   command: "pushTag";

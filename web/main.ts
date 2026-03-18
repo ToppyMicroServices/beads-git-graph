@@ -1,4 +1,9 @@
 import { classifyCommitSubject } from "../src/commitTypes";
+import {
+  filterBranchesForRemote,
+  getPreferredMainBranch,
+  getPreferredRemote
+} from "../src/remotes";
 import { Dropdown } from "./dropdown";
 import { Graph } from "./graph";
 import createDOMPurify = require("dompurify");
@@ -27,11 +32,13 @@ const DOMPurify = createDOMPurify(window);
 class GitGraphView {
   private gitRepos: GG.GitRepoSet;
   private gitBranches: string[] = [];
+  private gitRemotes: string[] = [];
   private gitBranchHead: string | null = null;
   private commits: GG.GitCommitNode[] = [];
   private commitHead: string | null = null;
   private commitLookup: { [hash: string]: number } = {};
   private currentBranch: string | null = null;
+  private currentRemote: string | null = null;
   private currentRepo!: string;
 
   private graph: Graph;
@@ -45,6 +52,7 @@ class GitGraphView {
   private tableElem: HTMLElement;
   private footerElem: HTMLElement;
   private repoDropdown: Dropdown;
+  private remoteDropdown: Dropdown;
   private branchDropdown: Dropdown;
   private showRemoteBranchesElem: HTMLInputElement;
   private typeFilterElem: HTMLSelectElement;
@@ -70,6 +78,16 @@ class GitGraphView {
       this.maxCommits = this.config.initialLoadCommits;
       this.expandedCommit = null;
       this.currentBranch = null;
+      this.currentRemote = this.gitRepos[value].selectedRemote ?? null;
+      this.saveState();
+      this.refresh(true);
+    });
+    this.remoteDropdown = new Dropdown("remoteSelect", false, "Remotes", (value) => {
+      this.currentRemote = value;
+      this.maxCommits = this.config.initialLoadCommits;
+      this.expandedCommit = null;
+      this.currentBranch = null;
+      this.persistRepoState();
       this.saveState();
       this.refresh(true);
     });
@@ -111,6 +129,8 @@ class GitGraphView {
     this.renderShowLoading();
     if (prevState) {
       this.currentBranch = prevState.currentBranch;
+      this.currentRemote = prevState.currentRemote;
+      this.gitRemotes = prevState.gitRemotes;
       this.showRemoteBranches = prevState.showRemoteBranches;
       this.showRemoteBranchesElem.checked = this.showRemoteBranches;
       const legacyState = prevState as WebViewState & { featOnly?: boolean };
@@ -125,7 +145,14 @@ class GitGraphView {
         this.currentRepo = prevState.currentRepo;
         this.maxCommits = prevState.maxCommits;
         this.expandedCommit = prevState.expandedCommit;
-        this.loadBranches(prevState.gitBranches, prevState.gitBranchHead, true, true);
+        this.loadBranches(
+          prevState.gitBranches,
+          prevState.gitBranchHead,
+          prevState.gitRemotes,
+          prevState.currentRemote,
+          true,
+          true
+        );
         this.loadCommits(
           prevState.commits,
           prevState.commitHead,
@@ -161,6 +188,7 @@ class GitGraphView {
         lastActiveRepo !== null && typeof repos[lastActiveRepo] !== "undefined"
           ? lastActiveRepo
           : repoPaths[0];
+      this.currentRemote = repos[this.currentRepo].selectedRemote ?? null;
       this.saveState();
       changedRepo = true;
     }
@@ -184,6 +212,8 @@ class GitGraphView {
   public loadBranches(
     branchOptions: string[],
     branchHead: string | null,
+    remotes: string[],
+    defaultRemote: string | null,
     hard: boolean,
     isRepo: boolean
   ) {
@@ -191,22 +221,36 @@ class GitGraphView {
       this.triggerLoadBranchesCallback(false, isRepo);
       return;
     }
+    const nextRemote = getPreferredRemote(
+      remotes,
+      this.gitRepos[this.currentRepo].selectedRemote,
+      this.currentRemote,
+      defaultRemote
+    );
+    const visibleBranchOptions = filterBranchesForRemote(branchOptions, nextRemote);
     if (
       !hard &&
-      arraysEqual(this.gitBranches, branchOptions, (a, b) => a === b) &&
+      arraysEqual(this.gitBranches, visibleBranchOptions, (a, b) => a === b) &&
+      arraysEqual(this.gitRemotes, remotes, (a, b) => a === b) &&
+      this.currentRemote === nextRemote &&
       this.gitBranchHead === branchHead
     ) {
       this.triggerLoadBranchesCallback(false, isRepo);
       return;
     }
 
-    this.gitBranches = branchOptions;
+    this.gitRemotes = remotes;
+    this.currentRemote = nextRemote;
+    this.persistRepoState();
+    this.updateRemoteControl();
+
+    this.gitBranches = visibleBranchOptions;
     this.gitBranchHead = branchHead;
     if (
       this.currentBranch === null ||
       (this.currentBranch !== "" && this.gitBranches.indexOf(this.currentBranch) === -1)
     ) {
-      const preferredMainBranch = this.getPreferredMainBranch();
+      const preferredMainBranch = getPreferredMainBranch(this.gitBranches, this.currentRemote);
       this.currentBranch =
         this.config.showCurrentBranchByDefault && this.gitBranchHead !== null
           ? this.gitBranchHead
@@ -237,19 +281,31 @@ class GitGraphView {
     }
   }
 
-  private getPreferredMainBranch() {
-    const candidates = [
-      "main",
-      "remotes/origin/main",
-      "origin/main",
-      "master",
-      "remotes/origin/master",
-      "origin/master"
-    ];
-    for (let i = 0; i < candidates.length; i++) {
-      if (this.gitBranches.indexOf(candidates[i]) > -1) return candidates[i];
+  private updateRemoteControl() {
+    const remoteControlElem = document.getElementById("remoteControl")!;
+    remoteControlElem.style.display = this.gitRemotes.length > 1 ? "inline" : "none";
+
+    if (this.gitRemotes.length > 0) {
+      this.remoteDropdown.setOptions(
+        this.gitRemotes.map((remote) => ({ name: remote, value: remote })),
+        this.currentRemote !== null ? this.currentRemote : this.gitRemotes[0]
+      );
     }
-    return null;
+  }
+
+  private persistRepoState() {
+    if (
+      typeof this.currentRepo === "string" &&
+      typeof this.gitRepos[this.currentRepo] !== "undefined" &&
+      this.gitRepos[this.currentRepo].selectedRemote !== this.currentRemote
+    ) {
+      this.gitRepos[this.currentRepo].selectedRemote = this.currentRemote;
+      sendMessage({
+        command: "saveRepoState",
+        repo: this.currentRepo,
+        state: this.gitRepos[this.currentRepo]
+      });
+    }
   }
 
   private isDbSyncBranchName(branchName: string) {
@@ -358,6 +414,7 @@ class GitGraphView {
       branchName: this.currentBranch !== null ? this.currentBranch : "",
       maxCommits: this.maxCommits,
       showRemoteBranches: this.showRemoteBranches,
+      selectedRemote: this.currentRemote,
       commitTypeFilter: this.commitTypeFilter,
       hard: hard
     });
@@ -381,10 +438,12 @@ class GitGraphView {
     vscode.setState({
       gitRepos: this.gitRepos,
       gitBranches: this.gitBranches,
+      gitRemotes: this.gitRemotes,
       gitBranchHead: this.gitBranchHead,
       commits: this.commits,
       commitHead: this.commitHead,
       currentBranch: this.currentBranch,
+      currentRemote: this.currentRemote,
       currentRepo: this.currentRepo,
       moreCommitsAvailable: this.moreCommitsAvailable,
       maxCommits: this.maxCommits,
@@ -835,7 +894,12 @@ class GitGraphView {
               showConfirmationDialog(
                 "Are you sure you want to push the tag <b><i>" + escapeHtml(refName) + "</i></b>?",
                 () => {
-                  sendMessage({ command: "pushTag", repo: this.currentRepo!, tagName: refName });
+                  sendMessage({
+                    command: "pushTag",
+                    repo: this.currentRepo!,
+                    tagName: refName,
+                    remoteName: this.currentRemote
+                  });
                   showActionRunningDialog("Pushing Tag");
                 },
                 null
@@ -1475,7 +1539,14 @@ window.addEventListener("message", (event) => {
       refreshGraphOrDisplayError(msg.status, "Unable to Delete Tag");
       break;
     case "loadBranches":
-      gitGraph.loadBranches(msg.branches, msg.head, msg.hard, msg.isRepo);
+      gitGraph.loadBranches(
+        msg.branches,
+        msg.head,
+        msg.remotes,
+        msg.defaultRemote,
+        msg.hard,
+        msg.isRepo
+      );
       break;
     case "loadCommits":
       gitGraph.loadCommits(msg.commits, msg.head, msg.moreCommitsAvailable, msg.hard);

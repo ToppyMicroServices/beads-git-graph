@@ -430,6 +430,7 @@ svg.fileIcon {
   font-size: 13px;
 }
 #repoControl,
+#remoteControl,
 #branchControl,
 #showRemoteBranchesControl,
 #typeFilterControl {
@@ -437,9 +438,11 @@ svg.fileIcon {
   margin: 0 10px;
 }
 #repoSelect,
+#remoteSelect,
 #branchSelect {
   margin-left: 3px;
 }
+#remoteControl,
 #branchControl {
   display: none;
 }

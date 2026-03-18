@@ -3,6 +3,7 @@ import * as cp from "node:child_process";
 import { checkExecutable } from "./commandAvailability";
 import { classifyCommitSubject } from "./commitTypes";
 import { getConfig } from "./config";
+import { filterBranchesForRemote, getPreferredRemote } from "./remotes";
 import {
   GitCommandStatus,
   GitCommit,
@@ -49,32 +50,51 @@ export class DataSource {
   }
 
   public getBranches(repo: string, showRemoteBranches: boolean) {
-    return new Promise<{ branches: string[]; head: string | null; error: boolean }>((resolve) => {
-      this.execGit(["branch", ...(showRemoteBranches ? ["-a"] : [])], repo, (err, stdout) => {
-        let branchData = {
-          branches: <string[]>[],
-          head: <string | null>null,
-          error: false
-        };
-        const hiddenBranchPatterns = this.getHiddenBranchPatterns();
+    return new Promise<{
+      branches: string[];
+      head: string | null;
+      remotes: string[];
+      defaultRemote: string | null;
+      error: boolean;
+    }>((resolve) => {
+      Promise.all([
+        new Promise<{ branches: string[]; head: string | null; error: boolean }>(
+          (resolveBranches) => {
+            this.execGit(["branch", ...(showRemoteBranches ? ["-a"] : [])], repo, (err, stdout) => {
+              let branchData = {
+                branches: <string[]>[],
+                head: <string | null>null,
+                error: false
+              };
+              const hiddenBranchPatterns = this.getHiddenBranchPatterns();
 
-        if (err) {
-          branchData.error = true;
-        } else {
-          let lines = stdout.split(eolRegex);
-          for (let i = 0; i < lines.length - 1; i++) {
-            let name = lines[i].substring(2).split(" -> ")[0];
-            if (name.match(headRegex) !== null) continue;
+              if (err) {
+                branchData.error = true;
+              } else {
+                let lines = stdout.split(eolRegex);
+                for (let i = 0; i < lines.length - 1; i++) {
+                  let name = lines[i].substring(2).split(" -> ")[0];
+                  if (name.match(headRegex) !== null) continue;
 
-            if (lines[i][0] === "*") {
-              branchData.head = name;
-              branchData.branches.unshift(name);
-            } else if (!this.isHiddenBranch(name, hiddenBranchPatterns)) {
-              branchData.branches.push(name);
-            }
+                  if (lines[i][0] === "*") {
+                    branchData.head = name;
+                    branchData.branches.unshift(name);
+                  } else if (!this.isHiddenBranch(name, hiddenBranchPatterns)) {
+                    branchData.branches.push(name);
+                  }
+                }
+              }
+              resolveBranches(branchData);
+            });
           }
-        }
-        resolve(branchData);
+        ),
+        this.getRemoteMetadata(repo)
+      ]).then(([branchData, remoteMetadata]) => {
+        resolve({
+          ...branchData,
+          remotes: remoteMetadata.remotes,
+          defaultRemote: remoteMetadata.defaultRemote
+        });
       });
     });
   }
@@ -84,6 +104,7 @@ export class DataSource {
     branch: string,
     maxCommits: number,
     showRemoteBranches: boolean,
+    selectedRemote: string | null,
     commitTypeFilter: string
   ) {
     return new Promise<{
@@ -99,68 +120,70 @@ export class DataSource {
                 branch,
                 maxCommits + 1,
                 showRemoteBranches,
-                branchData.branches,
+                filterBranchesForRemote(branchData.branches, selectedRemote),
                 commitTypeFilter
               )
             )
           : this.getGitLog(repo, branch, maxCommits + 1, showRemoteBranches, [], commitTypeFilter);
 
-      Promise.all([gitLogPromise, this.getRefs(repo, showRemoteBranches)]).then(async (results) => {
-        let commits = results[0],
-          refData = results[1],
-          i,
-          unsavedChanges = null;
-        let moreCommitsAvailable = commits.length === maxCommits + 1;
-        if (moreCommitsAvailable) commits.pop();
+      Promise.all([gitLogPromise, this.getRefs(repo, showRemoteBranches, selectedRemote)]).then(
+        async (results) => {
+          let commits = results[0],
+            refData = results[1],
+            i,
+            unsavedChanges = null;
+          let moreCommitsAvailable = commits.length === maxCommits + 1;
+          if (moreCommitsAvailable) commits.pop();
 
-        if (refData.head !== null) {
-          for (i = 0; i < commits.length; i++) {
-            if (refData.head === commits[i].hash) {
-              unsavedChanges = getConfig().showUncommittedChanges()
-                ? await this.getGitUnsavedChanges(repo)
-                : null;
-              if (unsavedChanges !== null) {
-                commits.unshift({
-                  hash: "*",
-                  parentHashes: [refData.head],
-                  author: "*",
-                  email: "",
-                  date: Math.round(new Date().getTime() / 1000),
-                  message: "Uncommitted Changes (" + unsavedChanges.changes + ")"
-                });
+          if (refData.head !== null) {
+            for (i = 0; i < commits.length; i++) {
+              if (refData.head === commits[i].hash) {
+                unsavedChanges = getConfig().showUncommittedChanges()
+                  ? await this.getGitUnsavedChanges(repo)
+                  : null;
+                if (unsavedChanges !== null) {
+                  commits.unshift({
+                    hash: "*",
+                    parentHashes: [refData.head],
+                    author: "*",
+                    email: "",
+                    date: Math.round(new Date().getTime() / 1000),
+                    message: "Uncommitted Changes (" + unsavedChanges.changes + ")"
+                  });
+                }
+                break;
               }
-              break;
             }
           }
-        }
 
-        let commitNodes: GitCommitNode[] = [];
-        let commitLookup: { [hash: string]: number } = {};
+          let commitNodes: GitCommitNode[] = [];
+          let commitLookup: { [hash: string]: number } = {};
 
-        for (i = 0; i < commits.length; i++) {
-          commitLookup[commits[i].hash] = i;
-          commitNodes.push({
-            hash: commits[i].hash,
-            parentHashes: commits[i].parentHashes,
-            author: commits[i].author,
-            email: commits[i].email,
-            date: commits[i].date,
-            message: commits[i].message,
-            refs: []
+          for (i = 0; i < commits.length; i++) {
+            commitLookup[commits[i].hash] = i;
+            commitNodes.push({
+              hash: commits[i].hash,
+              parentHashes: commits[i].parentHashes,
+              author: commits[i].author,
+              email: commits[i].email,
+              date: commits[i].date,
+              message: commits[i].message,
+              refs: []
+            });
+          }
+          for (i = 0; i < refData.refs.length; i++) {
+            if (typeof commitLookup[refData.refs[i].hash] === "number") {
+              commitNodes[commitLookup[refData.refs[i].hash]].refs.push(refData.refs[i]);
+            }
+          }
+
+          resolve({
+            commits: commitNodes,
+            head: refData.head,
+            moreCommitsAvailable: moreCommitsAvailable
           });
         }
-        for (i = 0; i < refData.refs.length; i++) {
-          if (typeof commitLookup[refData.refs[i].hash] === "number") {
-            commitNodes[commitLookup[refData.refs[i].hash]].refs.push(refData.refs[i]);
-          }
-        }
-
-        resolve({
-          commits: commitNodes,
-          head: refData.head,
-          moreCommitsAvailable: moreCommitsAvailable
-        });
-      });
+      );
     });
   }
 
@@ -303,9 +326,13 @@ export class DataSource {
     return resolvedFilePath;
   }
 
-  public async getRemoteUrl(repo: string) {
+  public async getRemoteUrl(repo: string, remoteName: string | null = null) {
+    const preferredRemote =
+      remoteName !== null ? remoteName : (await this.getRemoteMetadata(repo)).defaultRemote;
+    if (preferredRemote === null) return null;
+
     return new Promise<string | null>((resolve) => {
-      this.execGit(["config", "--get", "remote.origin.url"], repo, (err, stdout) => {
+      this.execGit(["config", "--get", `remote.${preferredRemote}.url`], repo, (err, stdout) => {
         resolve(!err ? stdout.split(eolRegex)[0] : null);
       });
     });
@@ -340,8 +367,14 @@ export class DataSource {
     return this.runGitCommandSpawn(["tag", "-d", tagName], repo);
   }
 
-  public pushTag(repo: string, tagName: string) {
-    return this.runGitCommandSpawn(["push", "origin", tagName], repo);
+  public async pushTag(repo: string, tagName: string, remoteName: string | null) {
+    const preferredRemote =
+      remoteName !== null ? remoteName : (await this.getRemoteMetadata(repo)).defaultRemote;
+    if (preferredRemote === null) {
+      return "No Git remotes found for this repository.";
+    }
+
+    return this.runGitCommandSpawn(["push", preferredRemote, tagName], repo);
   }
 
   public createBranch(repo: string, branchName: string, commitHash: string) {
@@ -408,7 +441,7 @@ export class DataSource {
     return this.runGitCommandSpawn(["checkout", commitHash, "--", filePath], repo);
   }
 
-  private getRefs(repo: string, showRemoteBranches: boolean) {
+  private getRefs(repo: string, showRemoteBranches: boolean, selectedRemote: string | null) {
     return new Promise<GitRefData>((resolve) => {
       const hiddenBranchPatterns = this.getHiddenBranchPatterns();
       this.execGit(
@@ -438,7 +471,11 @@ export class DataSource {
                 });
               } else if (ref.startsWith("refs/remotes/")) {
                 const name = ref.substring(13);
-                if (!this.isHiddenBranch(name, hiddenBranchPatterns)) {
+                const remoteName = name.split("/")[0];
+                if (
+                  !this.isHiddenBranch(name, hiddenBranchPatterns) &&
+                  (selectedRemote === null || remoteName === selectedRemote)
+                ) {
                   refData.refs.push({ hash: hash, name: name, type: "remote" });
                 }
               } else if (ref === "HEAD") {
@@ -601,6 +638,27 @@ export class DataSource {
       }
     }
     return false;
+  }
+
+  private async getRemoteMetadata(repo: string) {
+    const remotes = await this.spawnGit(
+      ["remote"],
+      repo,
+      (stdout) => stdout.split(eolRegex).filter((line) => line !== ""),
+      <string[]>[]
+    );
+    const upstream = await this.spawnGit(
+      ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+      repo,
+      (stdout) => stdout.split(eolRegex)[0] ?? "",
+      ""
+    );
+    const upstreamRemote = upstream !== "" ? upstream.split("/")[0] : null;
+
+    return {
+      remotes: remotes,
+      defaultRemote: getPreferredRemote(remotes, upstreamRemote)
+    };
   }
 
   private getGitUnsavedChanges(repo: string) {

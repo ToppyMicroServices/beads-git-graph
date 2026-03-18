@@ -138,7 +138,7 @@ export class RepoManager {
     return repos;
   }
   private addRepo(repo: string) {
-    this.repos[repo] = { columnWidths: null };
+    this.repos[repo] = { columnWidths: null, selectedRemote: null };
     this.extensionState.saveRepos(this.repos);
   }
   private removeRepo(repo: string) {

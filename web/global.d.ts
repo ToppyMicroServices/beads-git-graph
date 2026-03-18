@@ -109,10 +109,12 @@ declare global {
   interface WebViewState {
     gitRepos: GG.GitRepoSet;
     gitBranches: string[];
+    gitRemotes: string[];
     gitBranchHead: string | null;
     commits: GG.GitCommitNode[];
     commitHead: string | null;
     currentBranch: string | null;
+    currentRemote: string | null;
     currentRepo: string;
     moreCommitsAvailable: boolean;
     maxCommits: number;
