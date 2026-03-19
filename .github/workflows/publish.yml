@@ -12,13 +12,16 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
+      VS_MARKETPLACE_TOKEN: ${{ secrets.VS_MARKETPLACE_TOKEN }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version: 22
 
@@ -26,23 +29,19 @@ jobs:
 
       - name: Package VSIX
         id: package_extension
-        uses: HaaLeo/publish-vscode-extension@v2
-        with:
-          pat: stub
-          dryRun: true
-          dependencies: false
+        run: |
+          pnpm run package
+          VSIX_PATH="$(find . -maxdepth 1 -name '*.vsix' -print -quit)"
+          if [ -z "$VSIX_PATH" ]; then
+            echo "No VSIX was generated." >&2
+            exit 1
+          fi
+          echo "vsix_path=$VSIX_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Publish to Open VSX
-        uses: HaaLeo/publish-vscode-extension@v2
-        with:
-          pat: ${{ secrets.OPEN_VSX_TOKEN }}
-          extensionFile: ${{ steps.package_extension.outputs.vsixPath }}
-          skipDuplicate: true
+        if: env.OPEN_VSX_TOKEN != ''
+        run: pnpm dlx ovsx -p "$OPEN_VSX_TOKEN" publish -i "${{ steps.package_extension.outputs.vsix_path }}" --skip-duplicate
 
       - name: Publish to VS Marketplace
-        uses: HaaLeo/publish-vscode-extension@v2
-        with:
-          pat: ${{ secrets.VS_MARKETPLACE_TOKEN }}
-          registryUrl: https://marketplace.visualstudio.com
-          extensionFile: ${{ steps.package_extension.outputs.vsixPath }}
-          skipDuplicate: true
+        if: env.VS_MARKETPLACE_TOKEN != ''
+        run: pnpm dlx @vscode/vsce publish --packagePath "${{ steps.package_extension.outputs.vsix_path }}" --skip-duplicate -p "$VS_MARKETPLACE_TOKEN"
