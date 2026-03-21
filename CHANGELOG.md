@@ -5,6 +5,7 @@
 ### Added
 
 - Add a daily GitHub maintenance workflow that summarizes open pull requests and security alerts into a single issue
+- Add `CONTRIBUTING.md` and link repository docs for contributors and security reporting
 
 ## [0.1.30] - 2026-03-18
 

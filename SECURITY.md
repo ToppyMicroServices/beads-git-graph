@@ -3,10 +3,10 @@
 This repository is maintained by ToppyMicroServices OÜ.
 
 For the full coordinated disclosure policy, see:
-https://toppymicros.com/security-policy.html
+[https://toppymicros.com/security-policy.html](https://toppymicros.com/security-policy.html)
 
 Machine-readable policy:
-https://toppymicros.com/.well-known/security.txt
+[https://toppymicros.com/.well-known/security.txt](https://toppymicros.com/.well-known/security.txt)
 
 ## Scope
 
@@ -30,6 +30,7 @@ Use the subject line:
 `[SECURITY] <short summary>`
 
 This mailbox is used for coordinated vulnerability disclosure.
+Please do not disclose vulnerabilities publicly before remediation is available.
 
 Include:
 

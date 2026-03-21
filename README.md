@@ -22,3 +22,8 @@ No telemetry. Privacy-first. Security-first.
 3. Use the toolbar to refresh, sync, or switch views.
 
 If your workspace has a `.beads` directory, the extension detects it automatically. Set `beads-git-graph.bdPath` if `bd` is not on `PATH`.
+
+## Docs
+
+- [Contributing](./CONTRIBUTING.md)
+- [Security Policy](./SECURITY.md)
