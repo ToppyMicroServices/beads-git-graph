@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add a daily GitHub maintenance workflow that summarizes open pull requests and security alerts into a single issue
+
 ## [0.1.30] - 2026-03-18
 
 ### Changed
