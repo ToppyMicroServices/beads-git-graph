@@ -2,10 +2,25 @@
 
 ## [Unreleased]
 
+<!-- daily-generated:start -->
+
+### Daily Snapshot
+
+- [`debf385`](https://github.com/ToppyMicroServices/beads-git-graph/commit/debf385ce86c86b92e4d07957bc01f0ff990c1c3) docs: add contribution guide
+- [`8f03477`](https://github.com/ToppyMicroServices/beads-git-graph/commit/8f03477d783debbe3b1b1bbd9aefb0a8200d19ce) feat: add daily github maintenance updater
+- [`36aaf43`](https://github.com/ToppyMicroServices/beads-git-graph/commit/36aaf4369ae22a23722dc45d76dc5e62fdfeacb9) chore: harden release workflow
+<!-- daily-generated:end -->
+
 ### Added
 
 - Add a daily GitHub maintenance workflow that summarizes open pull requests and security alerts into a single issue
 - Add `CONTRIBUTING.md` and link repository docs for contributors and security reporting
+
+### Changed
+
+- Add a daily prerelease workflow that refreshes the unreleased changelog, packages a VSIX, and updates a rolling prerelease GitHub release
+- Widen Dependabot auto-merge to safe patch and minor updates, and run CI on a daily schedule so queued security and dependency updates keep moving
+- Update Scorecard and OSV-Scanner workflow dependencies, plus `oxfmt`, `oxlint`, and `vitest`, to clear current safe Dependabot backlog
 
 ## [0.1.30] - 2026-03-18
 

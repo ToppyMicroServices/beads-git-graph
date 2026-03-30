@@ -1,0 +1,117 @@
+name: Daily Prerelease
+
+on:
+  schedule:
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-prerelease
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: 22
+
+      - name: Refresh unreleased changelog snapshot
+        run: node ./scripts/daily-release.mjs --write-changelog
+
+      - name: Commit refreshed changelog
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "No changelog changes to commit"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "docs: refresh unreleased changelog"
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+  package-daily-prerelease:
+    needs: refresh-changelog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: 22
+
+      - run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm run format
+
+      - name: Run lint
+        run: pnpm run lint
+
+      - name: Run typecheck
+        run: pnpm run typecheck
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Generate daily release notes and version
+        run: |
+          node ./scripts/daily-release.mjs --write-release-notes /tmp/daily-release-notes.md --write-version /tmp/daily-version.txt
+          echo "DAILY_VERSION=$(cat /tmp/daily-version.txt)" >> "$GITHUB_ENV"
+
+      - name: Set daily prerelease version
+        run: node ./scripts/daily-release.mjs --set-package-version "$DAILY_VERSION"
+
+      - name: Package VSIX
+        run: pnpm run package
+
+      - name: Locate VSIX
+        id: locate_vsix
+        run: |
+          VSIX_PATH="$(find . -maxdepth 1 -name '*.vsix' -print -quit)"
+          if [ -z "$VSIX_PATH" ]; then
+            echo "No VSIX was generated." >&2
+            exit 1
+          fi
+          echo "vsix_path=$VSIX_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Publish or update daily prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="daily-$(date -u +%Y%m%d)"
+          TITLE="Daily Prerelease $(date -u +%Y-%m-%d)"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file /tmp/daily-release-notes.md --prerelease
+            gh release upload "$TAG" "${{ steps.locate_vsix.outputs.vsix_path }}" --clobber
+          else
+            gh release create "$TAG" "${{ steps.locate_vsix.outputs.vsix_path }}" --title "$TITLE" --notes-file /tmp/daily-release-notes.md --prerelease
+          fi
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: daily-prerelease-vsix
+          path: ${{ steps.locate_vsix.outputs.vsix_path }}
