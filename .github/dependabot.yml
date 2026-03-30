@@ -4,8 +4,20 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+      time: "00:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "security"
+    open-pull-requests-limit: 10
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "daily"
+      time: "00:10"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "security"
+    open-pull-requests-limit: 10

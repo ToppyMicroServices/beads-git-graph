@@ -20,7 +20,7 @@ describe("daily prerelease automation", () => {
 
   it("keeps a scheduled prerelease workflow wired to the daily release script", () => {
     expect(dailyPrereleaseWorkflow).toContain("name: Daily Prerelease");
-    expect(dailyPrereleaseWorkflow).toContain('cron: "30 0 * * *"');
+    expect(dailyPrereleaseWorkflow).toContain('cron: "30 1 * * *"');
     expect(dailyPrereleaseWorkflow).toContain("workflow_dispatch:");
     expect(dailyPrereleaseWorkflow).toContain("node ./scripts/daily-release.mjs --write-changelog");
     expect(dailyPrereleaseWorkflow).toContain("--write-release-notes /tmp/daily-release-notes.md");

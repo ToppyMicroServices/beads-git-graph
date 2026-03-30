@@ -1,0 +1,54 @@
+name: Daily Safe Updates
+
+on:
+  schedule:
+    - cron: "45 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  merge-safe-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge labeled Dependabot updates that are ready
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          prs="$(gh pr list --repo "$REPOSITORY" --search "is:open label:automerge author:app/dependabot" --json number --jq '.[].number')"
+
+          if [ -z "$prs" ]; then
+            echo "No open labeled Dependabot PRs found"
+            exit 0
+          fi
+
+          while IFS= read -r pr; do
+            if [ -z "$pr" ]; then
+              continue
+            fi
+
+            merge_state="$(gh pr view "$pr" --repo "$REPOSITORY" --json mergeStateStatus,isDraft --jq 'if .isDraft then \"DRAFT\" else .mergeStateStatus end')"
+            echo "PR #$pr merge state: $merge_state"
+
+            if [ "$merge_state" = "DRAFT" ]; then
+              echo "Skipping #$pr because it is a draft PR"
+              continue
+            fi
+
+            if [ "$merge_state" = "BEHIND" ]; then
+              echo "Requesting rebase for #$pr"
+              gh pr comment "$pr" --repo "$REPOSITORY" --body "@dependabot rebase"
+              continue
+            fi
+
+            if ! gh pr checks "$pr" --repo "$REPOSITORY" --required >/dev/null 2>&1; then
+              echo "Skipping #$pr because required checks are not green yet"
+              continue
+            fi
+
+            gh pr merge "$pr" --repo "$REPOSITORY" --squash --delete-branch
+          done <<<"$prs"
