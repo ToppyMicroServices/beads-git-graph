@@ -22,6 +22,8 @@ on:
     branches: ["main"]
 
 permissions:
+  # Required to call the reusable workflow safely.
+  actions: read
   # Read commit contents
   contents: read
 
