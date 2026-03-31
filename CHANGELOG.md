@@ -6,6 +6,10 @@
 
 - Add a daily CodeQL workflow and a daily Dependabot triage script so PR and security backlog keeps moving without manual cleanup
 
+### Changed
+
+- Upgrade the development toolchain to TypeScript 6 and align project `tsconfig` files with the stricter compiler behavior
+
 ### Fixed
 
 - Reduce top-level workflow token permissions and harden GitHub API pagination URL handling to clear repo-addressable security alerts

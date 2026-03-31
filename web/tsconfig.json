@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     "lib": ["es2020", "dom"],
     "module": "commonjs",
     "moduleResolution": "node",
@@ -8,8 +9,9 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "outDir": "../media",
+    "rootDir": "..",
     "removeComments": true,
     "strict": true,
-    "target": "es5"
+    "target": "es6"
   }
 }
