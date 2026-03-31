@@ -13,8 +13,13 @@ const dailyPrereleaseWorkflow = readFileSync(
   join(repoRoot, ".github", "workflows", "daily-prerelease.yml"),
   "utf8"
 );
+const codeqlWorkflow = readFileSync(join(repoRoot, ".github", "workflows", "codeql.yml"), "utf8");
 const dailySafeUpdatesWorkflow = readFileSync(
   join(repoRoot, ".github", "workflows", "daily-safe-updates.yml"),
+  "utf8"
+);
+const dailySafeUpdatesScript = readFileSync(
+  join(repoRoot, "scripts", "daily-safe-updates.mjs"),
   "utf8"
 );
 
@@ -39,7 +44,22 @@ describe("scheduled automation metadata", () => {
     expect(dailySafeUpdatesWorkflow).toContain("label:automerge");
     expect(dailySafeUpdatesWorkflow).toContain("author:app/dependabot");
     expect(dailySafeUpdatesWorkflow).toContain('gh pr checks "$pr"');
-    expect(dailySafeUpdatesWorkflow).toContain("@dependabot rebase");
     expect(dailySafeUpdatesWorkflow).toContain('gh pr merge "$pr"');
+    expect(dailySafeUpdatesWorkflow).toContain("node ./scripts/daily-safe-updates.mjs");
+    expect(dailySafeUpdatesScript).toContain("needs-rebase");
+    expect(dailySafeUpdatesScript).toContain("manual-review");
+    expect(dailySafeUpdatesScript).toContain("superseded");
+  });
+
+  it("keeps CodeQL on a daily security cadence", () => {
+    expect(codeqlWorkflow).toContain("name: CodeQL");
+    expect(codeqlWorkflow).toContain('cron: "0 2 * * *"');
+    expect(codeqlWorkflow).toContain("workflow_dispatch:");
+    expect(codeqlWorkflow).toContain(
+      "github/codeql-action/init@c10b8064de6f491fea524254123dbe5e09572f13"
+    );
+    expect(codeqlWorkflow).toContain(
+      "github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13"
+    );
   });
 });

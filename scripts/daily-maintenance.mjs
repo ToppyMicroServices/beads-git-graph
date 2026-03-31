@@ -2,6 +2,7 @@ import {
   buildDailyMaintenanceBody,
   hasActionableDailyMaintenance
 } from "./daily-maintenance-report.mjs";
+import { buildGitHubApiUrl, resolveGitHubNextPath } from "./github-api-utils.mjs";
 
 const ISSUE_TITLE = "Daily GitHub Maintenance";
 const ISSUE_LABEL = "daily-update";
@@ -22,7 +23,7 @@ const apiUrl = process.env.GITHUB_API_URL ?? "https://api.github.com";
 const generatedAt = new Date().toISOString();
 
 async function githubRequest(path, init = {}) {
-  const response = await fetch(`${apiUrl}${path}`, {
+  const response = await fetch(buildGitHubApiUrl(apiUrl, path), {
     ...init,
     headers: {
       Accept: "application/vnd.github+json",
@@ -46,7 +47,7 @@ async function paginate(path) {
   let nextPath = path;
 
   while (nextPath !== null) {
-    const response = await fetch(`${apiUrl}${nextPath}`, {
+    const response = await fetch(buildGitHubApiUrl(apiUrl, nextPath), {
       headers: {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${token}`,
@@ -64,13 +65,7 @@ async function paginate(path) {
 
     const linkHeader = response.headers.get("link") ?? "";
     const nextMatch = linkHeader.match(/<([^>]+)>; rel="next"/);
-    if (nextMatch === null) {
-      nextPath = null;
-    } else if (nextMatch[1].startsWith(apiUrl)) {
-      nextPath = nextMatch[1].substring(apiUrl.length);
-    } else {
-      nextPath = nextMatch[1];
-    }
+    nextPath = nextMatch === null ? null : resolveGitHubNextPath(apiUrl, nextMatch[1]);
   }
 
   return results;

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add a daily CodeQL workflow and a daily Dependabot triage script so PR and security backlog keeps moving without manual cleanup
+
+### Fixed
+
+- Reduce top-level workflow token permissions and harden GitHub API pagination URL handling to clear repo-addressable security alerts
+
 ## [0.1.31] - 2026-03-31
 
 ### Added
