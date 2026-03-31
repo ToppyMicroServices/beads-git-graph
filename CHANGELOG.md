@@ -2,16 +2,7 @@
 
 ## [Unreleased]
 
-<!-- daily-generated:start -->
-### Daily Snapshot
-
-- [`d5b8e5c`](https://github.com/ToppyMicroServices/beads-git-graph/commit/d5b8e5ca66814330c25869dda49773b503325987) feat: schedule CI/CD and security update sweeps
-- [`f0f5e2e`](https://github.com/ToppyMicroServices/beads-git-graph/commit/f0f5e2e2166049e15e9b8716121bfd541888afac) chore: sync beads issue state
-- [`dd7e172`](https://github.com/ToppyMicroServices/beads-git-graph/commit/dd7e1722bc76f9357aef0cfa2d225ef63cc6d80b) feat: automate daily prereleases and safe updates
-- [`debf385`](https://github.com/ToppyMicroServices/beads-git-graph/commit/debf385ce86c86b92e4d07957bc01f0ff990c1c3) docs: add contribution guide
-- [`8f03477`](https://github.com/ToppyMicroServices/beads-git-graph/commit/8f03477d783debbe3b1b1bbd9aefb0a8200d19ce) feat: add daily github maintenance updater
-- [`36aaf43`](https://github.com/ToppyMicroServices/beads-git-graph/commit/36aaf4369ae22a23722dc45d76dc5e62fdfeacb9) chore: harden release workflow
-<!-- daily-generated:end -->
+## [0.1.31] - 2026-03-31
 
 ### Added
 
@@ -220,7 +211,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.30...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.31...HEAD
+[0.1.31]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.30...v0.1.31
 [0.1.30]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.29...v0.1.30
 [0.1.28]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.27...v0.1.28
 [0.1.27]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.26...v0.1.27

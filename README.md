@@ -1,7 +1,7 @@
 # Beads Git Graph
 
 [![MIT License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](./LICENSE)
-[![Version 0.1.30](https://img.shields.io/badge/version-0.1.30-0366d6?style=flat-square)](./CHANGELOG.md)
+[![Version 0.1.31](https://img.shields.io/badge/version-0.1.31-0366d6?style=flat-square)](./CHANGELOG.md)
 
 Git graph and Beads issue tools in one VS Code extension.
 
