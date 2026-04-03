@@ -47,7 +47,7 @@ jobs:
               continue
             fi
 
-            merge_state="$(gh pr view "$pr" --repo "$REPOSITORY" --json mergeStateStatus,isDraft --jq 'if .isDraft then \"DRAFT\" else .mergeStateStatus end')"
+            merge_state="$(gh pr view "$pr" --repo "$REPOSITORY" --json mergeStateStatus,isDraft --jq 'if .isDraft then "DRAFT" else .mergeStateStatus end')"
             echo "PR #$pr merge state: $merge_state"
 
             if [ "$merge_state" = "DRAFT" ]; then
@@ -60,10 +60,15 @@ jobs:
               continue
             fi
 
+            if [ "$merge_state" = "BLOCKED" ]; then
+              echo "Skipping #$pr because repository branch policy requires auto-merge support or manual intervention"
+              continue
+            fi
+
             if ! gh pr checks "$pr" --repo "$REPOSITORY" --required >/dev/null 2>&1; then
               echo "Skipping #$pr because required checks are not green yet"
               continue
             fi
 
-            gh pr merge "$pr" --repo "$REPOSITORY" --squash --delete-branch
+            gh pr merge "$pr" --repo "$REPOSITORY" --auto --squash --delete-branch
           done <<<"$prs"
