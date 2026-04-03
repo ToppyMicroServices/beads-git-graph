@@ -65,5 +65,5 @@ jobs:
               continue
             fi
 
-            gh pr merge "$pr" --repo "$REPOSITORY" --squash --delete-branch
+            gh pr merge "$pr" --repo "$REPOSITORY" --auto --squash --delete-branch
           done <<<"$prs"
