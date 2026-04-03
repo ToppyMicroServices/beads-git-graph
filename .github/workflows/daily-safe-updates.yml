@@ -47,7 +47,7 @@ jobs:
               continue
             fi
 
-            merge_state="$(gh pr view "$pr" --repo "$REPOSITORY" --json mergeStateStatus,isDraft --jq 'if .isDraft then \"DRAFT\" else .mergeStateStatus end')"
+            merge_state="$(gh pr view "$pr" --repo "$REPOSITORY" --json mergeStateStatus,isDraft --jq 'if .isDraft then "DRAFT" else .mergeStateStatus end')"
             echo "PR #$pr merge state: $merge_state"
 
             if [ "$merge_state" = "DRAFT" ]; then
