@@ -65,7 +65,7 @@
     "@types/node": "^25.5.0",
     "@types/vscode": "~1.110.0",
     "dompurify": "^3.3.3",
-    "esbuild": "^0.27.4",
+    "esbuild": "^0.28.0",
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "fast-check": "^4.6.0",
     "oxfmt": "^0.42.0",
