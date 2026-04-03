@@ -60,6 +60,11 @@ jobs:
               continue
             fi
 
+            if [ "$merge_state" = "BLOCKED" ]; then
+              echo "Skipping #$pr because repository branch policy requires auto-merge support or manual intervention"
+              continue
+            fi
+
             if ! gh pr checks "$pr" --repo "$REPOSITORY" --required >/dev/null 2>&1; then
               echo "Skipping #$pr because required checks are not green yet"
               continue
