@@ -23,6 +23,9 @@ describe("daily prerelease automation", () => {
     expect(dailyPrereleaseWorkflow).toContain('cron: "30 1 * * *"');
     expect(dailyPrereleaseWorkflow).toContain("workflow_dispatch:");
     expect(dailyPrereleaseWorkflow).toContain("node ./scripts/daily-release.mjs --write-changelog");
+    expect(dailyPrereleaseWorkflow).toContain(
+      'gh workflow run ci.yaml --repo "$REPOSITORY" --ref "$BRANCH"'
+    );
     expect(dailyPrereleaseWorkflow).toContain("--write-release-notes /tmp/daily-release-notes.md");
     expect(dailyPrereleaseWorkflow).toContain("gh release create");
     expect(dailyPrereleaseWorkflow).toContain("--prerelease");
