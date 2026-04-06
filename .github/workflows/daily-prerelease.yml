@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -32,19 +33,37 @@ jobs:
 
       - name: Commit refreshed changelog
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           if git diff --quiet -- CHANGELOG.md; then
             echo "No changelog changes to commit"
             exit 0
           fi
 
+          BRANCH="automation/daily-changelog"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
           git add CHANGELOG.md
           git commit -m "docs: refresh unreleased changelog"
-          git pull --rebase origin main
-          git push origin HEAD:main
+          git push --force-with-lease origin "$BRANCH"
+
+          existing_pr="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --base main --json number --jq '.[0].number')"
+          if [ -z "$existing_pr" ] || [ "$existing_pr" = "null" ]; then
+            gh pr create \
+              --repo "$REPOSITORY" \
+              --base main \
+              --head "$BRANCH" \
+              --title "docs: refresh unreleased changelog" \
+              --body "Automated daily changelog snapshot refresh for the unreleased section."
+          else
+            gh pr edit "$existing_pr" --repo "$REPOSITORY" --title "docs: refresh unreleased changelog" --body "Automated daily changelog snapshot refresh for the unreleased section."
+          fi
+
+          # PRs created via GITHUB_TOKEN do not emit pull_request workflow runs.
+          # Dispatch CI explicitly so the protected lint check is reported.
+          gh workflow run ci.yaml --repo "$REPOSITORY" --ref "$BRANCH"
 
   package-daily-prerelease:
     needs: refresh-changelog
@@ -81,6 +100,7 @@ jobs:
 
       - name: Generate daily release notes and version
         run: |
+          node ./scripts/daily-release.mjs --write-changelog
           node ./scripts/daily-release.mjs --write-release-notes /tmp/daily-release-notes.md --write-version /tmp/daily-version.txt
           echo "DAILY_VERSION=$(cat /tmp/daily-version.txt)" >> "$GITHUB_ENV"
 
