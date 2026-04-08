@@ -3,10 +3,12 @@
 ## [Unreleased]
 
 <!-- daily-generated:start -->
-
 ### Daily Snapshot
 
-- [`d105766`](https://github.com/ToppyMicroServices/beads-git-graph/commit/d105766b5eb06d1e09da194e8cedc98059ed5f75) Fix daily automation workflows
+- [`8e4a8a2`](https://github.com/ToppyMicroServices/beads-git-graph/commit/8e4a8a217c0650537e0e4e7423331fbec7fafb0a) build(deps-dev): bump oxfmt from 0.43.0 to 0.44.0 (#45)
+- [`cdf8ba1`](https://github.com/ToppyMicroServices/beads-git-graph/commit/cdf8ba16f877f883400382ffbb0d65ea4fd5f3ae) chore: refresh @types/node patch version (#40)
+- [`36dbf61`](https://github.com/ToppyMicroServices/beads-git-graph/commit/36dbf619417ba4b5defeddbb2aac65068298847f) chore: refresh dev tooling dependencies (#39)
+- [`e8506f2`](https://github.com/ToppyMicroServices/beads-git-graph/commit/e8506f23a6168b5107a66ff69bf34252687991ae) docs: refresh unreleased changelog (#37)
 - [`093826d`](https://github.com/ToppyMicroServices/beads-git-graph/commit/093826dae17a81cc690beb083f676e783ae96948) chore: adopt TypeScript 6 (#31)
 - [`ae233f2`](https://github.com/ToppyMicroServices/beads-git-graph/commit/ae233f2cf33008fad93eb18b2344f858f394ab83) fix: grant actions read to OSV scan jobs
 - [`901e50f`](https://github.com/ToppyMicroServices/beads-git-graph/commit/901e50f08a6d9404085f51145b2432d74a199958) fix: restore OSV reusable workflow permissions
