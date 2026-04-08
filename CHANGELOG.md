@@ -20,10 +20,12 @@
 ### Changed
 
 - Upgrade the development toolchain to TypeScript 6 and align project `tsconfig` files with the stricter compiler behavior
+- Update `oxlint` and `eslint-plugin-simple-import-sort` so stale safe Dependabot PRs can be superseded on `main`
 
 ### Fixed
 
 - Reduce top-level workflow token permissions and harden GitHub API pagination URL handling to clear repo-addressable security alerts
+- Grant the daily changelog workflow permission to dispatch CI and make Dependabot auto-merge use explicit repository context so daily automation stops failing on GitHub Actions
 
 ## [0.1.31] - 2026-03-31
 

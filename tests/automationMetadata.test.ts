@@ -22,6 +22,10 @@ const dailySafeUpdatesScript = readFileSync(
   join(repoRoot, "scripts", "daily-safe-updates.mjs"),
   "utf8"
 );
+const dependabotAutoMergeWorkflow = readFileSync(
+  join(repoRoot, ".github", "workflows", "dependabot-auto-merge.yml"),
+  "utf8"
+);
 
 describe("scheduled automation metadata", () => {
   it("schedules dependabot updates deterministically for npm and GitHub Actions", () => {
@@ -49,6 +53,16 @@ describe("scheduled automation metadata", () => {
     expect(dailySafeUpdatesScript).toContain("needs-rebase");
     expect(dailySafeUpdatesScript).toContain("manual-review");
     expect(dailySafeUpdatesScript).toContain("superseded");
+  });
+
+  it("keeps the workflow-run auto-merge path repository-aware", () => {
+    expect(dependabotAutoMergeWorkflow).toContain("REPOSITORY: $" + "{{ github.repository }}");
+    expect(dependabotAutoMergeWorkflow).toContain(
+      'gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json labels'
+    );
+    expect(dependabotAutoMergeWorkflow).toContain(
+      'gh pr merge "$PR_NUMBER" --repo "$REPOSITORY" --squash --delete-branch'
+    );
   });
 
   it("keeps CodeQL on a daily security cadence", () => {
