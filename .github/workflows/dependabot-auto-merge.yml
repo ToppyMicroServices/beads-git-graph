@@ -54,16 +54,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           if [[ -z "$PR_NUMBER" ]]; then
             echo "No associated pull request found"
             exit 0
           fi
 
-          labels=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
+          labels=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json labels --jq '.labels[].name')
           if ! grep -qx 'automerge' <<<"$labels"; then
             echo "PR is not marked for auto-merge"
             exit 0
           fi
 
-          gh pr merge "$PR_NUMBER" --squash --delete-branch
+          gh pr merge "$PR_NUMBER" --repo "$REPOSITORY" --squash --delete-branch
