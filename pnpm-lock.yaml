@@ -12,8 +12,8 @@ importers:
         specifier: ^25.5.2
         version: 25.5.2
       '@types/vscode':
-        specifier: ~1.110.0
-        version: 1.110.0
+        specifier: ~1.115.0
+        version: 1.115.0
       dompurify:
         specifier: ^3.3.3
         version: 3.3.3
@@ -811,8 +811,8 @@ packages:
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
 
-  '@types/vscode@1.110.0':
-    resolution: {integrity: sha512-AGuxUEpU4F4mfuQjxPPaQVyuOMhs+VT/xRok1jiHVBubHK7lBRvCuOMZG0LKUwxncrPorJ5qq/uil3IdZBd5lA==}
+  '@types/vscode@1.115.0':
+    resolution: {integrity: sha512-/M8cdznOlqtMqduHKKlIF00v4eum4ZWKgn8YoPRKcN6PDdvoWeeqDaQSnw63ipDbq1Uzz78Wndk/d0uSPwORfA==}
 
   '@vitest/expect@4.1.4':
     resolution: {integrity: sha512-iPBpra+VDuXmBFI3FMKHSFXp3Gx5HfmSCE8X67Dn+bwephCnQCaB7qWK2ldHa+8ncN8hJU8VTMcxjPpyMkUjww==}
@@ -1702,7 +1702,7 @@ snapshots:
   '@types/trusted-types@2.0.7':
     optional: true
 
-  '@types/vscode@1.110.0': {}
+  '@types/vscode@1.115.0': {}
 
   '@vitest/expect@4.1.4':
     dependencies:
