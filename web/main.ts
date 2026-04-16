@@ -271,6 +271,7 @@ class GitGraphView {
       });
     }
     this.branchDropdown.setOptions(options, this.currentBranch);
+    this.updateBranchControl();
 
     this.triggerLoadBranchesCallback(true, isRepo);
   }
@@ -291,6 +292,11 @@ class GitGraphView {
         this.currentRemote !== null ? this.currentRemote : this.gitRemotes[0]
       );
     }
+  }
+
+  private updateBranchControl() {
+    const branchControlElem = document.getElementById("branchControl")!;
+    branchControlElem.style.display = this.gitBranches.length > 0 ? "inline" : "none";
   }
 
   private persistRepoState() {

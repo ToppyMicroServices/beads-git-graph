@@ -418,7 +418,7 @@ export class GitGraphView {
 			<div id="controls">
 				<span id="repoControl"><span class="unselectable">Repo: </span><div id="repoSelect" class="dropdown"></div></span>
         <span id="remoteControl"><span class="unselectable">Remote: </span><div id="remoteSelect" class="dropdown"></div></span>
-        <span id="branchControl" hidden aria-hidden="true"><div id="branchSelect" class="dropdown"></div></span>
+        <span id="branchControl"><span class="unselectable">Branch: </span><div id="branchSelect" class="dropdown"></div></span>
 				<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" value="1" checked>Show Remote</label>
         <span id="typeFilterControl"><span class="unselectable">Type: </span><select id="typeFilterSelect"><option value="all">All</option><option value="feat">feat</option><option value="fix">fix</option><option value="docs">docs</option><option value="chore">chore</option><option value="refactor">refactor</option><option value="perf">perf</option><option value="test">test</option><option value="build">build</option><option value="ci">ci</option><option value="style">style</option><option value="revert">revert</option><option value="other">other</option></select></span>
         <div id="beadsBtn" class="roundedBtn iconBtn" title="Beads" aria-label="Beads">
