@@ -27,6 +27,7 @@
 - Reduce top-level workflow token permissions and harden GitHub API pagination URL handling to clear repo-addressable security alerts
 - Grant the daily changelog workflow permission to dispatch CI and make Dependabot auto-merge use explicit repository context so daily automation stops failing on GitHub Actions
 - Override transitive `vite` resolution onto a patched release so current Dependabot security alerts no longer stay open on `main`
+- Restore the Git Graph branch selector so remote branches can be chosen directly from the graph controls again
 
 ## [0.1.31] - 2026-03-31
 
