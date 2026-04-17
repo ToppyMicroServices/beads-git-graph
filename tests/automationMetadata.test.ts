@@ -26,6 +26,10 @@ const dependabotAutoMergeWorkflow = readFileSync(
   join(repoRoot, ".github", "workflows", "dependabot-auto-merge.yml"),
   "utf8"
 );
+const scorecardWorkflow = readFileSync(
+  join(repoRoot, ".github", "workflows", "scorecard.yml"),
+  "utf8"
+);
 
 describe("scheduled automation metadata", () => {
   it("schedules dependabot updates deterministically for npm and GitHub Actions", () => {
@@ -75,5 +79,10 @@ describe("scheduled automation metadata", () => {
     expect(codeqlWorkflow).toContain(
       "github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13"
     );
+  });
+
+  it("pins the SARIF upload source root for Scorecard results", () => {
+    expect(scorecardWorkflow).toContain("github/codeql-action/upload-sarif");
+    expect(scorecardWorkflow).toContain("checkout_path: $" + "{{ github.workspace }}");
   });
 });
