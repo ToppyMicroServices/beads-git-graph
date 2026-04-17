@@ -2,16 +2,7 @@
 
 ## [Unreleased]
 
-<!-- daily-generated:start -->
-
-### Daily Snapshot
-
-- [`d105766`](https://github.com/ToppyMicroServices/beads-git-graph/commit/d105766b5eb06d1e09da194e8cedc98059ed5f75) Fix daily automation workflows
-- [`093826d`](https://github.com/ToppyMicroServices/beads-git-graph/commit/093826dae17a81cc690beb083f676e783ae96948) chore: adopt TypeScript 6 (#31)
-- [`ae233f2`](https://github.com/ToppyMicroServices/beads-git-graph/commit/ae233f2cf33008fad93eb18b2344f858f394ab83) fix: grant actions read to OSV scan jobs
-- [`901e50f`](https://github.com/ToppyMicroServices/beads-git-graph/commit/901e50f08a6d9404085f51145b2432d74a199958) fix: restore OSV reusable workflow permissions
-- [`619f0f0`](https://github.com/ToppyMicroServices/beads-git-graph/commit/619f0f0729d163d260d674b7803090680d07cce3) chore: automate daily security triage
-<!-- daily-generated:end -->
+## [0.1.32] - 2026-04-18
 
 ### Added
 
@@ -238,7 +229,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.31...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.32...HEAD
+[0.1.32]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.31...v0.1.32
 [0.1.31]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.30...v0.1.31
 [0.1.30]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.29...v0.1.30
 [0.1.28]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.27...v0.1.28
