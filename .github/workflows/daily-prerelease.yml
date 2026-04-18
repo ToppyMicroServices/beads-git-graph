@@ -29,8 +29,16 @@ jobs:
         with:
           node-version: 22
 
+      - run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Refresh unreleased changelog snapshot
         run: node ./scripts/daily-release.mjs --write-changelog
+
+      - name: Format generated changelog
+        run: pnpm exec oxfmt CHANGELOG.md
 
       - name: Commit refreshed changelog
         env:
@@ -64,13 +72,16 @@ jobs:
 
           # PRs created via GITHUB_TOKEN do not emit pull_request workflow runs.
           # Dispatch CI explicitly so the protected lint check is reported.
-          gh workflow run ci.yaml --repo "$REPOSITORY" --ref "$BRANCH"
+          gh workflow run ci.yaml --repo "$REPOSITORY" --ref "$BRANCH" -f run_cross_platform=false
 
   package-daily-prerelease:
     needs: refresh-changelog
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
+      VS_MARKETPLACE_TOKEN: ${{ secrets.VS_MARKETPLACE_TOKEN }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -102,6 +113,7 @@ jobs:
       - name: Generate daily release notes and version
         run: |
           node ./scripts/daily-release.mjs --write-changelog
+          pnpm exec oxfmt CHANGELOG.md
           node ./scripts/daily-release.mjs --write-release-notes /tmp/daily-release-notes.md --write-version /tmp/daily-version.txt
           echo "DAILY_VERSION=$(cat /tmp/daily-version.txt)" >> "$GITHUB_ENV"
 
@@ -109,7 +121,7 @@ jobs:
         run: node ./scripts/daily-release.mjs --set-package-version "$DAILY_VERSION"
 
       - name: Package VSIX
-        run: pnpm run package
+        run: pnpm dlx @vscode/vsce package --no-dependencies --pre-release
 
       - name: Locate VSIX
         id: locate_vsix
@@ -134,6 +146,14 @@ jobs:
           else
             gh release create "$TAG" "${{ steps.locate_vsix.outputs.vsix_path }}" --title "$TITLE" --notes-file /tmp/daily-release-notes.md --prerelease
           fi
+
+      - name: Publish daily prerelease to Open VSX
+        if: env.OPEN_VSX_TOKEN != ''
+        run: pnpm dlx ovsx -p "$OPEN_VSX_TOKEN" publish -i "${{ steps.locate_vsix.outputs.vsix_path }}" --skip-duplicate
+
+      - name: Publish daily prerelease to VS Marketplace
+        if: env.VS_MARKETPLACE_TOKEN != ''
+        run: pnpm dlx @vscode/vsce publish --packagePath "${{ steps.locate_vsix.outputs.vsix_path }}" --skip-duplicate --pre-release -p "$VS_MARKETPLACE_TOKEN"
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

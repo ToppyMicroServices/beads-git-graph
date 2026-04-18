@@ -11,6 +11,7 @@ on:
 
 jobs:
   deploy:
+    if: ${{ github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'daily-') }}
     runs-on: ubuntu-latest
     env:
       OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}

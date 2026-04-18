@@ -24,11 +24,17 @@ describe("daily prerelease automation", () => {
     expect(dailyPrereleaseWorkflow).toContain("workflow_dispatch:");
     expect(dailyPrereleaseWorkflow).toContain("actions: write");
     expect(dailyPrereleaseWorkflow).toContain("node ./scripts/daily-release.mjs --write-changelog");
+    expect(dailyPrereleaseWorkflow).toContain("pnpm exec oxfmt CHANGELOG.md");
     expect(dailyPrereleaseWorkflow).toContain(
-      'gh workflow run ci.yaml --repo "$REPOSITORY" --ref "$BRANCH"'
+      'gh workflow run ci.yaml --repo "$REPOSITORY" --ref "$BRANCH" -f run_cross_platform=false'
     );
     expect(dailyPrereleaseWorkflow).toContain("--write-release-notes /tmp/daily-release-notes.md");
+    expect(dailyPrereleaseWorkflow).toContain(
+      "@vscode/vsce package --no-dependencies --pre-release"
+    );
     expect(dailyPrereleaseWorkflow).toContain("gh release create");
     expect(dailyPrereleaseWorkflow).toContain("--prerelease");
+    expect(dailyPrereleaseWorkflow).toContain("Publish daily prerelease to VS Marketplace");
+    expect(dailyPrereleaseWorkflow).toContain("--skip-duplicate --pre-release");
   });
 });

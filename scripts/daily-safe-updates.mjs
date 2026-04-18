@@ -148,6 +148,14 @@ export function planDependabotTriage(pullRequests) {
       };
     }
 
+    if (dependency.dependencyName === "@types/vscode") {
+      return {
+        ...pullRequest,
+        dependency: dependency,
+        action: "manual-review"
+      };
+    }
+
     if (dependency.updateType === "patch" || dependency.updateType === "minor") {
       return {
         ...pullRequest,
