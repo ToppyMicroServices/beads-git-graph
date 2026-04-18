@@ -2,7 +2,7 @@ name: Daily Safe Updates
 
 on:
   schedule:
-    - cron: "45 0 * * *"
+    - cron: "50 1 * * *"
   workflow_dispatch:
 
 permissions:
@@ -29,6 +29,33 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_API_URL: ${{ github.api_url }}
         run: node ./scripts/daily-safe-updates.mjs
+
+      - name: Merge ready daily changelog PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          pr="$(gh pr list --repo "$REPOSITORY" --search "is:open head:automation/daily-changelog" --json number --jq '.[0].number')"
+
+          if [ -z "$pr" ] || [ "$pr" = "null" ]; then
+            echo "No open daily changelog PR found"
+            exit 0
+          fi
+
+          merge_state="$(gh pr view "$pr" --repo "$REPOSITORY" --json mergeStateStatus,isDraft --jq 'if .isDraft then "DRAFT" else .mergeStateStatus end')"
+          echo "Daily changelog PR #$pr merge state: $merge_state"
+
+          if [ "$merge_state" = "DRAFT" ] || [ "$merge_state" = "BEHIND" ]; then
+            echo "Skipping #$pr until it is merge-ready"
+            exit 0
+          fi
+
+          if ! gh pr checks "$pr" --repo "$REPOSITORY" --required >/dev/null 2>&1; then
+            echo "Skipping #$pr because required checks are not green yet"
+            exit 0
+          fi
+
+          gh pr merge "$pr" --repo "$REPOSITORY" --squash --delete-branch
 
       - name: Merge labeled Dependabot updates that are ready
         env:

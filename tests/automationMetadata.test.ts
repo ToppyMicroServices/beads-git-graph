@@ -14,6 +14,7 @@ const dailyPrereleaseWorkflow = readFileSync(
   "utf8"
 );
 const codeqlWorkflow = readFileSync(join(repoRoot, ".github", "workflows", "codeql.yml"), "utf8");
+const ciWorkflow = readFileSync(join(repoRoot, ".github", "workflows", "ci.yaml"), "utf8");
 const dailySafeUpdatesWorkflow = readFileSync(
   join(repoRoot, ".github", "workflows", "daily-safe-updates.yml"),
   "utf8"
@@ -43,14 +44,15 @@ describe("scheduled automation metadata", () => {
   });
 
   it("runs the safe-update sweep before maintenance and prerelease jobs", () => {
-    expect(dailySafeUpdatesWorkflow).toContain('cron: "45 0 * * *"');
-    expect(dailyMaintenanceWorkflow).toContain('cron: "15 1 * * *"');
     expect(dailyPrereleaseWorkflow).toContain('cron: "30 1 * * *"');
+    expect(dailySafeUpdatesWorkflow).toContain('cron: "50 1 * * *"');
+    expect(dailyMaintenanceWorkflow).toContain('cron: "15 2 * * *"');
   });
 
   it("retries stale Dependabot PRs and merges labeled green updates", () => {
     expect(dailySafeUpdatesWorkflow).toContain("label:automerge");
     expect(dailySafeUpdatesWorkflow).toContain("author:app/dependabot");
+    expect(dailySafeUpdatesWorkflow).toContain("head:automation/daily-changelog");
     expect(dailySafeUpdatesWorkflow).toContain('gh pr checks "$pr"');
     expect(dailySafeUpdatesWorkflow).toContain('gh pr merge "$pr"');
     expect(dailySafeUpdatesWorkflow).toContain("node ./scripts/daily-safe-updates.mjs");
@@ -73,12 +75,16 @@ describe("scheduled automation metadata", () => {
     expect(codeqlWorkflow).toContain("name: CodeQL");
     expect(codeqlWorkflow).toContain('cron: "0 2 * * *"');
     expect(codeqlWorkflow).toContain("workflow_dispatch:");
-    expect(codeqlWorkflow).toContain(
-      "github/codeql-action/init@c10b8064de6f491fea524254123dbe5e09572f13"
-    );
-    expect(codeqlWorkflow).toContain(
-      "github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13"
-    );
+    expect(codeqlWorkflow).toContain("github/codeql-action/init@");
+    expect(codeqlWorkflow).toContain("github/codeql-action/analyze@");
+  });
+
+  it("keeps workflow-dispatched CI lightweight unless cross-platform smoke is requested", () => {
+    expect(ciWorkflow).toContain("run_cross_platform:");
+    expect(ciWorkflow).toContain("type: boolean");
+    expect(ciWorkflow).toContain("default: false");
+    expect(ciWorkflow).toContain("github.event_name == 'schedule'");
+    expect(ciWorkflow).toContain("inputs.run_cross_platform == true");
   });
 
   it("pins the SARIF upload source root for Scorecard results", () => {

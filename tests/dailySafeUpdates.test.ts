@@ -62,4 +62,18 @@ describe("daily safe update triage", () => {
       "manual-review"
     );
   });
+
+  it("keeps @types/vscode bumps in manual review even when semver looks safe", () => {
+    const triagePlan = planDependabotTriage([
+      {
+        number: 10,
+        title: "build(deps-dev): bump @types/vscode from 1.110.0 to 1.116.0",
+        author: "dependabot[bot]",
+        updatedAt: "2026-04-18T00:00:00.000Z",
+        labels: []
+      }
+    ]);
+
+    expect(triagePlan[0]?.action).toBe("manual-review");
+  });
 });

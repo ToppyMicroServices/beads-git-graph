@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Move the daily automation order so prerelease packaging runs before safe-update merging and backlog reporting
+- Make workflow-dispatched CI skip cross-platform smoke unless explicitly requested, so daily automation PR checks stay lightweight
+
+### Fixed
+
+- Format the generated changelog before the daily changelog PR is committed, preventing the daily CI dispatch from failing on `CHANGELOG.md`
+- Publish the daily prerelease VSIX directly to Open VSX and VS Marketplace, and keep the stable `publish` workflow from re-running on `daily-*` tags
+
 ## [0.1.32] - 2026-04-18
 
 ### Added

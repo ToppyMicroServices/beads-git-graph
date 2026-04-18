@@ -65,9 +65,13 @@ function getStableVersion() {
   return readJson(PACKAGE_JSON_PATH).version;
 }
 
-function computeDailyVersion(stableVersion, runNumber) {
-  const { major, minor, patch } = parseSemver(stableVersion);
-  return `${major}.${minor}.${patch + 1}-daily.${runNumber}`;
+function formatUtcDateStamp(date) {
+  return date.toISOString().slice(0, 10).replaceAll("-", "");
+}
+
+function computeDailyVersion(stableVersion, date = new Date()) {
+  const { major, minor } = parseSemver(stableVersion);
+  return `${major}.${minor + 1}.${formatUtcDateStamp(date)}`;
 }
 
 function getCommitsSince(tag) {
@@ -246,8 +250,7 @@ function main() {
   const packageVersion = getFlagValue(args, "--set-package-version");
 
   const stableVersion = getStableVersion();
-  const runNumber = process.env.GITHUB_RUN_NUMBER ?? `${Date.now()}`;
-  const dailyVersion = computeDailyVersion(stableVersion, runNumber);
+  const dailyVersion = computeDailyVersion(stableVersion);
 
   if (packageVersion !== null) {
     setPackageVersion(packageVersion);

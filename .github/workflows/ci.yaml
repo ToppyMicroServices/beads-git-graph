@@ -8,6 +8,12 @@ on:
   schedule:
     - cron: "0 0 * * *"
   workflow_dispatch:
+    inputs:
+      run_cross_platform:
+        description: "Run the macOS and Windows smoke matrix"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -51,7 +57,7 @@ jobs:
         run: pnpm run clean && pnpm dlx @vscode/vsce package
 
   cross-platform-smoke:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_cross_platform == true) }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
