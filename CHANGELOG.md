@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+<!-- daily-generated:start -->
+
+### Daily Snapshot
+
+- [`41de4de`](https://github.com/ToppyMicroServices/beads-git-graph/commit/41de4dee7885c1db9ade7adf394930f9f2146f1d) chore: close beads issue neo-git-graph-1ov (#66)
+- [`5b760dc`](https://github.com/ToppyMicroServices/beads-git-graph/commit/5b760dce9640c84009702146013998d40259fdc1) build(deps): bump github/codeql-action from 4.35.1 to 4.35.2 (#60)
+- [`aacdd74`](https://github.com/ToppyMicroServices/beads-git-graph/commit/aacdd742fdb4995af7b112d4d9487fb22f7cdf32) fix: automate daily marketplace releases (#65)
+- [`5456c61`](https://github.com/ToppyMicroServices/beads-git-graph/commit/5456c6149a7e247f0f1d7124f23c63456d374e67) fix: pin scorecard sarif source root (#64)
+- [`0adbcf2`](https://github.com/ToppyMicroServices/beads-git-graph/commit/0adbcf2c071feab9079c44bca67aa0e436ac97d7) chore: close beads issue neo-git-graph-lf0 (#63)
+<!-- daily-generated:end -->
+
 ### Changed
 
 - Move the daily automation order so prerelease packaging runs before safe-update merging and backlog reporting
