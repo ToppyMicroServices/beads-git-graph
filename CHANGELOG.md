@@ -6,6 +6,7 @@
 
 - Move the daily automation order so prerelease packaging runs before safe-update merging and backlog reporting
 - Make workflow-dispatched CI skip cross-platform smoke unless explicitly requested, so daily automation PR checks stay lightweight
+- Cut recurring GitHub Actions cost by making cross-platform smoke manual-only, moving CodeQL to a weekly cadence, and skipping daily prerelease packaging when nothing changed since the latest stable tag
 
 ### Fixed
 

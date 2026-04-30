@@ -24,6 +24,10 @@ describe("daily prerelease automation", () => {
     expect(dailyPrereleaseWorkflow).toContain("workflow_dispatch:");
     expect(dailyPrereleaseWorkflow).toContain("actions: write");
     expect(dailyPrereleaseWorkflow).toContain("node ./scripts/daily-release.mjs --write-changelog");
+    expect(dailyPrereleaseWorkflow).toContain(
+      "node ./scripts/daily-release.mjs --write-has-unreleased /tmp/daily-has-unreleased.txt"
+    );
+    expect(dailyPrereleaseWorkflow).toContain("HAS_UNRELEASED_COMMITS");
     expect(dailyPrereleaseWorkflow).toContain("pnpm exec oxfmt CHANGELOG.md");
     expect(dailyPrereleaseWorkflow).toContain(
       'gh workflow run ci.yaml --repo "$REPOSITORY" --ref "$BRANCH" -f run_cross_platform=false'
@@ -36,5 +40,7 @@ describe("daily prerelease automation", () => {
     expect(dailyPrereleaseWorkflow).toContain("--prerelease");
     expect(dailyPrereleaseWorkflow).toContain("Publish daily prerelease to VS Marketplace");
     expect(dailyPrereleaseWorkflow).toContain("--skip-duplicate --pre-release");
+    expect(dailyReleaseScript).toContain("const hasUnreleasedPath = getFlagValue(args,");
+    expect(dailyReleaseScript).toContain("refreshed.commits.length > 0");
   });
 });
