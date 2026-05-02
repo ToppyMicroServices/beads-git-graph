@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+<!-- daily-generated:start -->
+
+### Daily Snapshot
+
+- [`36fe0f4`](https://github.com/ToppyMicroServices/beads-git-graph/commit/36fe0f4f2ef5e281e32ca99e7b3f1bcca9de0612) build(deps-dev): bump dompurify from 3.4.1 to 3.4.2 (#79)
+- [`1bf256b`](https://github.com/ToppyMicroServices/beads-git-graph/commit/1bf256ba75cb33b4dd7000c9dce6356e1b12b5d2) build(deps-dev): bump oxlint from 1.61.0 to 1.62.0 (#77)
+- [`2ab56b7`](https://github.com/ToppyMicroServices/beads-git-graph/commit/2ab56b70727f3fb066f682d940e723d9ad3b025c) build(deps-dev): bump oxfmt from 0.46.0 to 0.47.0 (#76)
+- [`75a4f61`](https://github.com/ToppyMicroServices/beads-git-graph/commit/75a4f613b1756baaf715718c75f5fd6a7934f7ed) build(deps-dev): bump dompurify from 3.4.0 to 3.4.1 (#74)
+- [`bb2d792`](https://github.com/ToppyMicroServices/beads-git-graph/commit/bb2d792a00bdbe508d78aa567c1ac906621d374d) build(deps-dev): bump vitest from 4.1.4 to 4.1.5 (#73)
+- [`8286b26`](https://github.com/ToppyMicroServices/beads-git-graph/commit/8286b26706cb8d5cd1ef5ef56bc5f96761dba16f) build(deps): bump dependabot/fetch-metadata from 3.0.0 to 3.1.0 (#72)
+- [`ee06024`](https://github.com/ToppyMicroServices/beads-git-graph/commit/ee0602425878049136e7a0f4d3984504bd64d023) build(deps): bump actions/setup-node from 6.3.0 to 6.4.0 (#71)
+- [`6d68f86`](https://github.com/ToppyMicroServices/beads-git-graph/commit/6d68f86f74f4170100f9f0eb530dc7594f36fb6c) build(deps-dev): bump oxlint from 1.60.0 to 1.61.0 (#69)
+- [`0ee2a2b`](https://github.com/ToppyMicroServices/beads-git-graph/commit/0ee2a2bbac3115643c76e026f72251b551d1f699) build(deps-dev): bump oxfmt from 0.45.0 to 0.46.0 (#68)
+- [`60252e9`](https://github.com/ToppyMicroServices/beads-git-graph/commit/60252e9d38ab9bbb02068e41650e98ac00ae2f8c) build(deps-dev): bump fast-check from 4.6.0 to 4.7.0 (#67)
+- [`41de4de`](https://github.com/ToppyMicroServices/beads-git-graph/commit/41de4dee7885c1db9ade7adf394930f9f2146f1d) chore: close beads issue neo-git-graph-1ov (#66)
+- [`5b760dc`](https://github.com/ToppyMicroServices/beads-git-graph/commit/5b760dce9640c84009702146013998d40259fdc1) build(deps): bump github/codeql-action from 4.35.1 to 4.35.2 (#60)
+- [`aacdd74`](https://github.com/ToppyMicroServices/beads-git-graph/commit/aacdd742fdb4995af7b112d4d9487fb22f7cdf32) fix: automate daily marketplace releases (#65)
+- [`5456c61`](https://github.com/ToppyMicroServices/beads-git-graph/commit/5456c6149a7e247f0f1d7124f23c63456d374e67) fix: pin scorecard sarif source root (#64)
+- [`0adbcf2`](https://github.com/ToppyMicroServices/beads-git-graph/commit/0adbcf2c071feab9079c44bca67aa0e436ac97d7) chore: close beads issue neo-git-graph-lf0 (#63)
+<!-- daily-generated:end -->
+
 ### Changed
 
 - Move the daily automation order so prerelease packaging runs before safe-update merging and backlog reporting
