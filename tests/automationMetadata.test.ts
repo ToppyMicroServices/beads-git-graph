@@ -71,19 +71,20 @@ describe("scheduled automation metadata", () => {
     );
   });
 
-  it("keeps CodeQL on a daily security cadence", () => {
+  it("keeps CodeQL on a weekly security cadence", () => {
     expect(codeqlWorkflow).toContain("name: CodeQL");
-    expect(codeqlWorkflow).toContain('cron: "0 2 * * *"');
+    expect(codeqlWorkflow).toContain('cron: "0 2 * * 1"');
     expect(codeqlWorkflow).toContain("workflow_dispatch:");
     expect(codeqlWorkflow).toContain("github/codeql-action/init@");
     expect(codeqlWorkflow).toContain("github/codeql-action/analyze@");
   });
 
-  it("keeps workflow-dispatched CI lightweight unless cross-platform smoke is requested", () => {
+  it("keeps CI cross-platform smoke manual-only", () => {
     expect(ciWorkflow).toContain("run_cross_platform:");
     expect(ciWorkflow).toContain("type: boolean");
     expect(ciWorkflow).toContain("default: false");
-    expect(ciWorkflow).toContain("github.event_name == 'schedule'");
+    expect(ciWorkflow).not.toContain("schedule:");
+    expect(ciWorkflow).toContain("github.event_name == 'workflow_dispatch'");
     expect(ciWorkflow).toContain("inputs.run_cross_platform == true");
   });
 

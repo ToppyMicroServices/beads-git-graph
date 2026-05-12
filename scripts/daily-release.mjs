@@ -247,6 +247,7 @@ function main() {
   const shouldWriteChangelog = args.includes("--write-changelog");
   const releaseNotesPath = getFlagValue(args, "--write-release-notes");
   const versionPath = getFlagValue(args, "--write-version");
+  const hasUnreleasedPath = getFlagValue(args, "--write-has-unreleased");
   const packageVersion = getFlagValue(args, "--set-package-version");
 
   const stableVersion = getStableVersion();
@@ -276,6 +277,10 @@ function main() {
 
   if (versionPath !== null) {
     writeFileSync(versionPath, `${dailyVersion}\n`);
+  }
+
+  if (hasUnreleasedPath !== null) {
+    writeFileSync(hasUnreleasedPath, `${refreshed.commits.length > 0}\n`);
   }
 }
 
