@@ -64,7 +64,7 @@
   "devDependencies": {
     "@types/node": "^25.8.0",
     "@types/vscode": "~1.110.0",
-    "dompurify": "^3.4.3",
+    "dompurify": "^3.4.4",
     "esbuild": "^0.28.0",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "fast-check": "^4.8.0",
