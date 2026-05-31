@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+<!-- daily-generated:start -->
+
+### Daily Snapshot
+
+- [`b059b1a`](https://github.com/ToppyMicroServices/beads-git-graph/commit/b059b1afd987234e66311875b0ef848b16a3cf88) build(deps-dev): bump dompurify from 3.4.6 to 3.4.7 (#115)
+- [`e1584f3`](https://github.com/ToppyMicroServices/beads-git-graph/commit/e1584f391bbca4707f37f4468d1542c8589b6801) build(deps-dev): bump dompurify from 3.4.5 to 3.4.6 (#113)
+- [`8b2f678`](https://github.com/ToppyMicroServices/beads-git-graph/commit/8b2f678b95e67e2ae521bc121fa9bebed52fa66b) build(deps-dev): bump oxlint from 1.66.0 to 1.67.0 (#114)
+- [`821c482`](https://github.com/ToppyMicroServices/beads-git-graph/commit/821c48292cbbed6f95786836da47f17f827416d0) build(deps-dev): bump oxfmt from 0.51.0 to 0.52.0 (#112)
+- [`b4b85d8`](https://github.com/ToppyMicroServices/beads-git-graph/commit/b4b85d87aa4e4c10e6b7cae43c0d44ab57d30aea) build(deps): bump github/codeql-action from 4.35.5 to 4.36.0 (#111)
+- [`0564f67`](https://github.com/ToppyMicroServices/beads-git-graph/commit/0564f675faf5987e3868d855d6549b6bbf6ad03a) build(deps-dev): bump vitest from 4.1.6 to 4.1.7 (#109)
+- [`fcdd1fa`](https://github.com/ToppyMicroServices/beads-git-graph/commit/fcdd1fa2d5f1ac4f37447074b562a52775078a35) build(deps-dev): bump @types/node from 25.9.0 to 25.9.1 (#108)
+- [`0a7f7cc`](https://github.com/ToppyMicroServices/beads-git-graph/commit/0a7f7ccb5b9adf0d410382de6afe29d3d692c51d) build(deps-dev): bump oxfmt from 0.50.0 to 0.51.0 (#106)
+- [`412af42`](https://github.com/ToppyMicroServices/beads-git-graph/commit/412af42ad4b260fb33e2427beaf84d43189f43fb) build(deps-dev): bump dompurify from 3.4.4 to 3.4.5 (#105)
+- [`99d3d20`](https://github.com/ToppyMicroServices/beads-git-graph/commit/99d3d207ac5700631d1db923d71daff96de03f10) build(deps-dev): bump @types/node from 25.8.0 to 25.9.0 (#107)
+- [`36c1d13`](https://github.com/ToppyMicroServices/beads-git-graph/commit/36c1d13f5190f31e854edd282f16e24be5124db2) build(deps-dev): bump oxlint from 1.65.0 to 1.66.0 (#104)
+- [`45b1578`](https://github.com/ToppyMicroServices/beads-git-graph/commit/45b15784ba4b18ad5a4230d3f32e3190507af59e) build(deps): bump github/codeql-action from 4.35.4 to 4.35.5 (#103)
+- [`44b7baf`](https://github.com/ToppyMicroServices/beads-git-graph/commit/44b7baf63a699cdac8420c4f6d4c3c10770f0c71) build(deps-dev): bump oxlint from 1.64.0 to 1.65.0 (#101)
+- [`66eafa4`](https://github.com/ToppyMicroServices/beads-git-graph/commit/66eafa4f8520cec7f9b72a1642e317286b6e8a9a) build(deps-dev): bump dompurify from 3.4.3 to 3.4.4 (#102)
+- [`526b84d`](https://github.com/ToppyMicroServices/beads-git-graph/commit/526b84d64a130dcc312a91624c3d1a1cf7cdedd0) build(deps-dev): bump oxfmt from 0.49.0 to 0.50.0 (#100)
+- [`d4a8629`](https://github.com/ToppyMicroServices/beads-git-graph/commit/d4a8629fe0be40649704732269cd23fd1c19ea8a) build(deps-dev): bump @types/node from 25.7.0 to 25.8.0 (#99)
+- [`a1dedf2`](https://github.com/ToppyMicroServices/beads-git-graph/commit/a1dedf2a276901e987996219d109d0e5fde6c580) build(deps-dev): bump dompurify from 3.4.2 to 3.4.3 (#97)
+- [`f06ade0`](https://github.com/ToppyMicroServices/beads-git-graph/commit/f06ade025a26525e0c32b09f5d5d4416bd4d88e8) chore: close beads issue neo-git-graph-n1n (#95)
+- [`00545f3`](https://github.com/ToppyMicroServices/beads-git-graph/commit/00545f3527f0e6c08feb7470f370e3b5d6489380) ci: reduce recurring actions cost (#94)
+- [`f70f68a`](https://github.com/ToppyMicroServices/beads-git-graph/commit/f70f68a79e02d805d581d41740df7e7a3872f8a5) build(deps): bump google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml (#92)
+- ...and 26 more unreleased commits.
+<!-- daily-generated:end -->
+
 ### Changed
 
 - Move the daily automation order so prerelease packaging runs before safe-update merging and backlog reporting
