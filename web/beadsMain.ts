@@ -1,4 +1,5 @@
 import type { BeadsRequestMessage } from "../src/beadsProtocol";
+import { isCollapsedByEpic, shouldShowBeadRow } from "./beadsRowVisibility";
 
 declare function acquireVsCodeApi(): {
   postMessage(message: BeadsRequestMessage): void;
@@ -51,6 +52,7 @@ let expandedDetailsRow: HTMLTableRowElement | null = null;
 let contextMenuRow: BeadRow | null = null;
 let contextMenuWorkspacePath = "";
 let sortState: { key: SortKey; desc: boolean } = { key: "updated", desc: true };
+const collapsedEpicIds = new Set<string>();
 
 const chips = queryElement<HTMLDivElement>("#chips");
 const preset = queryElement<HTMLSelectElement>("#preset");
@@ -266,12 +268,19 @@ function getVisibleBeadRows(scope: ParentNode = document) {
   return Array.from(scope.querySelectorAll<BeadRow>("tbody .beadRow"));
 }
 
+function getRowVisibilityState(row: BeadRow) {
+  return {
+    id: row.dataset.id || "",
+    epicId: row.dataset.epicId || "",
+    status: (row.dataset.status || "") as StatusFilter
+  };
+}
+
 function applyFilters() {
   const rows = getVisibleBeadRows();
   let visibleCount = 0;
   for (const row of rows) {
-    const status = (row.dataset.status || "") as StatusFilter;
-    const visible = activeFilters.has(status);
+    const visible = shouldShowBeadRow(getRowVisibilityState(row), activeFilters, collapsedEpicIds);
     row.style.display = visible ? "" : "none";
     if (visible) {
       visibleCount += 1;
@@ -287,6 +296,39 @@ function applyFilters() {
   }
   stats.textContent = `${visibleCount} / ${rows.length} beads shown`;
   renderHierarchyOverlays();
+}
+
+function isEpicRow(row: BeadRow) {
+  return row.dataset.beadType === "epic";
+}
+
+function toggleEpicSubprojects(row: BeadRow) {
+  if (!isEpicRow(row)) {
+    return false;
+  }
+
+  const epicId = row.dataset.id || "";
+  if (epicId === "") {
+    return false;
+  }
+
+  if (collapsedEpicIds.has(epicId)) {
+    collapsedEpicIds.delete(epicId);
+  } else {
+    collapsedEpicIds.add(epicId);
+  }
+
+  if (
+    selectedRow !== null &&
+    (selectedRow === row || isCollapsedByEpic(getRowVisibilityState(selectedRow), collapsedEpicIds))
+  ) {
+    selectedRow.classList.remove("selected");
+    selectedRow = null;
+    removeExpandedDetails();
+  }
+
+  applyFilters();
+  return true;
 }
 
 function getSortValue(row: BeadRow, key: SortKey) {
@@ -540,6 +582,7 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
       row.classList.remove("selected");
       selectedRow = null;
       removeExpandedDetails();
+      renderHierarchyOverlays();
       return;
     }
 
@@ -552,10 +595,23 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
     if (item !== null) {
       expandDetailsRow(row, item);
     }
+    renderHierarchyOverlays();
   };
 
-  row.addEventListener("click", selectRow);
-  row.addEventListener("dblclick", selectRow);
+  row.addEventListener("click", (event) => {
+    if (event.detail > 1 && isEpicRow(row)) {
+      return;
+    }
+    selectRow(event);
+  });
+  row.addEventListener("dblclick", (event) => {
+    if (toggleEpicSubprojects(row)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    selectRow(event);
+  });
 }
 
 renderFilterChips();
