@@ -290,7 +290,7 @@ function expandDetailsRow(row: BeadRow, item: BeadRowItem) {
   const detailsRow = document.createElement("tr");
   detailsRow.className = "inlineDetailsRow";
   const detailsCell = document.createElement("td");
-  detailsCell.colSpan = 5;
+  detailsCell.colSpan = 6;
   detailsCell.innerHTML = renderDetailsMarkup(item);
   detailsRow.appendChild(detailsCell);
   row.insertAdjacentElement("afterend", detailsRow);
