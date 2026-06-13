@@ -25,4 +25,11 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain('row.addEventListener("dblclick"');
     expect(beadsMain).toContain("toggleRowCollapse(row)");
   });
+
+  it("shows inferred parallel-ready task metadata", () => {
+    expect(beadsWebview).toContain("Parallel ready");
+    expect(beadsWebview).toContain("parallelizableSource");
+    expect(beadsMain).toContain("Yes (ready)");
+    expect(beadsMain).toContain("Parallel ready");
+  });
 });

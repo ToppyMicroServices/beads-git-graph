@@ -26,6 +26,7 @@ interface BeadRowItem {
   parentId: string;
   epicId: string;
   parallelizable: boolean;
+  parallelizableSource: "explicit" | "ready" | "";
   agent: string;
   worktree: string;
 }
@@ -218,7 +219,12 @@ function renderDetailsMarkup(item: BeadRowItem) {
     item.status === "in_progress" && item.progress !== null ? `${String(item.progress)}%` : "-";
   const parent = item.parentId !== "" ? item.parentId : "-";
   const epic = item.epicId !== "" && item.epicId !== item.id ? item.epicId : "-";
-  const parallel = item.parallelizable ? "Yes" : "-";
+  const parallel =
+    item.parallelizableSource === "ready"
+      ? "Yes (ready)"
+      : item.parallelizable
+        ? "Yes (explicit)"
+        : "-";
   const agent = item.agent !== "" ? item.agent : "-";
   const worktree = item.worktree !== "" ? item.worktree : "-";
   const executionPills = [
@@ -226,7 +232,9 @@ function renderDetailsMarkup(item: BeadRowItem) {
     item.priority !== ""
       ? `<span class="detailPill">Priority ${escapeHtml(item.priority)}</span>`
       : "",
-    item.parallelizable ? '<span class="detailPill">Parallel OK</span>' : "",
+    item.parallelizable
+      ? `<span class="detailPill">${escapeHtml(item.parallelizableSource === "ready" ? "Parallel ready" : "Parallel OK")}</span>`
+      : "",
     item.agent !== "" ? `<span class="detailPill">Agent ${escapeHtml(item.agent)}</span>` : "",
     item.worktree !== "" ? `<span class="detailPill">WT ${escapeHtml(item.worktree)}</span>` : ""
   ]
