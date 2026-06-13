@@ -6,6 +6,7 @@ declare function acquireVsCodeApi(): {
 
 type SortKey = "updated" | "type" | "priority";
 type StatusFilter = "open" | "in_progress" | "blocked" | "closed" | "other";
+type ViewMode = "table" | "graph";
 type BeadRow = HTMLTableRowElement & { dataset: DOMStringMap };
 type BeadSection = HTMLElement & { dataset: DOMStringMap };
 
@@ -25,6 +26,7 @@ interface BeadRowItem {
   createdAt: string;
   parentId: string;
   epicId: string;
+  dependencyIds: string[];
   parallelizable: boolean;
   parallelizableSource: "explicit" | "ready" | "";
   agent: string;
@@ -55,6 +57,7 @@ let expandedDetailsRow: HTMLTableRowElement | null = null;
 let contextMenuRow: BeadRow | null = null;
 let contextMenuWorkspacePath = "";
 let sortState: { key: SortKey; desc: boolean } = { key: "updated", desc: true };
+let activeViewMode: ViewMode = "table";
 let rowClickTimer: number | null = null;
 const collapsedIds = new Set<string>();
 
@@ -67,6 +70,8 @@ const createBeadAction = queryElement<HTMLButtonElement>("#createBeadAction");
 const closeBeadAction = queryElement<HTMLButtonElement>("#closeBeadAction");
 const stats = queryElement<HTMLDivElement>("#stats");
 const syncBeadsButton = queryElement<HTMLButtonElement>("#syncBeads");
+const tableViewButton = queryElement<HTMLButtonElement>("#tableView");
+const graphViewButton = queryElement<HTMLButtonElement>("#graphView");
 const bdAvailable = document.body.dataset.bdAvailable === "1";
 const hasSyncWarnings = document.body.dataset.hasSyncWarnings === "1";
 
@@ -219,13 +224,20 @@ function renderDetailsMarkup(item: BeadRowItem) {
     item.status === "in_progress" && item.progress !== null ? `${String(item.progress)}%` : "-";
   const parent = item.parentId !== "" ? item.parentId : "-";
   const epic = item.epicId !== "" && item.epicId !== item.id ? item.epicId : "-";
+  const dependencyIds = item.dependencyIds ?? [];
+  const dependencies = dependencyIds.length > 0 ? dependencyIds.join(", ") : "-";
   const parallel =
     item.parallelizableSource === "ready"
       ? "Yes (ready)"
       : item.parallelizable
         ? "Yes (explicit)"
         : "-";
-  const agent = item.agent !== "" ? item.agent : "-";
+  const agent =
+    item.agent !== ""
+      ? item.agent
+      : item.status === "in_progress" && item.assignee !== "" && item.assignee !== "-"
+        ? item.assignee
+        : "-";
   const worktree = item.worktree !== "" ? item.worktree : "-";
   const executionPills = [
     item.status !== "" ? `<span class="detailPill">Status ${escapeHtml(item.status)}</span>` : "",
@@ -235,7 +247,7 @@ function renderDetailsMarkup(item: BeadRowItem) {
     item.parallelizable
       ? `<span class="detailPill">${escapeHtml(item.parallelizableSource === "ready" ? "Parallel ready" : "Parallel OK")}</span>`
       : "",
-    item.agent !== "" ? `<span class="detailPill">Agent ${escapeHtml(item.agent)}</span>` : "",
+    agent !== "-" ? `<span class="detailPill">Agent ${escapeHtml(agent)}</span>` : "",
     item.worktree !== "" ? `<span class="detailPill">WT ${escapeHtml(item.worktree)}</span>` : ""
   ]
     .filter((pill) => pill !== "")
@@ -246,6 +258,7 @@ function renderDetailsMarkup(item: BeadRowItem) {
     `<div class="key">Type</div><div>${escapeHtml(item.type || "-")}</div>` +
     `<div class="key">Parent</div><div>${escapeHtml(parent)}</div>` +
     `<div class="key">Epic</div><div>${escapeHtml(epic)}</div>` +
+    `<div class="key">Depends</div><div>${escapeHtml(dependencies)}</div>` +
     `<div class="key">Status</div><div>${escapeHtml(item.status || "-")}</div>` +
     `<div class="key">Progress</div><div>${escapeHtml(progress)}</div>` +
     `<div class="key">Priority</div><div>${escapeHtml(item.priority || "-")}</div>` +
@@ -364,11 +377,24 @@ function refreshRowVisibility() {
       ? `${visibleCount} / ${rows.length} beads shown`
       : `${visibleCount} / ${matchingCount} matching beads shown`;
   stats.title = `${rows.length} total beads`;
+  refreshGraphNodeVisibility();
   renderHierarchyOverlays();
+  renderDependencyGraphOverlays();
 }
 
 function applyFilters() {
   refreshRowVisibility();
+}
+
+function applyViewMode(mode: ViewMode) {
+  activeViewMode = mode;
+  document.body.dataset.viewMode = mode;
+  tableViewButton.classList.toggle("active", mode === "table");
+  graphViewButton.classList.toggle("active", mode === "graph");
+  tableViewButton.setAttribute("aria-pressed", mode === "table" ? "true" : "false");
+  graphViewButton.setAttribute("aria-pressed", mode === "graph" ? "true" : "false");
+  renderHierarchyOverlays();
+  renderDependencyGraphOverlays();
 }
 
 function isCollapsibleRow(row: BeadRow) {
@@ -559,8 +585,71 @@ function renderHierarchyOverlays() {
   }
 }
 
+function refreshGraphNodeVisibility() {
+  for (const node of Array.from(document.querySelectorAll<HTMLElement>(".graphNode"))) {
+    const status = (node.dataset.status || "") as StatusFilter;
+    node.style.display = activeFilters.has(status) ? "" : "none";
+  }
+}
+
+function renderDependencyGraphOverlays() {
+  for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
+    const overlay = pane.querySelector<SVGElement>(".dependencyOverlay");
+    const canvas = pane.querySelector<HTMLElement>(".graphCanvas");
+    if (overlay === null || canvas === null) {
+      continue;
+    }
+    if (activeViewMode !== "graph" || pane.offsetParent === null) {
+      overlay.innerHTML = "";
+      continue;
+    }
+
+    const canvasRect = canvas.getBoundingClientRect();
+    const width = Math.max(1, Math.round(canvas.scrollWidth));
+    const height = Math.max(1, Math.round(canvas.scrollHeight));
+    overlay.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    overlay.style.width = `${width}px`;
+    overlay.style.height = `${height}px`;
+
+    const nodesById = new Map(
+      Array.from(pane.querySelectorAll<HTMLElement>(".graphNode[data-graph-id]"))
+        .filter((node) => node.style.display !== "none")
+        .map((node) => [node.dataset.graphId || "", node])
+    );
+    let paths = "";
+    for (const edge of Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge"))) {
+      const fromNode = nodesById.get(edge.dataset.fromId || "");
+      const toNode = nodesById.get(edge.dataset.toId || "");
+      if (fromNode === undefined || toNode === undefined) {
+        continue;
+      }
+
+      const fromRect = fromNode.getBoundingClientRect();
+      const toRect = toNode.getBoundingClientRect();
+      const x1 = fromRect.right - canvasRect.left;
+      const y1 = fromRect.top - canvasRect.top + fromRect.height / 2;
+      const x2 = toRect.left - canvasRect.left;
+      const y2 = toRect.top - canvasRect.top + toRect.height / 2;
+      const gap = Math.max(28, Math.abs(x2 - x1) * 0.45);
+      const d =
+        x2 >= x1
+          ? `M${x1.toFixed(1)} ${y1.toFixed(1)} C${(x1 + gap).toFixed(1)} ${y1.toFixed(1)} ${(x2 - gap).toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`
+          : `M${x1.toFixed(1)} ${y1.toFixed(1)} C${(x1 + gap).toFixed(1)} ${y1.toFixed(1)} ${(x1 + gap).toFixed(1)} ${(y1 + y2) / 2} ${(x1 + 12).toFixed(1)} ${(y1 + y2) / 2} S${(x2 - gap).toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+      const criticalClass = edge.dataset.critical === "1" ? " criticalDependencyPath" : "";
+      paths += `<path class="dependencyPath${criticalClass}" d="${d}" />`;
+    }
+    overlay.innerHTML = paths;
+  }
+}
+
 queryElement<HTMLButtonElement>("#addFilter").addEventListener("click", () => {
   filterMenu.classList.toggle("open");
+});
+tableViewButton.addEventListener("click", () => {
+  applyViewMode("table");
+});
+graphViewButton.addEventListener("click", () => {
+  applyViewMode("graph");
 });
 clearFilters.addEventListener("click", () => {
   applyPreset("default");
@@ -620,7 +709,10 @@ closeBeadAction.addEventListener("click", () => {
 
   vscode.postMessage({ command: "closeBead", issueId, workspacePath, title: item.title || "" });
 });
-window.addEventListener("resize", renderHierarchyOverlays);
+window.addEventListener("resize", () => {
+  renderHierarchyOverlays();
+  renderDependencyGraphOverlays();
+});
 queryElement<HTMLButtonElement>("#refresh").addEventListener("click", () => {
   vscode.postMessage({ command: "refresh" });
 });
@@ -639,6 +731,22 @@ for (const button of Array.from(
       return;
     }
     vscode.postMessage({ command: "syncBeads", workspacePath });
+  });
+}
+for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".assignStartBead"))) {
+  button.addEventListener("click", () => {
+    const issueId = button.dataset.assignStartId || "";
+    const workspacePath = button.dataset.assignStartWorkspace || "";
+    if (!bdAvailable || issueId === "" || workspacePath === "") {
+      return;
+    }
+    vscode.postMessage({
+      command: "assignStartBead",
+      issueId,
+      workspacePath,
+      title: button.dataset.assignStartTitle || "",
+      agent: button.dataset.assignStartAgent || ""
+    });
   });
 }
 for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".sortToggle"))) {
@@ -704,5 +812,6 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
 }
 
 renderFilterChips();
+applyViewMode("table");
 applySort();
 applyFilters();

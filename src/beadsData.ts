@@ -13,6 +13,7 @@ export interface BeadItem {
   labels: string;
   createdAt: string;
   parentId: string;
+  dependencyIds: string[];
   parallelizable: boolean;
   parallelizableSource: "explicit" | "ready" | "";
   parallelizableSuppressed: boolean;
@@ -31,6 +32,24 @@ export interface BeadCollectionDiff {
   missingFromPrimary: string[];
   missingFromSecondary: string[];
   changed: Array<{ id: string; fields: string[] }>;
+}
+
+export interface BeadDependencyGraphNode {
+  item: BeadItem;
+  level: number;
+  critical: boolean;
+}
+
+export interface BeadDependencyGraphEdge {
+  fromId: string;
+  toId: string;
+  critical: boolean;
+}
+
+export interface BeadDependencyGraph {
+  nodes: BeadDependencyGraphNode[];
+  edges: BeadDependencyGraphEdge[];
+  criticalPathIds: string[];
 }
 
 export function beadsAsArray(parsed: unknown): unknown[] {
@@ -107,6 +126,12 @@ function normalizeToken(value: string) {
     .replace(/[_\s]+/g, "-");
 }
 
+function normalizeUniqueIds(ids: string[], selfId: string = "") {
+  return [...new Set(ids.map((id) => id.trim()).filter((id) => id !== "" && id !== selfId))].sort(
+    (a, b) => a.localeCompare(b)
+  );
+}
+
 function beadPickStringFromTokens(record: Record<string, unknown>, prefixes: string[]) {
   const normalizedPrefixes = prefixes.map(normalizeToken);
   for (const token of beadPickStringTokens(record, ["labels", "tags"])) {
@@ -174,9 +199,40 @@ export function beadPickAgent(record: Record<string, unknown>) {
     ["agent", "agent_id", "agentId", "assigned_agent", "assignedAgent"],
     ""
   );
-  return direct !== ""
-    ? direct
-    : beadPickStringFromTokens(record, ["agent", "agent-id", "assigned-agent"]);
+  if (direct !== "") {
+    return direct;
+  }
+
+  const metadata = record.metadata;
+  if (typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)) {
+    const metadataAgent = beadPickString(metadata as Record<string, unknown>, [
+      "agent",
+      "agent_id",
+      "agentId",
+      "assigned_agent",
+      "assignedAgent"
+    ]);
+    if (metadataAgent !== "") {
+      return metadataAgent;
+    }
+  }
+  if (typeof metadata === "string" && metadata.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(metadata) as Record<string, unknown>;
+      const metadataAgent = beadPickString(parsed, [
+        "agent",
+        "agent_id",
+        "agentId",
+        "assigned_agent",
+        "assignedAgent"
+      ]);
+      if (metadataAgent !== "") {
+        return metadataAgent;
+      }
+    } catch {}
+  }
+
+  return beadPickStringFromTokens(record, ["agent", "agent-id", "assigned-agent"]);
 }
 
 export function beadPickWorktree(record: Record<string, unknown>) {
@@ -219,18 +275,107 @@ export function beadPickParentId(record: Record<string, unknown>) {
     }
 
     const dependencyRecord = dependency as Record<string, unknown>;
-    const dependencyType = beadPickString(dependencyRecord, ["type"], "").toLowerCase();
+    const dependencyType = normalizeToken(
+      beadPickString(dependencyRecord, ["type", "dependency_type", "dependencyType"], "")
+    );
     if (dependencyType !== "parent-child") {
       continue;
     }
 
-    const parentId = beadPickString(dependencyRecord, ["depends_on_id", "dependsOnId"], "");
+    const parentId = beadPickString(
+      dependencyRecord,
+      ["depends_on_id", "dependsOnId", "id", "dependency_id", "dependencyId"],
+      ""
+    );
     if (parentId !== "") {
       return parentId;
     }
   }
 
   return "";
+}
+
+function beadPickStringList(record: Record<string, unknown>, keys: string[]) {
+  const values: string[] = [];
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      values.push(
+        ...value
+          .filter(
+            (item): item is string | number => typeof item === "string" || typeof item === "number"
+          )
+          .map((item) => String(item))
+      );
+    } else if (typeof value === "string" || typeof value === "number") {
+      values.push(...String(value).split(","));
+    }
+  }
+
+  return values.map((value) => value.trim()).filter((value) => value !== "");
+}
+
+function isExecutionDependencyType(type: string) {
+  const normalized = normalizeToken(type);
+  return (
+    normalized !== "" &&
+    ![
+      "parent-child",
+      "parent",
+      "child",
+      "relates-to",
+      "related",
+      "duplicate",
+      "duplicates",
+      "supersedes",
+      "superseded-by"
+    ].includes(normalized)
+  );
+}
+
+export function beadPickDependencyIds(record: Record<string, unknown>, selfId: string = "") {
+  const dependencyIds = beadPickStringList(record, [
+    "dependencyIds",
+    "dependency_ids",
+    "dependencies_ids",
+    "dependsOn",
+    "depends_on",
+    "depends_on_ids",
+    "blockedBy",
+    "blocked_by",
+    "blocked_by_ids",
+    "blockers"
+  ]);
+
+  const dependencies = record.dependencies;
+  if (Array.isArray(dependencies)) {
+    for (const dependency of dependencies) {
+      if (typeof dependency !== "object" || dependency === null) {
+        continue;
+      }
+
+      const dependencyRecord = dependency as Record<string, unknown>;
+      const dependencyType = beadPickString(
+        dependencyRecord,
+        ["type", "dependency_type", "dependencyType"],
+        "blocks"
+      );
+      if (!isExecutionDependencyType(dependencyType)) {
+        continue;
+      }
+
+      const dependencyId = beadPickString(
+        dependencyRecord,
+        ["depends_on_id", "dependsOnId", "dependency_id", "dependencyId", "id"],
+        ""
+      );
+      if (dependencyId !== "") {
+        dependencyIds.push(dependencyId);
+      }
+    }
+  }
+
+  return normalizeUniqueIds(dependencyIds, selfId);
 }
 
 export function beadPickProgress(record: Record<string, unknown>): number | null {
@@ -294,6 +439,7 @@ export function toBeadItem(item: unknown): BeadItem | null {
     createdAt: beadPickString(record, ["created_at", "createdAt", "created"], "-"),
     updatedAt: beadPickString(record, ["updated_at", "updatedAt", "updated", "modified_at"], "-"),
     parentId: beadPickParentId(record),
+    dependencyIds: beadPickDependencyIds(record, id),
     parallelizable: parallelizablePreference === "yes",
     parallelizableSource: parallelizablePreference === "yes" ? "explicit" : "",
     parallelizableSuppressed: parallelizablePreference === "no",
@@ -424,11 +570,16 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
       : fallback.parallelizable
         ? fallback.parallelizableSource
         : "";
+    const dependencyIds = normalizeUniqueIds(
+      [...item.dependencyIds, ...fallback.dependencyIds],
+      item.id
+    );
 
     return {
       ...fallback,
       ...item,
       parentId: item.parentId.trim() !== "" ? item.parentId : fallback.parentId,
+      dependencyIds,
       parallelizable,
       parallelizableSource,
       parallelizableSuppressed:
@@ -481,6 +632,96 @@ export function inferReadyParallelizableItems(
   );
 }
 
+export function buildBeadDependencyGraph(items: BeadItem[]): BeadDependencyGraph {
+  const itemsById = new Map(items.map((item) => [item.id, item]));
+  const edges = items.flatMap((item) =>
+    item.dependencyIds
+      .filter((dependencyId) => itemsById.has(dependencyId))
+      .map((dependencyId) => ({ fromId: dependencyId, toId: item.id, critical: false }))
+  );
+  const incomingById = new Map<string, string[]>();
+  const outgoingById = new Map<string, string[]>();
+  for (const item of items) {
+    incomingById.set(item.id, []);
+    outgoingById.set(item.id, []);
+  }
+  for (const edge of edges) {
+    incomingById.get(edge.toId)?.push(edge.fromId);
+    outgoingById.get(edge.fromId)?.push(edge.toId);
+  }
+
+  const levelCache = new Map<string, number>();
+  const resolveLevel = (id: string, visiting: Set<string>): number => {
+    const cached = levelCache.get(id);
+    if (cached !== undefined) {
+      return cached;
+    }
+    if (visiting.has(id)) {
+      levelCache.set(id, 0);
+      return 0;
+    }
+
+    visiting.add(id);
+    const blockers = incomingById.get(id) ?? [];
+    const level =
+      blockers.length === 0
+        ? 0
+        : Math.max(...blockers.map((blockerId) => resolveLevel(blockerId, visiting) + 1));
+    visiting.delete(id);
+    levelCache.set(id, level);
+    return level;
+  };
+
+  const longestPathCache = new Map<string, string[]>();
+  const resolveLongestPath = (id: string, visiting: Set<string>): string[] => {
+    const cached = longestPathCache.get(id);
+    if (cached !== undefined) {
+      return cached;
+    }
+    if (visiting.has(id)) {
+      return [id];
+    }
+
+    visiting.add(id);
+    const blockers = incomingById.get(id) ?? [];
+    const prefix = blockers
+      .map((blockerId) => resolveLongestPath(blockerId, visiting))
+      .sort((a, b) => b.length - a.length || a.join("|").localeCompare(b.join("|")))[0];
+    visiting.delete(id);
+
+    const path = prefix ? [...prefix, id] : [id];
+    longestPathCache.set(id, path);
+    return path;
+  };
+
+  const criticalPathIds =
+    edges.length === 0
+      ? []
+      : (items
+          .map((item) => resolveLongestPath(item.id, new Set<string>()))
+          .sort((a, b) => b.length - a.length || a.join("|").localeCompare(b.join("|")))[0] ?? []);
+  const criticalIds = new Set(criticalPathIds);
+  const criticalEdges = new Set<string>();
+  for (let i = 1; i < criticalPathIds.length; i += 1) {
+    criticalEdges.add(`${criticalPathIds[i - 1]}\u0000${criticalPathIds[i]}`);
+  }
+
+  return {
+    nodes: items
+      .map((item) => ({
+        item,
+        level: resolveLevel(item.id, new Set<string>()),
+        critical: criticalIds.has(item.id)
+      }))
+      .sort((a, b) => a.level - b.level || a.item.id.localeCompare(b.item.id)),
+    edges: edges.map((edge) => ({
+      ...edge,
+      critical: criticalEdges.has(`${edge.fromId}\u0000${edge.toId}`)
+    })),
+    criticalPathIds
+  };
+}
+
 export function diffBeadItems(
   primaryItems: BeadItem[],
   secondaryItems: BeadItem[]
@@ -500,6 +741,7 @@ export function diffBeadItems(
     "labels",
     "createdAt",
     "parentId",
+    "dependencyIds",
     "parallelizable",
     "parallelizableSuppressed",
     "agent",
@@ -524,7 +766,14 @@ export function diffBeadItems(
       continue;
     }
 
-    const fields = comparableFields.filter((field) => primary?.[field] !== secondary[field]);
+    const fields = comparableFields.filter((field) => {
+      const primaryValue = primary?.[field];
+      const secondaryValue = secondary[field];
+      if (Array.isArray(primaryValue) && Array.isArray(secondaryValue)) {
+        return primaryValue.join("\u0000") !== secondaryValue.join("\u0000");
+      }
+      return primaryValue !== secondaryValue;
+    });
     if (fields.length > 0) {
       changed.push({ id, fields });
     }

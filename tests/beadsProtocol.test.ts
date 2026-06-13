@@ -14,6 +14,15 @@ describe("isBeadsRequestMessage", () => {
         title: "Demo"
       })
     ).toBe(true);
+    expect(
+      isBeadsRequestMessage({
+        command: "assignStartBead",
+        issueId: "neo-1",
+        workspacePath: "/tmp/demo",
+        title: "Demo",
+        agent: "agent-a"
+      })
+    ).toBe(true);
   });
 
   it("rejects malformed messages", () => {
@@ -23,6 +32,14 @@ describe("isBeadsRequestMessage", () => {
       false
     );
     expect(isBeadsRequestMessage({ command: "closeBead", issueId: "neo-1" })).toBe(false);
+    expect(
+      isBeadsRequestMessage({
+        command: "assignStartBead",
+        issueId: "neo-1",
+        workspacePath: "/tmp/demo",
+        agent: 1234
+      })
+    ).toBe(false);
     expect(isBeadsRequestMessage({ command: "unknown" })).toBe(false);
   });
 });
