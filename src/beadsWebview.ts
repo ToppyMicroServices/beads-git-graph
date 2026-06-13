@@ -238,8 +238,6 @@ th:nth-child(1){width:52px;}th:nth-child(3){width:78px;}th:nth-child(4){width:56
 .beadRow:hover{background:rgba(128,128,128,.08);}
 .beadRow.selected{background:rgba(59,130,246,.16);}
 .beadRow.selected td:first-child{box-shadow:inset 3px 0 0 var(--vscode-textLink-foreground,#3b82f6);}
-.beadRow[data-status="blocked"]:not(.selected) td:first-child{box-shadow:inset 3px 0 0 var(--vscode-errorForeground,#ef4444);}
-.beadRow[data-status="in_progress"]:not(.selected) td:first-child{box-shadow:inset 3px 0 0 #3b82f6;}
 .beadId{font-size:10px;color:var(--vscode-descriptionForeground);margin-bottom:2px;}
 .titleCell{position:relative;display:flex;align-items:flex-start;gap:6px;min-width:0;padding-left:calc(var(--tree-width, 0px) + 4px);}
 .titleContent{min-width:0;flex:1 1 auto;}
@@ -250,6 +248,7 @@ th:nth-child(1){width:52px;}th:nth-child(3){width:78px;}th:nth-child(4){width:56
 .collapseSpacer{flex:0 0 18px;width:18px;height:18px;}
 .hierarchyGuideShadow{fill:none;stroke:rgba(0,0,0,.18);stroke-width:3.8;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;opacity:.45;}
 .hierarchyGuideLine{fill:none;stroke:var(--vscode-textLink-foreground, #4da3ff);stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;opacity:1;}
+.hierarchyGuideVertical{stroke-linecap:butt;}
 .hierarchyGuideNodeShadow{fill:rgba(0,0,0,.22);vector-effect:non-scaling-stroke;opacity:.4;}
 .hierarchyGuideNode{fill:var(--vscode-textLink-foreground, #4da3ff);vector-effect:non-scaling-stroke;opacity:1;}
 .beadTitle{font-size:13px;font-weight:650;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}

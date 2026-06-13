@@ -271,6 +271,12 @@ function removeExpandedDetails() {
   expandedDetailsRow = null;
 }
 
+function clearSelectedRow() {
+  selectedRow?.classList.remove("selected");
+  selectedRow = null;
+  removeExpandedDetails();
+}
+
 function expandDetailsRow(row: BeadRow, item: BeadRowItem) {
   removeExpandedDetails();
   const detailsRow = document.createElement("tr");
@@ -340,9 +346,7 @@ function refreshRowVisibility() {
     }
   }
   if (selectedRow !== null && selectedRow.style.display === "none") {
-    selectedRow.classList.remove("selected");
-    selectedRow = null;
-    removeExpandedDetails();
+    clearSelectedRow();
   }
   if (contextMenuRow !== null && contextMenuRow.style.display === "none") {
     closeContextMenu();
@@ -514,8 +518,8 @@ function renderHierarchyOverlays() {
       const rowRect = row.getBoundingClientRect();
       const cellLeft = titleRect.left - wrapRect.left;
       const xBase = cellLeft + paddingBase;
-      const topY = rowRect.top - wrapRect.top + 2;
-      const bottomY = rowRect.bottom - wrapRect.top - 2;
+      const topY = rowRect.top - wrapRect.top;
+      const bottomY = rowRect.bottom - wrapRect.top;
       const midY = (topY + bottomY) / 2;
       const currentX = xBase + (depth - 0.5) * step;
       const endX = xBase + depth * step + 1;
@@ -531,8 +535,8 @@ function renderHierarchyOverlays() {
         }
         const x = xBase + (i + 0.5) * step;
         const segment = `M${x.toFixed(1)} ${topY.toFixed(1)} V ${bottomY.toFixed(1)}`;
-        shadowPaths += `<path class="hierarchyGuideShadow" d="${segment}" />`;
-        linePaths += `<path class="hierarchyGuideLine" d="${segment}" />`;
+        shadowPaths += `<path class="hierarchyGuideShadow hierarchyGuideVertical" d="${segment}" />`;
+        linePaths += `<path class="hierarchyGuideLine hierarchyGuideVertical" d="${segment}" />`;
       }
 
       const branchSegment = isLastSibling
@@ -645,9 +649,7 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
     }
 
     if (selectedRow === row) {
-      row.classList.remove("selected");
-      selectedRow = null;
-      removeExpandedDetails();
+      clearSelectedRow();
       return;
     }
 
@@ -671,10 +673,11 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
       return;
     }
     clearRowClickTimer();
+    const clickDelayMs = isCollapsibleRow(row) ? 260 : 160;
     rowClickTimer = window.setTimeout(() => {
       rowClickTimer = null;
       selectRow(event);
-    }, 160);
+    }, clickDelayMs);
   });
   row.addEventListener("dblclick", (event) => {
     if (event.target instanceof Element && event.target.closest("button")) {
@@ -682,9 +685,13 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
     }
     clearRowClickTimer();
     event.preventDefault();
-    if (!toggleRowCollapse(row)) {
-      selectRow(event);
+    if (toggleRowCollapse(row)) {
+      if (selectedRow === row) {
+        clearSelectedRow();
+      }
+      return;
     }
+    selectRow(event);
   });
 }
 

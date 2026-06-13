@@ -18,7 +18,10 @@ describe("beads webview presentation metadata", () => {
   it("keeps subproject collapse explicit and double-click driven", () => {
     expect(beadsWebview).toContain("data-child-count");
     expect(beadsWebview).toContain("collapseToggle");
+    expect(beadsWebview).toContain("hierarchyGuideVertical");
     expect(beadsMain).toContain("rowHasCollapsedAncestor");
+    expect(beadsMain).toContain("clearSelectedRow");
+    expect(beadsMain).toContain("const clickDelayMs = isCollapsibleRow(row) ? 260 : 160");
     expect(beadsMain).toContain('row.addEventListener("dblclick"');
     expect(beadsMain).toContain("toggleRowCollapse(row)");
   });
