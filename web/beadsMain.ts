@@ -25,6 +25,9 @@ interface BeadRowItem {
   createdAt: string;
   parentId: string;
   epicId: string;
+  parallelizable: boolean;
+  agent: string;
+  worktree: string;
 }
 
 const vscode = acquireVsCodeApi();
@@ -51,6 +54,8 @@ let expandedDetailsRow: HTMLTableRowElement | null = null;
 let contextMenuRow: BeadRow | null = null;
 let contextMenuWorkspacePath = "";
 let sortState: { key: SortKey; desc: boolean } = { key: "updated", desc: true };
+let rowClickTimer: number | null = null;
+const collapsedIds = new Set<string>();
 
 const chips = queryElement<HTMLDivElement>("#chips");
 const preset = queryElement<HTMLSelectElement>("#preset");
@@ -213,9 +218,23 @@ function renderDetailsMarkup(item: BeadRowItem) {
     item.status === "in_progress" && item.progress !== null ? `${String(item.progress)}%` : "-";
   const parent = item.parentId !== "" ? item.parentId : "-";
   const epic = item.epicId !== "" && item.epicId !== item.id ? item.epicId : "-";
+  const parallel = item.parallelizable ? "Yes" : "-";
+  const agent = item.agent !== "" ? item.agent : "-";
+  const worktree = item.worktree !== "" ? item.worktree : "-";
+  const executionPills = [
+    item.status !== "" ? `<span class="detailPill">Status ${escapeHtml(item.status)}</span>` : "",
+    item.priority !== ""
+      ? `<span class="detailPill">Priority ${escapeHtml(item.priority)}</span>`
+      : "",
+    item.parallelizable ? '<span class="detailPill">Parallel OK</span>' : "",
+    item.agent !== "" ? `<span class="detailPill">Agent ${escapeHtml(item.agent)}</span>` : "",
+    item.worktree !== "" ? `<span class="detailPill">WT ${escapeHtml(item.worktree)}</span>` : ""
+  ]
+    .filter((pill) => pill !== "")
+    .join("");
 
   return (
-    `<div class="details"><h3>${escapeHtml(item.id)} - ${escapeHtml(item.title)}</h3><div class="detailsGrid">` +
+    `<div class="details"><div class="detailsHeader"><div class="detailsId">${escapeHtml(item.id)}</div><div class="detailsTitle">${escapeHtml(item.title)}</div>${executionPills === "" ? "" : `<div class="detailsPills">${executionPills}</div>`}</div><div class="detailsGrid">` +
     `<div class="key">Type</div><div>${escapeHtml(item.type || "-")}</div>` +
     `<div class="key">Parent</div><div>${escapeHtml(parent)}</div>` +
     `<div class="key">Epic</div><div>${escapeHtml(epic)}</div>` +
@@ -223,6 +242,9 @@ function renderDetailsMarkup(item: BeadRowItem) {
     `<div class="key">Progress</div><div>${escapeHtml(progress)}</div>` +
     `<div class="key">Priority</div><div>${escapeHtml(item.priority || "-")}</div>` +
     `<div class="key">Assignee</div><div>${escapeHtml(item.assignee || "-")}</div>` +
+    `<div class="key">Parallel</div><div>${escapeHtml(parallel)}</div>` +
+    `<div class="key">Agent</div><div>${escapeHtml(agent)}</div>` +
+    `<div class="key">Worktree</div><div>${escapeHtml(worktree)}</div>` +
     `<div class="key">Labels</div><div>${escapeHtml(item.labels || "-")}</div>` +
     `<div class="key">Created</div><div>${escapeHtml(item.createdAt || "-")}</div>` +
     `<div class="key">Updated</div><div>${escapeHtml(item.updatedAt || "-")}</div>` +
@@ -249,6 +271,12 @@ function removeExpandedDetails() {
   expandedDetailsRow = null;
 }
 
+function clearSelectedRow() {
+  selectedRow?.classList.remove("selected");
+  selectedRow = null;
+  removeExpandedDetails();
+}
+
 function expandDetailsRow(row: BeadRow, item: BeadRowItem) {
   removeExpandedDetails();
   const detailsRow = document.createElement("tr");
@@ -266,27 +294,110 @@ function getVisibleBeadRows(scope: ParentNode = document) {
   return Array.from(scope.querySelectorAll<BeadRow>("tbody .beadRow"));
 }
 
-function applyFilters() {
+function getRowsById(rows: BeadRow[]) {
+  const rowsById = new Map<string, BeadRow>();
+  for (const row of rows) {
+    const id = row.dataset.id || "";
+    if (id !== "") {
+      rowsById.set(id, row);
+    }
+  }
+  return rowsById;
+}
+
+function rowHasCollapsedAncestor(row: BeadRow, rowsById: Map<string, BeadRow>) {
+  const visited = new Set<string>();
+  let parentId = row.dataset.parentId || "";
+
+  while (parentId !== "") {
+    if (visited.has(parentId)) {
+      return false;
+    }
+    visited.add(parentId);
+    if (collapsedIds.has(parentId)) {
+      return true;
+    }
+
+    const parentRow = rowsById.get(parentId);
+    if (parentRow === undefined) {
+      return false;
+    }
+    parentId = parentRow.dataset.parentId || "";
+  }
+
+  return false;
+}
+
+function refreshRowVisibility() {
   const rows = getVisibleBeadRows();
+  const rowsById = getRowsById(rows);
   let visibleCount = 0;
+  let matchingCount = 0;
   for (const row of rows) {
     const status = (row.dataset.status || "") as StatusFilter;
-    const visible = activeFilters.has(status);
+    const filterVisible = activeFilters.has(status);
+    if (filterVisible) {
+      matchingCount += 1;
+    }
+    const visible = filterVisible && !rowHasCollapsedAncestor(row, rowsById);
     row.style.display = visible ? "" : "none";
     if (visible) {
       visibleCount += 1;
     }
   }
   if (selectedRow !== null && selectedRow.style.display === "none") {
-    selectedRow.classList.remove("selected");
-    selectedRow = null;
-    removeExpandedDetails();
+    clearSelectedRow();
   }
   if (contextMenuRow !== null && contextMenuRow.style.display === "none") {
     closeContextMenu();
   }
-  stats.textContent = `${visibleCount} / ${rows.length} beads shown`;
+  stats.textContent =
+    matchingCount === rows.length
+      ? `${visibleCount} / ${rows.length} beads shown`
+      : `${visibleCount} / ${matchingCount} matching beads shown`;
+  stats.title = `${rows.length} total beads`;
   renderHierarchyOverlays();
+}
+
+function applyFilters() {
+  refreshRowVisibility();
+}
+
+function isCollapsibleRow(row: BeadRow) {
+  return parseInt(row.dataset.childCount || "0", 10) > 0;
+}
+
+function updateCollapseButton(row: BeadRow) {
+  const id = row.dataset.id || "";
+  const button = row.querySelector<HTMLButtonElement>(".collapseToggle");
+  const collapsed = id !== "" && collapsedIds.has(id);
+  row.classList.toggle("collapsedParent", collapsed);
+  if (button !== null) {
+    button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+}
+
+function toggleRowCollapse(row: BeadRow) {
+  const id = row.dataset.id || "";
+  if (id === "" || !isCollapsibleRow(row)) {
+    return false;
+  }
+
+  if (collapsedIds.has(id)) {
+    collapsedIds.delete(id);
+  } else {
+    collapsedIds.add(id);
+  }
+  updateCollapseButton(row);
+  refreshRowVisibility();
+  return true;
+}
+
+function clearRowClickTimer() {
+  if (rowClickTimer !== null) {
+    window.clearTimeout(rowClickTimer);
+    rowClickTimer = null;
+  }
 }
 
 function getSortValue(row: BeadRow, key: SortKey) {
@@ -364,7 +475,7 @@ function applySort() {
     icon.textContent = key === sortState.key ? (sortState.desc ? "▼" : "▲") : " ";
   }
 
-  renderHierarchyOverlays();
+  refreshRowVisibility();
 }
 
 function renderHierarchyOverlays() {
@@ -407,8 +518,8 @@ function renderHierarchyOverlays() {
       const rowRect = row.getBoundingClientRect();
       const cellLeft = titleRect.left - wrapRect.left;
       const xBase = cellLeft + paddingBase;
-      const topY = rowRect.top - wrapRect.top + 2;
-      const bottomY = rowRect.bottom - wrapRect.top - 2;
+      const topY = rowRect.top - wrapRect.top;
+      const bottomY = rowRect.bottom - wrapRect.top;
       const midY = (topY + bottomY) / 2;
       const currentX = xBase + (depth - 0.5) * step;
       const endX = xBase + depth * step + 1;
@@ -424,8 +535,8 @@ function renderHierarchyOverlays() {
         }
         const x = xBase + (i + 0.5) * step;
         const segment = `M${x.toFixed(1)} ${topY.toFixed(1)} V ${bottomY.toFixed(1)}`;
-        shadowPaths += `<path class="hierarchyGuideShadow" d="${segment}" />`;
-        linePaths += `<path class="hierarchyGuideLine" d="${segment}" />`;
+        shadowPaths += `<path class="hierarchyGuideShadow hierarchyGuideVertical" d="${segment}" />`;
+        linePaths += `<path class="hierarchyGuideLine hierarchyGuideVertical" d="${segment}" />`;
       }
 
       const branchSegment = isLastSibling
@@ -530,6 +641,7 @@ for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".s
   });
 }
 for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRow"))) {
+  const toggleButton = row.querySelector<HTMLButtonElement>(".collapseToggle");
   const selectRow = (event: MouseEvent) => {
     const target = event.target;
     if (target instanceof Element && target.closest("button")) {
@@ -537,9 +649,7 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
     }
 
     if (selectedRow === row) {
-      row.classList.remove("selected");
-      selectedRow = null;
-      removeExpandedDetails();
+      clearSelectedRow();
       return;
     }
 
@@ -554,8 +664,35 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
     }
   };
 
-  row.addEventListener("click", selectRow);
-  row.addEventListener("dblclick", selectRow);
+  toggleButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleRowCollapse(row);
+  });
+  row.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest("button")) {
+      return;
+    }
+    clearRowClickTimer();
+    const clickDelayMs = isCollapsibleRow(row) ? 260 : 160;
+    rowClickTimer = window.setTimeout(() => {
+      rowClickTimer = null;
+      selectRow(event);
+    }, clickDelayMs);
+  });
+  row.addEventListener("dblclick", (event) => {
+    if (event.target instanceof Element && event.target.closest("button")) {
+      return;
+    }
+    clearRowClickTimer();
+    event.preventDefault();
+    if (toggleRowCollapse(row)) {
+      if (selectedRow === row) {
+        clearSelectedRow();
+      }
+      return;
+    }
+    selectRow(event);
+  });
 }
 
 renderFilterChips();

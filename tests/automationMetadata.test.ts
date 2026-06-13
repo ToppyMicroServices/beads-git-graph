@@ -88,6 +88,14 @@ describe("scheduled automation metadata", () => {
     expect(ciWorkflow).toContain("inputs.run_cross_platform == true");
   });
 
+  it("blocks stale multi-agent PR heads before merge", () => {
+    expect(ciWorkflow).toContain("worktree-sync-guard:");
+    expect(ciWorkflow).toContain("github.event.pull_request.head.sha");
+    expect(ciWorkflow).toContain("Fetch base branch");
+    expect(ciWorkflow).toContain("node ./scripts/worktree-sync-guard.mjs");
+    expect(ciWorkflow).toContain("origin/${" + "{ github.base_ref }}");
+  });
+
   it("pins the SARIF upload source root for Scorecard results", () => {
     expect(scorecardWorkflow).toContain("github/codeql-action/upload-sarif");
     expect(scorecardWorkflow).toContain("checkout_path: $" + "{{ github.workspace }}");

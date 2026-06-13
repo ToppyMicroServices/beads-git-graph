@@ -58,6 +58,7 @@
     "format:fix": "oxfmt .",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
+    "worktree-sync:guard": "node scripts/worktree-sync-guard.mjs --all",
     "test": "vitest run",
     "test:watch": "vitest"
   },

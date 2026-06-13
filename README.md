@@ -14,6 +14,7 @@ No telemetry. Privacy-first. Security-first.
 - Adds a Beads view in the Activity Bar
 - Lets you switch between Git Graph and Beads from the toolbar
 - Lets you refresh, create, close, and sync Beads items inside VS Code
+- Shows optional parallel, agent, and worktree hints on Beads items
 
 ## Use It
 
@@ -22,6 +23,24 @@ No telemetry. Privacy-first. Security-first.
 3. Use the toolbar to refresh, sync, or switch views.
 
 If your workspace has a `.beads` directory, the extension detects it automatically. Set `beads-git-graph.bdPath` if `bd` is not on `PATH`.
+
+## Multi-Agent Hints
+
+The Beads view surfaces optional execution hints from issue fields or labels:
+
+- `parallelizable: true` or label `parallel-ok`
+- `agent: "agent-a"` or label `agent:agent-a`
+- `worktree: "../repo-agent-a"` or label `worktree:../repo-agent-a`
+
+These hints are visual metadata. Beads ready/blocking behavior still comes from issue status and dependencies.
+
+Before merging a multi-agent PR, make sure every agent worktree contains the latest base branch:
+
+```bash
+pnpm run worktree-sync:guard -- --base origin/main
+```
+
+The PR CI also runs the guard against the PR head so stale branches fail before merge.
 
 ## Docs
 
