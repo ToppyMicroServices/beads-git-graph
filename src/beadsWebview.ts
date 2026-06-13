@@ -64,13 +64,33 @@ export function renderBeadsWebviewHtml(
                       : 9;
             const prioritySortOrder = parseInt(normalizedPriority.substring(1), 10);
             const shortUpdated = beadShortDate(item.updatedAt);
+            const worktreeLabel =
+              item.worktree === ""
+                ? ""
+                : (item.worktree
+                    .split(/[\\/]/)
+                    .filter((part) => part !== "")
+                    .pop() ?? item.worktree);
+            const executionBadges = [
+              item.parallelizable
+                ? '<span class="executionBadge parallelBadge">Parallel</span>'
+                : "",
+              item.agent === ""
+                ? ""
+                : `<span class="executionBadge agentBadge">Agent ${escapeHtml(item.agent)}</span>`,
+              worktreeLabel === ""
+                ? ""
+                : `<span class="executionBadge worktreeBadge">WT ${escapeHtml(worktreeLabel)}</span>`
+            ]
+              .filter((badge) => badge !== "")
+              .join("");
             const serializedItem = {
               ...item,
               parentId: parentId ?? "",
               epicId: epicId ?? ""
             };
             const treeWidth = depth > 0 ? depth * 18 : 0;
-            return `<tr class="beadRow" data-id="${escapeHtml(item.id)}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-parent-id="${escapeHtml(parentId ?? "")}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" data-order-index="${orderIndex}" data-guide-columns="${guideColumns.map((value) => (value ? "1" : "0")).join("")}" data-last-sibling="${isLastSibling ? "1" : "0"}" data-status="${escapeHtml(normalizedStatus)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(serializedItem)))}" data-updated-ts="${updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td><div class="titleCell" style="--tree-width:${treeWidth}px"><div class="titleContent"><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div></div></div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
+            return `<tr class="beadRow" data-id="${escapeHtml(item.id)}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-parent-id="${escapeHtml(parentId ?? "")}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" data-order-index="${orderIndex}" data-guide-columns="${guideColumns.map((value) => (value ? "1" : "0")).join("")}" data-last-sibling="${isLastSibling ? "1" : "0"}" data-status="${escapeHtml(normalizedStatus)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(serializedItem)))}" data-updated-ts="${updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td><div class="titleCell" style="--tree-width:${treeWidth}px"><div class="titleContent"><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div>${executionBadges === "" ? "" : `<div class="beadMeta">${executionBadges}</div>`}</div></div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
           })
           .join("");
 
@@ -168,6 +188,11 @@ th:nth-child(1){width:52px;}th:nth-child(3){width:78px;}th:nth-child(4){width:56
 .hierarchyGuideNodeShadow{fill:rgba(0,0,0,.22);vector-effect:non-scaling-stroke;opacity:.4;}
 .hierarchyGuideNode{fill:var(--vscode-textLink-foreground, #4da3ff);vector-effect:non-scaling-stroke;opacity:1;}
 .beadTitle{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.beadMeta{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px;}
+.executionBadge{display:inline-flex;align-items:center;max-width:100%;padding:1px 5px;border-radius:6px;border:1px solid rgba(128,128,128,.42);font-size:10px;font-weight:650;line-height:14px;color:var(--vscode-descriptionForeground);background:rgba(128,128,128,.1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.parallelBadge{border-color:rgba(34,197,94,.55);color:var(--vscode-testing-iconPassed, #22c55e);background:rgba(34,197,94,.12);}
+.agentBadge{border-color:rgba(59,130,246,.55);color:var(--vscode-textLink-foreground, #3b82f6);background:rgba(59,130,246,.12);}
+.worktreeBadge{border-color:rgba(234,179,8,.55);color:var(--vscode-charts-yellow, #d97706);background:rgba(234,179,8,.12);}
 .statusCell{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .typeBadge,.statusBadge,.priorityBadge{display:inline-flex;align-items:center;justify-content:center;padding:1px 5px;border-radius:999px;font-size:10px;font-weight:600;white-space:nowrap;}
 .priorityBadge{min-width:34px;}

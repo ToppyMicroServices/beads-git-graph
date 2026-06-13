@@ -13,6 +13,9 @@ export interface BeadItem {
   labels: string;
   createdAt: string;
   parentId: string;
+  parallelizable: boolean;
+  agent: string;
+  worktree: string;
 }
 
 export interface BeadHierarchyItem {
@@ -79,6 +82,102 @@ export function beadPickStringArray(
     }
   }
   return fallback;
+}
+
+function beadPickStringTokens(record: Record<string, unknown>, keys: string[]) {
+  const tokens: string[] = [];
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      tokens.push(...value.filter((v): v is string => typeof v === "string" && v.trim() !== ""));
+    } else if (typeof value === "string") {
+      tokens.push(...value.split(","));
+    }
+  }
+
+  return tokens.map((token) => token.trim()).filter((token) => token !== "");
+}
+
+function normalizeToken(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-");
+}
+
+function beadPickStringFromTokens(record: Record<string, unknown>, prefixes: string[]) {
+  const normalizedPrefixes = prefixes.map(normalizeToken);
+  for (const token of beadPickStringTokens(record, ["labels", "tags"])) {
+    const trimmed = token.trim();
+    const normalized = normalizeToken(trimmed);
+    for (const prefix of normalizedPrefixes) {
+      if (normalized.startsWith(`${prefix}:`) || normalized.startsWith(`${prefix}=`)) {
+        return trimmed.slice(prefix.length + 1).trim();
+      }
+      if (normalized.startsWith(`${prefix}/`)) {
+        return trimmed.slice(prefix.length + 1).trim();
+      }
+    }
+  }
+
+  return "";
+}
+
+export function beadPickParallelizable(record: Record<string, unknown>) {
+  const directKeys = [
+    "parallelizable",
+    "parallel",
+    "parallel_ok",
+    "parallelOk",
+    "can_parallel",
+    "canParallel",
+    "can_run_parallel",
+    "canRunParallel"
+  ];
+
+  for (const key of directKeys) {
+    const value = record[key];
+    if (typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "string") {
+      const normalized = normalizeToken(value);
+      if (["true", "yes", "y", "1", "parallel", "parallel-ok"].includes(normalized)) {
+        return true;
+      }
+      if (["false", "no", "n", "0", "serial", "sequential"].includes(normalized)) {
+        return false;
+      }
+    }
+  }
+
+  const labels = beadPickStringTokens(record, ["labels", "tags"]).map(normalizeToken);
+  if (labels.some((label) => ["serial", "sequential", "no-parallel"].includes(label))) {
+    return false;
+  }
+  return labels.some((label) =>
+    ["parallel", "parallel-ok", "parallelizable", "multi-agent", "multiagent"].includes(label)
+  );
+}
+
+export function beadPickAgent(record: Record<string, unknown>) {
+  const direct = beadPickString(
+    record,
+    ["agent", "agent_id", "agentId", "assigned_agent", "assignedAgent"],
+    ""
+  );
+  return direct !== ""
+    ? direct
+    : beadPickStringFromTokens(record, ["agent", "agent-id", "assigned-agent"]);
+}
+
+export function beadPickWorktree(record: Record<string, unknown>) {
+  const direct = beadPickString(
+    record,
+    ["worktree", "worktree_path", "worktreePath", "worktree_branch", "worktreeBranch"],
+    ""
+  );
+  return direct !== "" ? direct : beadPickStringFromTokens(record, ["worktree", "wt"]);
 }
 
 export function beadPickParentId(record: Record<string, unknown>) {
@@ -186,6 +285,9 @@ export function toBeadItem(item: unknown): BeadItem | null {
     createdAt: beadPickString(record, ["created_at", "createdAt", "created"], "-"),
     updatedAt: beadPickString(record, ["updated_at", "updatedAt", "updated", "modified_at"], "-"),
     parentId: beadPickParentId(record),
+    parallelizable: beadPickParallelizable(record),
+    agent: beadPickAgent(record),
+    worktree: beadPickWorktree(record),
     commitHash: beadPickString(record, ["commitHash", "commit_hash", "commit"], "")
   };
 }
@@ -308,7 +410,10 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
     return {
       ...fallback,
       ...item,
-      parentId: item.parentId.trim() !== "" ? item.parentId : fallback.parentId
+      parentId: item.parentId.trim() !== "" ? item.parentId : fallback.parentId,
+      parallelizable: item.parallelizable || fallback.parallelizable,
+      agent: item.agent.trim() !== "" ? item.agent : fallback.agent,
+      worktree: item.worktree.trim() !== "" ? item.worktree : fallback.worktree
     };
   });
 
@@ -341,6 +446,9 @@ export function diffBeadItems(
     "labels",
     "createdAt",
     "parentId",
+    "parallelizable",
+    "agent",
+    "worktree",
     "commitHash"
   ];
   const missingFromPrimary: string[] = [];

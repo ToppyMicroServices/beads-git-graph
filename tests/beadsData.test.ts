@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  beadPickAgent,
+  beadPickParallelizable,
   beadPickParentId,
   beadPickProgress,
+  beadPickWorktree,
   beadsAsArray,
   beadShortDate,
   beadStatusLabel,
@@ -67,7 +70,39 @@ describe("toBeadItem", () => {
       createdAt: "2026-03-07T00:00:00Z",
       updatedAt: "2026-03-07T01:00:00Z",
       parentId: "",
+      parallelizable: false,
+      agent: "",
+      worktree: "",
       commitHash: "abcdef1234567"
+    });
+  });
+
+  it("extracts multi-agent execution metadata from fields and labels", () => {
+    expect(
+      toBeadItem({
+        id: "neo-agent-task",
+        title: "Implement shard",
+        issue_type: "task",
+        parallelizable: true,
+        agent: "agent-a",
+        worktree: "../beads-git-graph-agent-a"
+      })
+    ).toMatchObject({
+      parallelizable: true,
+      agent: "agent-a",
+      worktree: "../beads-git-graph-agent-a"
+    });
+
+    expect(
+      toBeadItem({
+        id: "neo-agent-labels",
+        title: "Implement label shard",
+        labels: ["parallel-ok", "agent:agent-b", "worktree:../beads-git-graph-agent-b"]
+      })
+    ).toMatchObject({
+      parallelizable: true,
+      agent: "agent-b",
+      worktree: "../beads-git-graph-agent-b"
     });
   });
 
@@ -313,6 +348,34 @@ describe("buildBeadHierarchy", () => {
       changed: [{ id: "neo-sync-a", fields: ["status"] }]
     });
   });
+
+  it("preserves execution metadata from issues.jsonl when CLI rows omit it", () => {
+    const cliItems = extractBeadItems([
+      {
+        id: "neo-agent-task",
+        title: "Task from CLI",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:00:00Z"
+      }
+    ]);
+    const jsonlItems = extractBeadItems([
+      {
+        id: "neo-agent-task",
+        title: "Task from CLI",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:00:00Z",
+        parallelizable: true,
+        agent: "agent-a",
+        worktree: "../beads-git-graph-agent-a"
+      }
+    ]);
+
+    expect(mergeBeadItems(cliItems, jsonlItems)[0]).toMatchObject({
+      parallelizable: true,
+      agent: "agent-a",
+      worktree: "../beads-git-graph-agent-a"
+    });
+  });
 });
 
 describe("bead normalization helpers", () => {
@@ -326,6 +389,13 @@ describe("bead normalization helpers", () => {
     expect(
       beadPickParentId({ dependencies: [{ depends_on_id: "neo-parent", type: "blocks" }] })
     ).toBe("");
+  });
+
+  it("reads parallel, agent, and worktree hints from direct fields or labels", () => {
+    expect(beadPickParallelizable({ parallel: "yes" })).toBe(true);
+    expect(beadPickParallelizable({ labels: ["sequential", "parallel-ok"] })).toBe(false);
+    expect(beadPickAgent({ labels: ["agent:agent-a"] })).toBe("agent-a");
+    expect(beadPickWorktree({ tags: ["wt:../repo-agent-a"] })).toBe("../repo-agent-a");
   });
 
   it("extracts progress percentages from direct fields or notes", () => {

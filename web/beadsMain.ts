@@ -25,6 +25,9 @@ interface BeadRowItem {
   createdAt: string;
   parentId: string;
   epicId: string;
+  parallelizable: boolean;
+  agent: string;
+  worktree: string;
 }
 
 const vscode = acquireVsCodeApi();
@@ -213,6 +216,9 @@ function renderDetailsMarkup(item: BeadRowItem) {
     item.status === "in_progress" && item.progress !== null ? `${String(item.progress)}%` : "-";
   const parent = item.parentId !== "" ? item.parentId : "-";
   const epic = item.epicId !== "" && item.epicId !== item.id ? item.epicId : "-";
+  const parallel = item.parallelizable ? "Yes" : "-";
+  const agent = item.agent !== "" ? item.agent : "-";
+  const worktree = item.worktree !== "" ? item.worktree : "-";
 
   return (
     `<div class="details"><h3>${escapeHtml(item.id)} - ${escapeHtml(item.title)}</h3><div class="detailsGrid">` +
@@ -223,6 +229,9 @@ function renderDetailsMarkup(item: BeadRowItem) {
     `<div class="key">Progress</div><div>${escapeHtml(progress)}</div>` +
     `<div class="key">Priority</div><div>${escapeHtml(item.priority || "-")}</div>` +
     `<div class="key">Assignee</div><div>${escapeHtml(item.assignee || "-")}</div>` +
+    `<div class="key">Parallel</div><div>${escapeHtml(parallel)}</div>` +
+    `<div class="key">Agent</div><div>${escapeHtml(agent)}</div>` +
+    `<div class="key">Worktree</div><div>${escapeHtml(worktree)}</div>` +
     `<div class="key">Labels</div><div>${escapeHtml(item.labels || "-")}</div>` +
     `<div class="key">Created</div><div>${escapeHtml(item.createdAt || "-")}</div>` +
     `<div class="key">Updated</div><div>${escapeHtml(item.updatedAt || "-")}</div>` +
