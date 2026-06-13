@@ -13,7 +13,7 @@ import {
   toBeadItem
 } from "./beadsData";
 import { isBeadsRequestMessage } from "./beadsProtocol";
-import { syncBeadsWorkspace } from "./beadsSync";
+import { flushBeadsWorkspace, syncBeadsWorkspace } from "./beadsSync";
 import {
   type BeadGroup,
   type BeadLoadResult,
@@ -407,14 +407,71 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
       try {
         await this.runBdCommand(["close", issueId], workspacePath);
-        await this.runBdCommand(["sync", "--flush-only"], workspacePath);
+        await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
         await this.refresh();
         vscode.window.showInformationMessage(`Closed bead ${issueId}.`);
       } catch (error) {
         const messageText = error instanceof Error ? error.message : "Unable to close bead.";
         vscode.window.showErrorMessage(messageText);
       }
+      return;
     }
+
+    if (
+      message.command === "assignStartBead" &&
+      typeof message.issueId === "string" &&
+      typeof message.workspacePath === "string"
+    ) {
+      const issueId = message.issueId.trim();
+      const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath.trim());
+      if (issueId === "" || workspacePath === null) {
+        if (workspacePath === null) {
+          vscode.window.showWarningMessage(
+            "Refusing to update a bead outside an initialized workspace folder."
+          );
+        }
+        return;
+      }
+
+      try {
+        await this.promptAssignAndStartBead(workspacePath, issueId, message.title, message.agent);
+      } catch (error) {
+        const messageText =
+          error instanceof Error ? error.message : "Unable to assign and start bead.";
+        vscode.window.showErrorMessage(messageText);
+      }
+    }
+  }
+
+  private async promptAssignAndStartBead(
+    workspacePath: string,
+    issueId: string,
+    title: string | undefined,
+    currentAgent: string | undefined
+  ) {
+    const agent = await vscode.window.showInputBox({
+      title: "Assign Agent",
+      prompt: `Agent for ${issueId}${title ? `: ${title}` : ""}`,
+      value: currentAgent ?? "",
+      placeHolder: "agent-a",
+      ignoreFocusOut: true,
+      validateInput: (value) => (value.trim() === "" ? "Agent is required." : undefined)
+    });
+    if (agent === undefined) {
+      return;
+    }
+
+    const trimmedAgent = agent.trim();
+    await this.runBdCommand(["assign", issueId, trimmedAgent], workspacePath);
+    await this.runBdCommand(
+      ["update", issueId, "--status", "in_progress", "--set-metadata", `agent=${trimmedAgent}`],
+      workspacePath
+    );
+    await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
+    await this.refresh();
+    vscode.window.showInformationMessage(
+      `Assigned ${issueId} to ${trimmedAgent} and marked it in progress.`
+    );
   }
 
   private async promptAndCreateBead(workspacePath: string) {
@@ -540,7 +597,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       await this.runBdCommand(["update", bead.id, "--status", values.status], workspacePath);
     }
 
-    await this.runBdCommand(["sync", "--flush-only"], workspacePath);
+    await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
     return bead;
   }
 

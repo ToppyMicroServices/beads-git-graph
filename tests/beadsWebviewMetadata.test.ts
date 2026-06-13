@@ -38,4 +38,15 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("Yes (ready)");
     expect(beadsMain).toContain("Parallel ready");
   });
+
+  it("shows dependency graph controls and agent start actions", () => {
+    expect(beadsWebview).toContain('id="graphView"');
+    expect(beadsWebview).toContain("Critical Path");
+    expect(beadsWebview).toContain("dependencyOverlay");
+    expect(beadsWebview).toContain("criticalGraphNode");
+    expect(beadsWebview).toContain("Assign + Start");
+    expect(beadsMain).toContain("renderDependencyGraphOverlays");
+    expect(beadsMain).toContain('command: "assignStartBead"');
+    expect(beadsMain).toContain("detailsCell.colSpan = 6");
+  });
 });

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add a Beads critical path graph view with dependency edges and Assign + Start task actions.
+
 ## [0.1.35] - 2026-06-14
 
 ### Changed

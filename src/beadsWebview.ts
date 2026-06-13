@@ -1,8 +1,10 @@
 import * as vscode from "vscode";
 
 import {
+  type BeadItem,
   beadShortDate,
   beadStatusLabel,
+  buildBeadDependencyGraph,
   normalizeBeadPriority,
   normalizeBeadStatus,
   normalizeBeadType
@@ -12,6 +14,74 @@ import { type BeadLoadResult } from "./beadsViewTypes";
 import { escapeHtml, getNonce } from "./utils";
 
 const BEADS_WEBVIEW_SCRIPT = "beadsWebview.min.js";
+
+function renderBeadsDependencyGraph(items: BeadItem[], workspacePath: string) {
+  const graph = buildBeadDependencyGraph(items);
+  const maxLevel = Math.max(0, ...graph.nodes.map((node) => node.level));
+  const nodesByLevel = new Map<number, typeof graph.nodes>();
+  const blockersById = new Map<string, string[]>();
+  const blocksById = new Map<string, string[]>();
+
+  for (const edge of graph.edges) {
+    blockersById.set(edge.toId, [...(blockersById.get(edge.toId) ?? []), edge.fromId]);
+    blocksById.set(edge.fromId, [...(blocksById.get(edge.fromId) ?? []), edge.toId]);
+  }
+  for (const node of graph.nodes) {
+    const nodes = nodesByLevel.get(node.level) ?? [];
+    nodes.push(node);
+    nodesByLevel.set(node.level, nodes);
+  }
+
+  const edgeHtml = graph.edges
+    .map(
+      (edge) =>
+        `<span class="graphEdge" data-from-id="${escapeHtml(edge.fromId)}" data-to-id="${escapeHtml(edge.toId)}" data-critical="${edge.critical ? "1" : "0"}"></span>`
+    )
+    .join("");
+  const stageHtml = Array.from({ length: maxLevel + 1 }, (_, level) => {
+    const nodes = nodesByLevel.get(level) ?? [];
+    const nodeHtml = nodes
+      .map((node) => {
+        const item = node.item;
+        const normalizedStatus = normalizeBeadStatus(item.status);
+        const normalizedPriority = normalizeBeadPriority(item.priority);
+        const normalizedType = normalizeBeadType(item.type);
+        const agentLabel =
+          item.agent.trim() !== ""
+            ? item.agent.trim()
+            : item.assignee.trim() !== "" && item.assignee !== "-"
+              ? item.assignee.trim()
+              : "";
+        const blockers = (blockersById.get(item.id) ?? []).sort((a, b) => a.localeCompare(b));
+        const blocks = (blocksById.get(item.id) ?? []).sort((a, b) => a.localeCompare(b));
+        const dependencyLines = [
+          blockers.length > 0
+            ? `<div class="graphRelation"><span>Depends</span>${escapeHtml(blockers.join(", "))}</div>`
+            : "",
+          blocks.length > 0
+            ? `<div class="graphRelation"><span>Blocks</span>${escapeHtml(blocks.join(", "))}</div>`
+            : ""
+        ]
+          .filter((line) => line !== "")
+          .join("");
+        const assignDisabled = normalizedStatus === "closed" ? " disabled" : "";
+        const assignTitle =
+          normalizedStatus === "closed"
+            ? "Closed beads cannot be started."
+            : "Assign an agent and mark this bead in progress.";
+        return `<div class="graphNode ${node.critical ? "criticalGraphNode" : ""}" data-graph-id="${escapeHtml(item.id)}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${node.critical ? '<span class="criticalBadge">Critical</span>' : ""}</div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${agentLabel === "" ? "" : `<span class="executionBadge agentBadge">Agent ${escapeHtml(agentLabel)}</span>`}</div>${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(agentLabel)}" title="${escapeHtml(assignTitle)}"${assignDisabled}>Assign + Start</button></div></div>`;
+      })
+      .join("");
+
+    return `<div class="graphStage" data-graph-level="${level}"><div class="graphStageLabel">L${level + 1}</div>${nodeHtml}</div>`;
+  }).join("");
+  const criticalSummary =
+    graph.criticalPathIds.length > 0
+      ? `<span class="summaryPill criticalSummary" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}">${graph.criticalPathIds.length} critical</span>`
+      : "";
+
+  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div class="workspaceName">Critical Path</div><div class="workspaceSummary"><span class="summaryPill">${graph.edges.length} deps</span>${criticalSummary}</div></div><div class="graphCanvas">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg><div class="graphGrid" style="--graph-columns:${maxLevel + 1}">${stageHtml}</div></div></div>`;
+}
 
 export function renderBeadsWebviewHtml(
   webview: vscode.Webview,
@@ -58,8 +128,16 @@ export function renderBeadsWebviewHtml(
           if (entry.item.parallelizable) {
             parallelCount += 1;
           }
-          if (entry.item.agent.trim() !== "") {
-            agents.add(entry.item.agent.trim());
+          const agentLabel =
+            entry.item.agent.trim() !== ""
+              ? entry.item.agent.trim()
+              : status === "in_progress" &&
+                  entry.item.assignee.trim() !== "" &&
+                  entry.item.assignee !== "-"
+                ? entry.item.assignee.trim()
+                : "";
+          if (agentLabel !== "") {
+            agents.add(agentLabel);
           }
           if (entry.parentId !== null) {
             childCountByParent.set(
@@ -114,13 +192,21 @@ export function renderBeadsWebviewHtml(
                     .split(/[\\/]/)
                     .filter((part) => part !== "")
                     .pop() ?? item.worktree);
+            const rowAgentLabel =
+              item.agent.trim() !== ""
+                ? item.agent.trim()
+                : normalizedStatus === "in_progress" &&
+                    item.assignee.trim() !== "" &&
+                    item.assignee !== "-"
+                  ? item.assignee.trim()
+                  : "";
             const executionBadges = [
               item.parallelizable
                 ? `<span class="executionBadge parallelBadge" title="${escapeHtml(item.parallelizableSource === "ready" ? "Ready and unblocked; can run alongside other ready tasks." : "Marked as parallelizable.")}">${escapeHtml(item.parallelizableSource === "ready" ? "Parallel ready" : "Parallel OK")}</span>`
                 : "",
-              item.agent === ""
+              rowAgentLabel === ""
                 ? ""
-                : `<span class="executionBadge agentBadge">Agent ${escapeHtml(item.agent)}</span>`,
+                : `<span class="executionBadge agentBadge">Agent ${escapeHtml(rowAgentLabel)}</span>`,
               worktreeLabel === ""
                 ? ""
                 : `<span class="executionBadge worktreeBadge">WT ${escapeHtml(worktreeLabel)}</span>`
@@ -164,8 +250,12 @@ export function renderBeadsWebviewHtml(
             return `<tr class="${rowClasses}" data-id="${escapeHtml(item.id)}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-parent-id="${escapeHtml(parentId ?? "")}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" data-child-count="${childCount}" data-order-index="${orderIndex}" data-guide-columns="${guideColumns.map((value) => (value ? "1" : "0")).join("")}" data-last-sibling="${isLastSibling ? "1" : "0"}" data-status="${escapeHtml(normalizedStatus)}" data-parallelizable="${item.parallelizable ? "1" : "0"}" data-parallel-source="${escapeHtml(item.parallelizableSource)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(serializedItem)))}" data-updated-ts="${updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td class="parallelCell">${parallelCell}</td><td><div class="titleCell" style="--tree-width:${treeWidth}px">${hierarchyToggle}<div class="titleContent"><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div>${executionBadges === "" ? "" : `<div class="beadMeta">${executionBadges}</div>`}</div></div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
           })
           .join("");
+        const graphHtml = renderBeadsDependencyGraph(
+          flatItems.map((entry) => entry.item),
+          group.workspacePath
+        );
 
-        return `<section data-workspace-path="${escapeHtml(group.workspacePath)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceSummary">${workspaceSummary}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div></section>`;
+        return `<section data-workspace-path="${escapeHtml(group.workspacePath)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceSummary">${workspaceSummary}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div>${graphHtml}</section>`;
       })
       .join("");
     const emptyHtml = result.emptyWorkspaces
@@ -205,6 +295,9 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);paddin
 .toolbarMain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;}
 .toolbarActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:0 0 auto;}
 .toolbarStatsRow{display:flex;justify-content:flex-end;margin:0 0 8px;}
+.viewToggle{display:inline-flex;border:1px solid var(--vscode-panel-border);border-radius:6px;overflow:hidden;background:rgba(128,128,128,.08);}
+.viewToggle button{height:24px;border:none;border-radius:0;background:transparent;color:var(--vscode-foreground);padding:0 9px;}
+.viewToggle button.active{background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-weight:700;}
 .preset{height:24px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));border-radius:6px;padding:0 6px;font-size:11px;}
 .chips{display:flex;gap:6px;flex-wrap:wrap;}
 .chips:empty{display:none;}
@@ -248,6 +341,8 @@ body[data-has-sync-warnings="1"] #syncBeads .toolbarActionLabel{font-weight:700;
 .agentSummary{border-color:rgba(234,179,8,.5);color:var(--vscode-charts-yellow,#d97706);}
 section{margin-bottom:12px;}
 .tableWrap{position:relative;border:1px solid var(--vscode-panel-border);border-radius:8px;overflow:hidden;background:var(--vscode-editor-background);}
+body[data-view-mode="graph"] .tableWrap{display:none;}
+body[data-view-mode="table"] .graphPane{display:none;}
 .hierarchyOverlay{position:absolute;inset:0;z-index:0;width:100%;height:100%;pointer-events:none;overflow:visible;}
 table{position:relative;z-index:1;width:100%;border-collapse:separate;border-spacing:0;font-size:13px;table-layout:fixed;}
 th,td{text-align:left;border-bottom:1px solid var(--vscode-panel-border);padding:6px 5px;vertical-align:middle;font-size:13px;}
@@ -322,6 +417,28 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .detailsGrid .key{opacity:.78;font-size:11px;}
 .detailsGrid div:nth-child(2n){min-width:0;overflow-wrap:anywhere;}
 .detailsDescription{margin-top:8px;padding-top:8px;border-top:1px solid var(--vscode-panel-border);white-space:pre-wrap;line-height:1.45;}
+.graphPane{position:relative;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);overflow:auto;padding:8px;}
+.graphHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;position:sticky;left:0;z-index:4;background:var(--vscode-editor-background);}
+.criticalSummary{border-color:rgba(236,72,153,.5);color:var(--vscode-charts-pink,#ec4899);}
+.graphCanvas{position:relative;min-width:max-content;padding:4px 2px 8px;}
+.dependencyOverlay{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none;overflow:visible;}
+.dependencyPath{fill:none;stroke:rgba(148,163,184,.8);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
+.dependencyPath.criticalDependencyPath{stroke:var(--vscode-charts-pink,#ec4899);stroke-width:2.8;}
+.graphGrid{position:relative;z-index:2;display:grid;grid-template-columns:repeat(var(--graph-columns), minmax(230px,1fr));gap:16px;align-items:start;min-width:100%;}
+.graphStage{display:grid;gap:8px;align-content:start;min-width:230px;}
+.graphStageLabel{font-size:10px;font-weight:700;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0;}
+.graphNode{border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));padding:8px;box-shadow:0 1px 3px rgba(0,0,0,.12);}
+.graphNode.criticalGraphNode{border-color:rgba(236,72,153,.62);box-shadow:inset 3px 0 0 var(--vscode-charts-pink,#ec4899), 0 1px 3px rgba(0,0,0,.12);}
+.graphNodeTop{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px;}
+.criticalBadge{display:inline-flex;align-items:center;min-height:17px;padding:1px 6px;border-radius:999px;border:1px solid rgba(236,72,153,.55);background:rgba(236,72,153,.14);color:var(--vscode-charts-pink,#ec4899);font-size:10px;font-weight:750;white-space:nowrap;}
+.graphNodeTitle{font-size:12px;font-weight:700;line-height:1.3;margin:2px 0 7px;overflow-wrap:anywhere;}
+.graphNodeBadges{display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
+.graphRelations{display:grid;gap:3px;margin-top:7px;padding-top:7px;border-top:1px solid var(--vscode-panel-border);}
+.graphRelation{display:grid;grid-template-columns:54px minmax(0,1fr);gap:5px;font-size:10px;color:var(--vscode-descriptionForeground);line-height:1.35;}
+.graphRelation span{font-weight:700;color:var(--vscode-foreground);}
+.graphNodeActions{display:flex;justify-content:flex-end;margin-top:8px;}
+.assignStartBead{height:24px;padding:0 8px;font-weight:650;}
+.assignStartBead:disabled{opacity:.45;cursor:default;}
 @media (max-width:560px){
   .toolbar{grid-template-columns:1fr;gap:6px;}
   .toolbarActions{justify-content:stretch;}
@@ -347,13 +464,19 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
   .inlineDetailsRow{display:block;}
   .inlineDetailsRow td{display:block;padding:0 6px 8px;}
   .detailsGrid{grid-template-columns:82px minmax(0,1fr);}
+  .graphGrid{grid-template-columns:repeat(var(--graph-columns), minmax(210px,1fr));gap:12px;}
+  .graphStage{min-width:210px;}
 }
 code{font-family:var(--vscode-editor-font-family);}
 </style>
 </head>
-<body data-bd-available="${result.bdExecutableStatus.available ? "1" : "0"}" data-has-sync-warnings="${result.warnings.length > 0 ? "1" : "0"}">
+<body data-bd-available="${result.bdExecutableStatus.available ? "1" : "0"}" data-has-sync-warnings="${result.warnings.length > 0 ? "1" : "0"}" data-view-mode="table">
 <div class="toolbar">
   <div class="toolbarMain">
+    <div class="viewToggle" role="group" aria-label="Beads view mode">
+      <button id="tableView" class="active" type="button">Table</button>
+      <button id="graphView" type="button">Graph</button>
+    </div>
     <select id="preset" class="preset">
       <option value="default" selected>Default (Active)</option>
       <option value="open">Open</option>

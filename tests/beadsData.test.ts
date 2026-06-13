@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   beadPickAgent,
+  beadPickDependencyIds,
   beadPickParallelizable,
   beadPickParentId,
   beadPickProgress,
@@ -9,6 +10,7 @@ import {
   beadsAsArray,
   beadShortDate,
   beadStatusLabel,
+  buildBeadDependencyGraph,
   buildBeadHierarchy,
   diffBeadItems,
   extractBeadItems,
@@ -71,6 +73,7 @@ describe("toBeadItem", () => {
       createdAt: "2026-03-07T00:00:00Z",
       updatedAt: "2026-03-07T01:00:00Z",
       parentId: "",
+      dependencyIds: [],
       parallelizable: false,
       parallelizableSource: "",
       parallelizableSuppressed: false,
@@ -163,7 +166,8 @@ describe("toBeadItem", () => {
         ]
       })
     ).toMatchObject({
-      parentId: "neo-epic"
+      parentId: "neo-epic",
+      dependencyIds: []
     });
   });
 
@@ -181,8 +185,50 @@ describe("toBeadItem", () => {
         ]
       })
     ).toMatchObject({
-      parentId: "neo-late-epic"
+      parentId: "neo-late-epic",
+      dependencyIds: []
     });
+  });
+
+  it("extracts execution dependencies separately from parent-child hierarchy", () => {
+    expect(
+      toBeadItem({
+        id: "neo-blocked",
+        title: "Blocked task",
+        dependencies: [
+          {
+            issue_id: "neo-blocked",
+            depends_on_id: "neo-parent",
+            type: "parent-child"
+          },
+          {
+            issue_id: "neo-blocked",
+            depends_on_id: "neo-blocker",
+            type: "blocks"
+          },
+          {
+            issue_id: "neo-blocked",
+            id: "neo-show-style-blocker",
+            dependency_type: "blocks"
+          }
+        ]
+      })
+    ).toMatchObject({
+      parentId: "neo-parent",
+      dependencyIds: ["neo-blocker", "neo-show-style-blocker"]
+    });
+  });
+
+  it("reads direct dependency id fields", () => {
+    expect(
+      beadPickDependencyIds(
+        {
+          blocked_by: "neo-a, neo-b",
+          dependsOn: ["neo-c", "neo-a"]
+        },
+        "neo-c"
+      )
+    ).toEqual(["neo-a", "neo-b"]);
   });
 });
 
@@ -382,6 +428,68 @@ describe("buildBeadHierarchy", () => {
       parallelizableSource: "explicit",
       agent: "agent-a",
       worktree: "../beads-git-graph-agent-a"
+    });
+  });
+
+  it("preserves dependency metadata from issues.jsonl when CLI rows omit it", () => {
+    const cliItems = extractBeadItems([
+      {
+        id: "neo-dependent",
+        title: "Dependent",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:00:00Z"
+      }
+    ]);
+    const jsonlItems = extractBeadItems([
+      {
+        id: "neo-dependent",
+        title: "Dependent",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:00:00Z",
+        dependencies: [{ depends_on_id: "neo-blocker", type: "blocks" }]
+      }
+    ]);
+
+    expect(mergeBeadItems(cliItems, jsonlItems)[0]).toMatchObject({
+      dependencyIds: ["neo-blocker"]
+    });
+  });
+
+  it("builds a dependency graph with a critical path", () => {
+    const items = extractBeadItems([
+      { id: "neo-a", title: "A", issue_type: "task" },
+      {
+        id: "neo-b",
+        title: "B",
+        issue_type: "task",
+        dependencies: [{ depends_on_id: "neo-a", type: "blocks" }]
+      },
+      {
+        id: "neo-c",
+        title: "C",
+        issue_type: "task",
+        dependencies: [{ depends_on_id: "neo-b", type: "blocks" }]
+      },
+      {
+        id: "neo-side",
+        title: "Side",
+        issue_type: "task",
+        dependencies: [{ depends_on_id: "neo-a", type: "blocks" }]
+      }
+    ]);
+
+    const graph = buildBeadDependencyGraph(items);
+    const nodesById = new Map(graph.nodes.map((node) => [node.item.id, node]));
+
+    expect(graph.criticalPathIds).toEqual(["neo-a", "neo-b", "neo-c"]);
+    expect(nodesById.get("neo-a")).toMatchObject({ level: 0, critical: true });
+    expect(nodesById.get("neo-b")).toMatchObject({ level: 1, critical: true });
+    expect(nodesById.get("neo-c")).toMatchObject({ level: 2, critical: true });
+    expect(nodesById.get("neo-side")).toMatchObject({ level: 1, critical: false });
+    expect(graph.edges).toContainEqual({
+      fromId: "neo-b",
+      toId: "neo-c",
+      critical: true
     });
   });
 
