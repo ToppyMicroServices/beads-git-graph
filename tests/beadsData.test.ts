@@ -12,6 +12,7 @@ import {
   buildBeadHierarchy,
   diffBeadItems,
   extractBeadItems,
+  inferReadyParallelizableItems,
   mergeBeadItems,
   normalizeBeadPriority,
   normalizeBeadStatus,
@@ -71,6 +72,8 @@ describe("toBeadItem", () => {
       updatedAt: "2026-03-07T01:00:00Z",
       parentId: "",
       parallelizable: false,
+      parallelizableSource: "",
+      parallelizableSuppressed: false,
       agent: "",
       worktree: "",
       commitHash: "abcdef1234567"
@@ -89,6 +92,8 @@ describe("toBeadItem", () => {
       })
     ).toMatchObject({
       parallelizable: true,
+      parallelizableSource: "explicit",
+      parallelizableSuppressed: false,
       agent: "agent-a",
       worktree: "../beads-git-graph-agent-a"
     });
@@ -101,6 +106,8 @@ describe("toBeadItem", () => {
       })
     ).toMatchObject({
       parallelizable: true,
+      parallelizableSource: "explicit",
+      parallelizableSuppressed: false,
       agent: "agent-b",
       worktree: "../beads-git-graph-agent-b"
     });
@@ -372,8 +379,62 @@ describe("buildBeadHierarchy", () => {
 
     expect(mergeBeadItems(cliItems, jsonlItems)[0]).toMatchObject({
       parallelizable: true,
+      parallelizableSource: "explicit",
       agent: "agent-a",
       worktree: "../beads-git-graph-agent-a"
+    });
+  });
+
+  it("marks multiple ready unblocked tasks as parallel candidates", () => {
+    const items = extractBeadItems([
+      {
+        id: "neo-ready-a",
+        title: "Ready A",
+        issue_type: "task",
+        status: "open"
+      },
+      {
+        id: "neo-ready-b",
+        title: "Ready B",
+        issue_type: "task",
+        status: "open"
+      },
+      {
+        id: "neo-blocked",
+        title: "Blocked",
+        issue_type: "task",
+        status: "blocked"
+      },
+      {
+        id: "neo-serial",
+        title: "Serial",
+        issue_type: "task",
+        status: "open",
+        labels: ["no-parallel"]
+      }
+    ]);
+
+    const inferred = inferReadyParallelizableItems(
+      items,
+      new Set(["neo-ready-a", "neo-ready-b", "neo-serial"])
+    );
+    const byId = new Map(inferred.map((item) => [item.id, item]));
+
+    expect(byId.get("neo-ready-a")).toMatchObject({
+      parallelizable: true,
+      parallelizableSource: "ready"
+    });
+    expect(byId.get("neo-ready-b")).toMatchObject({
+      parallelizable: true,
+      parallelizableSource: "ready"
+    });
+    expect(byId.get("neo-blocked")).toMatchObject({
+      parallelizable: false,
+      parallelizableSource: ""
+    });
+    expect(byId.get("neo-serial")).toMatchObject({
+      parallelizable: false,
+      parallelizableSuppressed: true
     });
   });
 });

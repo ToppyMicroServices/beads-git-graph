@@ -14,6 +14,8 @@ export interface BeadItem {
   createdAt: string;
   parentId: string;
   parallelizable: boolean;
+  parallelizableSource: "explicit" | "ready" | "";
+  parallelizableSuppressed: boolean;
   agent: string;
   worktree: string;
 }
@@ -124,6 +126,10 @@ function beadPickStringFromTokens(record: Record<string, unknown>, prefixes: str
 }
 
 export function beadPickParallelizable(record: Record<string, unknown>) {
+  return beadPickParallelizablePreference(record) === "yes";
+}
+
+export function beadPickParallelizablePreference(record: Record<string, unknown>) {
   const directKeys = [
     "parallelizable",
     "parallel",
@@ -138,26 +144,28 @@ export function beadPickParallelizable(record: Record<string, unknown>) {
   for (const key of directKeys) {
     const value = record[key];
     if (typeof value === "boolean") {
-      return value;
+      return value ? "yes" : "no";
     }
     if (typeof value === "string") {
       const normalized = normalizeToken(value);
       if (["true", "yes", "y", "1", "parallel", "parallel-ok"].includes(normalized)) {
-        return true;
+        return "yes";
       }
       if (["false", "no", "n", "0", "serial", "sequential"].includes(normalized)) {
-        return false;
+        return "no";
       }
     }
   }
 
   const labels = beadPickStringTokens(record, ["labels", "tags"]).map(normalizeToken);
   if (labels.some((label) => ["serial", "sequential", "no-parallel"].includes(label))) {
-    return false;
+    return "no";
   }
   return labels.some((label) =>
     ["parallel", "parallel-ok", "parallelizable", "multi-agent", "multiagent"].includes(label)
-  );
+  )
+    ? "yes"
+    : "";
 }
 
 export function beadPickAgent(record: Record<string, unknown>) {
@@ -266,6 +274,7 @@ export function toBeadItem(item: unknown): BeadItem | null {
   const record = item as Record<string, unknown>;
   const id = beadPickString(record, ["id", "key", "slug", "issue", "name"]);
   const title = beadPickString(record, ["title", "summary", "name", "description"]);
+  const parallelizablePreference = beadPickParallelizablePreference(record);
 
   if (id === "" || title === "") {
     return null;
@@ -285,7 +294,9 @@ export function toBeadItem(item: unknown): BeadItem | null {
     createdAt: beadPickString(record, ["created_at", "createdAt", "created"], "-"),
     updatedAt: beadPickString(record, ["updated_at", "updatedAt", "updated", "modified_at"], "-"),
     parentId: beadPickParentId(record),
-    parallelizable: beadPickParallelizable(record),
+    parallelizable: parallelizablePreference === "yes",
+    parallelizableSource: parallelizablePreference === "yes" ? "explicit" : "",
+    parallelizableSuppressed: parallelizablePreference === "no",
     agent: beadPickAgent(record),
     worktree: beadPickWorktree(record),
     commitHash: beadPickString(record, ["commitHash", "commit_hash", "commit"], "")
@@ -407,11 +418,21 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
       return item;
     }
 
+    const parallelizable = item.parallelizable || fallback.parallelizable;
+    const parallelizableSource = item.parallelizable
+      ? item.parallelizableSource
+      : fallback.parallelizable
+        ? fallback.parallelizableSource
+        : "";
+
     return {
       ...fallback,
       ...item,
       parentId: item.parentId.trim() !== "" ? item.parentId : fallback.parentId,
-      parallelizable: item.parallelizable || fallback.parallelizable,
+      parallelizable,
+      parallelizableSource,
+      parallelizableSuppressed:
+        !parallelizable && (item.parallelizableSuppressed || fallback.parallelizableSuppressed),
       agent: item.agent.trim() !== "" ? item.agent : fallback.agent,
       worktree: item.worktree.trim() !== "" ? item.worktree : fallback.worktree
     };
@@ -425,6 +446,39 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
   }
 
   return merged;
+}
+
+export function inferReadyParallelizableItems(
+  items: BeadItem[],
+  readyItemIds: ReadonlySet<string>
+) {
+  const eligibleReadyIds = new Set(
+    items
+      .filter((item) => {
+        if (item.parallelizable || item.parallelizableSuppressed) {
+          return false;
+        }
+        if (!readyItemIds.has(item.id)) {
+          return false;
+        }
+        if (normalizeBeadType(item.type) === "epic") {
+          return false;
+        }
+        const status = normalizeBeadStatus(item.status);
+        return status === "open" || status === "in_progress";
+      })
+      .map((item) => item.id)
+  );
+
+  if (eligibleReadyIds.size < 2) {
+    return items;
+  }
+
+  return items.map((item) =>
+    eligibleReadyIds.has(item.id)
+      ? { ...item, parallelizable: true, parallelizableSource: "ready" as const }
+      : item
+  );
 }
 
 export function diffBeadItems(
@@ -447,6 +501,7 @@ export function diffBeadItems(
     "createdAt",
     "parentId",
     "parallelizable",
+    "parallelizableSuppressed",
     "agent",
     "worktree",
     "commitHash"

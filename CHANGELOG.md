@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Show ready, unblocked Beads tasks as parallel-ready candidates even when no explicit parallel metadata is set.
+
 ## [0.1.33] - 2026-06-13
 
 ### Added

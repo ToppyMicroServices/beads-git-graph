@@ -8,6 +8,7 @@ import {
   beadsAsArray,
   diffBeadItems,
   extractBeadItems,
+  inferReadyParallelizableItems,
   mergeBeadItems,
   toBeadItem
 } from "./beadsData";
@@ -702,6 +703,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const stdout = await this.runBdCommand(["list", "--json", "--limit", "0", "--all"], cwd);
     const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
     const cliItems = extractBeadItems(parsed);
+    const warnings: BeadWarning[] = [];
+    const readyItemIds = await this.loadReadyItemIds(cwd, warnings);
     const itemsNeedingParentLookup = new Set<string>(
       beadsAsArray(parsed)
         .map((item) => {
@@ -722,7 +725,6 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         })
         .filter((id): id is string => id !== null)
     );
-    const warnings: BeadWarning[] = [];
 
     try {
       const issueFileUri = vscode.Uri.file(path.join(cwd, ".beads", "issues.jsonl"));
@@ -778,17 +780,41 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         });
       }
 
-      return { items: mergedItems, warnings };
+      return { items: inferReadyParallelizableItems(mergedItems, readyItemIds), warnings };
     } catch {
       const missingParentIds = cliItems
         .filter((item) => item.parentId.trim() === "" && itemsNeedingParentLookup.has(item.id))
         .map((item) => item.id);
       if (missingParentIds.length === 0) {
-        return { items: cliItems, warnings };
+        return { items: inferReadyParallelizableItems(cliItems, readyItemIds), warnings };
       }
 
       const parentLookupItems = await this.loadBdShowItems(missingParentIds, cwd);
-      return { items: mergeBeadItems(cliItems, parentLookupItems), warnings };
+      return {
+        items: inferReadyParallelizableItems(
+          mergeBeadItems(cliItems, parentLookupItems),
+          readyItemIds
+        ),
+        warnings
+      };
+    }
+  }
+
+  private async loadReadyItemIds(cwd: string, warnings: BeadWarning[]) {
+    try {
+      const stdout = await this.runBdCommand(["ready", "--json"], cwd);
+      const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
+      return new Set(extractBeadItems(parsed).map((item) => item.id));
+    } catch (error) {
+      warnings.push({
+        source: path.join(cwd, ".beads"),
+        workspacePath: cwd,
+        message:
+          error instanceof Error
+            ? `Unable to infer parallel-ready tasks from bd ready: ${error.message}`
+            : "Unable to infer parallel-ready tasks from bd ready."
+      });
+      return new Set<string>();
     }
   }
 

@@ -116,7 +116,7 @@ export function renderBeadsWebviewHtml(
                     .pop() ?? item.worktree);
             const executionBadges = [
               item.parallelizable
-                ? '<span class="executionBadge parallelBadge">Parallel</span>'
+                ? `<span class="executionBadge parallelBadge" title="${escapeHtml(item.parallelizableSource === "ready" ? "Ready and unblocked; can run alongside other ready tasks." : "Marked as parallelizable.")}">${escapeHtml(item.parallelizableSource === "ready" ? "Parallel ready" : "Parallel OK")}</span>`
                 : "",
               item.agent === ""
                 ? ""
@@ -254,7 +254,7 @@ th:nth-child(1){width:52px;}th:nth-child(3){width:78px;}th:nth-child(4){width:56
 .beadTitle{font-size:13px;font-weight:650;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .beadMeta{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:4px;}
 .executionBadge{display:inline-flex;align-items:center;max-width:100%;padding:1px 6px;border-radius:6px;border:1px solid rgba(128,128,128,.42);font-size:10px;font-weight:650;line-height:15px;color:var(--vscode-descriptionForeground);background:rgba(128,128,128,.1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.parallelBadge{border-color:rgba(34,197,94,.55);color:var(--vscode-testing-iconPassed, #22c55e);background:rgba(34,197,94,.12);}
+.parallelBadge{border-color:rgba(34,197,94,.65);color:var(--vscode-testing-iconPassed, #22c55e);background:rgba(34,197,94,.16);}
 .agentBadge{border-color:rgba(59,130,246,.55);color:var(--vscode-textLink-foreground, #3b82f6);background:rgba(59,130,246,.12);}
 .worktreeBadge{border-color:rgba(234,179,8,.55);color:var(--vscode-charts-yellow, #d97706);background:rgba(234,179,8,.12);}
 .statusCell{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
