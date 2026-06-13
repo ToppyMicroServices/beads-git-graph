@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.35] - 2026-06-14
+
 ### Changed
 
 - Add a dedicated Beads table column for parallel-ready and explicit parallel task markers.
@@ -260,7 +262,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.34...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.35...HEAD
+[0.1.35]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.34...v0.1.35
 [0.1.34]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.33...v0.1.34
 [0.1.33]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.32...v0.1.33
 [0.1.32]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.31...v0.1.32
