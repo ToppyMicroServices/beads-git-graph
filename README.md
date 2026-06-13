@@ -1,7 +1,7 @@
 # Beads Git Graph
 
 [![MIT License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](./LICENSE)
-[![Version 0.1.35](https://img.shields.io/badge/version-0.1.35-0366d6?style=flat-square)](./CHANGELOG.md)
+[![Version 0.1.36](https://img.shields.io/badge/version-0.1.36-0366d6?style=flat-square)](./CHANGELOG.md)
 
 Git graph and Beads issue tools in one VS Code extension.
 
@@ -15,6 +15,7 @@ No telemetry. Privacy-first. Security-first.
 - Lets you switch between Git Graph and Beads from the toolbar
 - Lets you refresh, create, close, and sync Beads items inside VS Code
 - Shows optional parallel, agent, and worktree hints on Beads items
+- Shows a Beads critical path graph with dependency edges and Assign + Start actions
 
 ## Use It
 

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.36] - 2026-06-14
+
 ### Added
 
 - Add a Beads critical path graph view with dependency edges and Assign + Start task actions.
@@ -266,7 +268,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.35...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.36...HEAD
+[0.1.36]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.35...v0.1.36
 [0.1.35]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.34...v0.1.35
 [0.1.34]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.33...v0.1.34
 [0.1.33]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.32...v0.1.33
