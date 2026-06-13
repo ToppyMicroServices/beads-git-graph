@@ -41,7 +41,50 @@ export function renderBeadsWebviewHtml(
   } else {
     const populatedHtml = rows
       .map((group) => {
-        const itemRows = flattenBeadHierarchy(group.items)
+        const flatItems = flattenBeadHierarchy(group.items);
+        const childCountByParent = new Map<string, number>();
+        let activeCount = 0;
+        let blockedCount = 0;
+        let parallelCount = 0;
+        const agents = new Set<string>();
+        for (const entry of flatItems) {
+          const status = normalizeBeadStatus(entry.item.status);
+          if (status === "open" || status === "in_progress" || status === "blocked") {
+            activeCount += 1;
+          }
+          if (status === "blocked") {
+            blockedCount += 1;
+          }
+          if (entry.item.parallelizable) {
+            parallelCount += 1;
+          }
+          if (entry.item.agent.trim() !== "") {
+            agents.add(entry.item.agent.trim());
+          }
+          if (entry.parentId !== null) {
+            childCountByParent.set(
+              entry.parentId,
+              (childCountByParent.get(entry.parentId) ?? 0) + 1
+            );
+          }
+        }
+        const workspaceTitle = showWorkspaceLabel ? group.workspace : "Beads";
+        const workspaceSummary = [
+          `<span class="summaryPill">${flatItems.length} total</span>`,
+          `<span class="summaryPill activeSummary">${activeCount} active</span>`,
+          blockedCount > 0
+            ? `<span class="summaryPill blockedSummary">${blockedCount} blocked</span>`
+            : "",
+          parallelCount > 0
+            ? `<span class="summaryPill parallelSummary">${parallelCount} parallel</span>`
+            : "",
+          agents.size > 0
+            ? `<span class="summaryPill agentSummary">${agents.size} agents</span>`
+            : ""
+        ]
+          .filter((pill) => pill !== "")
+          .join("");
+        const itemRows = flatItems
           .map(({ item, parentId, epicId, depth, orderIndex, guideColumns, isLastSibling }) => {
             const normalizedStatus = normalizeBeadStatus(item.status);
             const statusLabel = beadStatusLabel(normalizedStatus);
@@ -90,11 +133,17 @@ export function renderBeadsWebviewHtml(
               epicId: epicId ?? ""
             };
             const treeWidth = depth > 0 ? depth * 18 : 0;
-            return `<tr class="beadRow" data-id="${escapeHtml(item.id)}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-parent-id="${escapeHtml(parentId ?? "")}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" data-order-index="${orderIndex}" data-guide-columns="${guideColumns.map((value) => (value ? "1" : "0")).join("")}" data-last-sibling="${isLastSibling ? "1" : "0"}" data-status="${escapeHtml(normalizedStatus)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(serializedItem)))}" data-updated-ts="${updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td><div class="titleCell" style="--tree-width:${treeWidth}px"><div class="titleContent"><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div>${executionBadges === "" ? "" : `<div class="beadMeta">${executionBadges}</div>`}</div></div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
+            const childCount = childCountByParent.get(item.id) ?? 0;
+            const rowClasses = childCount > 0 ? "beadRow hasChildren" : "beadRow";
+            const hierarchyToggle =
+              childCount > 0
+                ? `<button class="collapseToggle" type="button" aria-expanded="true" title="Toggle subprojects"><span class="collapseIcon" aria-hidden="true">▾</span></button>`
+                : '<span class="collapseSpacer" aria-hidden="true"></span>';
+            return `<tr class="${rowClasses}" data-id="${escapeHtml(item.id)}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-parent-id="${escapeHtml(parentId ?? "")}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" data-child-count="${childCount}" data-order-index="${orderIndex}" data-guide-columns="${guideColumns.map((value) => (value ? "1" : "0")).join("")}" data-last-sibling="${isLastSibling ? "1" : "0"}" data-status="${escapeHtml(normalizedStatus)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(serializedItem)))}" data-updated-ts="${updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td><div class="titleCell" style="--tree-width:${treeWidth}px">${hierarchyToggle}<div class="titleContent"><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div>${executionBadges === "" ? "" : `<div class="beadMeta">${executionBadges}</div>`}</div></div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
           })
           .join("");
 
-        return `<section data-workspace-path="${escapeHtml(group.workspacePath)}">${showWorkspaceLabel ? `<div class="meta"><strong>${escapeHtml(group.workspace)}</strong></div>` : ""}<div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div></section>`;
+        return `<section data-workspace-path="${escapeHtml(group.workspacePath)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceSummary">${workspaceSummary}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div></section>`;
       })
       .join("");
     const emptyHtml = result.emptyWorkspaces
@@ -129,22 +178,22 @@ export function renderBeadsWebviewHtml(
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:4px;background:var(--vscode-editor-background);}
-.toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px;margin-bottom:2px;}
+body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:6px;background:var(--vscode-editor-background);font-size:13px;}
+.toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px;margin-bottom:6px;padding:6px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));box-shadow:0 1px 4px rgba(0,0,0,.12);}
 .toolbarMain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;}
 .toolbarActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:0 0 auto;}
-.toolbarStatsRow{display:flex;justify-content:flex-end;margin:0 0 6px;}
+.toolbarStatsRow{display:flex;justify-content:flex-end;margin:0 0 8px;}
 .preset{height:24px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));border-radius:6px;padding:0 6px;font-size:11px;}
 .chips{display:flex;gap:6px;flex-wrap:wrap;}
 .chips:empty{display:none;}
-.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;font-size:11px;border:1px solid var(--vscode-panel-border);background:rgba(128,128,128,.12);}
+.chip{display:inline-flex;align-items:center;gap:6px;min-height:20px;padding:2px 8px;border-radius:999px;font-size:11px;border:1px solid var(--vscode-panel-border);background:rgba(128,128,128,.12);}
 .chip .remove{background:transparent;border:none;color:inherit;cursor:pointer;line-height:1;padding:0;font-size:12px;opacity:.8;}
 .chip.status-open{border-left:3px solid #10b981;}
 .chip.status-in_progress{border-left:3px solid #3b82f6;}
 .chip.status-blocked{border-left:3px solid #ef4444;}
 .chip.status-closed{border-left:3px solid #6b7280;}
 .menu{position:relative;}
-.menuPopup{display:none;position:absolute;top:30px;left:0;z-index:20;min-width:140px;background:var(--vscode-menu-background);border:1px solid var(--vscode-menu-border, var(--vscode-panel-border));box-shadow:0 2px 8px var(--vscode-widget-shadow);padding:6px;}
+.menuPopup{display:none;position:absolute;top:30px;left:0;z-index:20;min-width:140px;background:var(--vscode-menu-background);border:1px solid var(--vscode-menu-border, var(--vscode-panel-border));box-shadow:0 4px 14px var(--vscode-widget-shadow);padding:6px;border-radius:8px;}
 .menuPopup.open{display:block;}
 .menuPopup button{display:block;width:100%;margin:2px 0;text-align:left;background:transparent;color:var(--vscode-menu-foreground);border:1px solid transparent;padding:4px 6px;border-radius:4px;}
 .menuPopup button:hover{background:var(--vscode-menu-selectionBackground);color:var(--vscode-menu-selectionForeground);}
@@ -155,7 +204,7 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);paddin
 .contextMenu button:disabled{opacity:.45;cursor:default;}
 button{border:1px solid var(--vscode-button-border,transparent);background:var(--vscode-button-background);color:var(--vscode-button-foreground);padding:4px 8px;cursor:pointer;border-radius:6px;font-size:11px;}
 button:hover{background:var(--vscode-button-hoverBackground);}
-.actionBtn{display:inline-flex;align-items:center;justify-content:center;height:24px;padding:0 10px;border-radius:11px;background:rgba(128,128,128,.1);border:1px solid rgba(128,128,128,.5);gap:6px;transition:border-color .18s ease, background-color .18s ease, box-shadow .18s ease;}
+.actionBtn{display:inline-flex;align-items:center;justify-content:center;height:24px;padding:0 10px;border-radius:6px;background:rgba(128,128,128,.1);border:1px solid rgba(128,128,128,.5);gap:6px;transition:border-color .18s ease, background-color .18s ease, box-shadow .18s ease;}
 .actionBtn:hover{background:rgba(128,128,128,.2);}
 #syncBeads{min-width:68px;}
 body[data-has-sync-warnings="1"] #syncBeads{border-color:var(--vscode-editorWarning-foreground, #f59e0b);background:rgba(245,158,11,.18);box-shadow:0 0 0 0 rgba(245,158,11,.32);animation:syncPulse 1.4s ease-in-out infinite;}
@@ -167,34 +216,50 @@ body[data-has-sync-warnings="1"] #syncBeads .toolbarActionLabel{font-weight:700;
 .toolbarIcon.switchIcon{width:18px;height:18px;}
 .toolbarIcon.refreshIcon{width:18px;height:18px;}
 .toolbarActionLabel{color:var(--vscode-button-foreground);font-size:11px;line-height:1;}
-.meta{display:grid;grid-template-columns:1fr;font-size:11px;opacity:.9;margin:6px 0 4px;gap:6px;align-items:center;}
-section{margin-bottom:10px;}
-.tableWrap{position:relative;}
+.workspaceHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 5px;min-width:0;}
+.workspaceName{font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.workspaceSummary{display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap;}
+.summaryPill{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border:1px solid var(--vscode-panel-border);border-radius:999px;background:rgba(128,128,128,.1);color:var(--vscode-descriptionForeground);font-size:10px;font-weight:600;white-space:nowrap;}
+.activeSummary{border-color:rgba(59,130,246,.4);color:var(--vscode-textLink-foreground,#3b82f6);}
+.blockedSummary{border-color:rgba(239,68,68,.5);color:var(--vscode-errorForeground,#ef4444);}
+.parallelSummary{border-color:rgba(34,197,94,.45);color:var(--vscode-testing-iconPassed,#22c55e);}
+.agentSummary{border-color:rgba(234,179,8,.5);color:var(--vscode-charts-yellow,#d97706);}
+section{margin-bottom:12px;}
+.tableWrap{position:relative;border:1px solid var(--vscode-panel-border);border-radius:8px;overflow:hidden;background:var(--vscode-editor-background);}
 .hierarchyOverlay{position:absolute;inset:0;z-index:0;width:100%;height:100%;pointer-events:none;overflow:visible;}
-table{position:relative;z-index:1;width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;}
-th,td{text-align:left;border-bottom:1px solid var(--vscode-panel-border);padding:4px 4px;vertical-align:middle;font-size:13px;}
-th{position:sticky;top:0;z-index:2;font-weight:700;line-height:18px;padding:6px 4px;opacity:.95;background:var(--vscode-editor-background);box-shadow:0 1px 0 var(--vscode-panel-border);}
+table{position:relative;z-index:1;width:100%;border-collapse:separate;border-spacing:0;font-size:13px;table-layout:fixed;}
+th,td{text-align:left;border-bottom:1px solid var(--vscode-panel-border);padding:6px 5px;vertical-align:middle;font-size:13px;}
+tbody tr:last-child td{border-bottom:none;}
+th{position:sticky;top:0;z-index:2;font-weight:700;line-height:18px;padding:6px 5px;opacity:.95;background:var(--vscode-sideBar-background,var(--vscode-editor-background));box-shadow:0 1px 0 var(--vscode-panel-border);}
 th:nth-child(1){width:52px;}th:nth-child(3){width:78px;}th:nth-child(4){width:56px;}th:nth-child(5){width:84px;}
 .sortToggle{display:inline-flex;align-items:center;justify-content:flex-start;width:100%;gap:4px;background:transparent;border:none;color:inherit;padding:0;cursor:pointer;font:inherit;}
 .sortToggle:hover{text-decoration:underline;}
-.beadRow{cursor:pointer;}
+.beadRow{cursor:pointer;transition:background-color .12s ease;}
 .beadRow:hover{background:rgba(128,128,128,.08);}
-.beadRow.selected{background:rgba(128,128,128,.18);}
-.beadId{font-size:10px;color:var(--vscode-descriptionForeground);margin-bottom:1px;}
-.titleCell{position:relative;min-width:0;padding-left:calc(var(--tree-width, 0px) + 4px);}
-.titleContent{min-width:0;}
+.beadRow.selected{background:rgba(59,130,246,.16);}
+.beadRow.selected td:first-child{box-shadow:inset 3px 0 0 var(--vscode-textLink-foreground,#3b82f6);}
+.beadRow[data-status="blocked"]:not(.selected) td:first-child{box-shadow:inset 3px 0 0 var(--vscode-errorForeground,#ef4444);}
+.beadRow[data-status="in_progress"]:not(.selected) td:first-child{box-shadow:inset 3px 0 0 #3b82f6;}
+.beadId{font-size:10px;color:var(--vscode-descriptionForeground);margin-bottom:2px;}
+.titleCell{position:relative;display:flex;align-items:flex-start;gap:6px;min-width:0;padding-left:calc(var(--tree-width, 0px) + 4px);}
+.titleContent{min-width:0;flex:1 1 auto;}
+.collapseToggle{display:inline-flex;align-items:center;justify-content:center;flex:0 0 18px;width:18px;height:18px;margin-top:1px;padding:0;border-radius:5px;border:1px solid transparent;background:transparent;color:var(--vscode-descriptionForeground);}
+.collapseToggle:hover{border-color:var(--vscode-panel-border);background:rgba(128,128,128,.12);}
+.collapseToggle[aria-expanded="false"] .collapseIcon{transform:rotate(-90deg);}
+.collapseIcon{display:block;line-height:1;transition:transform .12s ease;}
+.collapseSpacer{flex:0 0 18px;width:18px;height:18px;}
 .hierarchyGuideShadow{fill:none;stroke:rgba(0,0,0,.18);stroke-width:3.8;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;opacity:.45;}
 .hierarchyGuideLine{fill:none;stroke:var(--vscode-textLink-foreground, #4da3ff);stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;opacity:1;}
 .hierarchyGuideNodeShadow{fill:rgba(0,0,0,.22);vector-effect:non-scaling-stroke;opacity:.4;}
 .hierarchyGuideNode{fill:var(--vscode-textLink-foreground, #4da3ff);vector-effect:non-scaling-stroke;opacity:1;}
-.beadTitle{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.beadMeta{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px;}
-.executionBadge{display:inline-flex;align-items:center;max-width:100%;padding:1px 5px;border-radius:6px;border:1px solid rgba(128,128,128,.42);font-size:10px;font-weight:650;line-height:14px;color:var(--vscode-descriptionForeground);background:rgba(128,128,128,.1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.beadTitle{font-size:13px;font-weight:650;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.beadMeta{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:4px;}
+.executionBadge{display:inline-flex;align-items:center;max-width:100%;padding:1px 6px;border-radius:6px;border:1px solid rgba(128,128,128,.42);font-size:10px;font-weight:650;line-height:15px;color:var(--vscode-descriptionForeground);background:rgba(128,128,128,.1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .parallelBadge{border-color:rgba(34,197,94,.55);color:var(--vscode-testing-iconPassed, #22c55e);background:rgba(34,197,94,.12);}
 .agentBadge{border-color:rgba(59,130,246,.55);color:var(--vscode-textLink-foreground, #3b82f6);background:rgba(59,130,246,.12);}
 .worktreeBadge{border-color:rgba(234,179,8,.55);color:var(--vscode-charts-yellow, #d97706);background:rgba(234,179,8,.12);}
 .statusCell{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
-.typeBadge,.statusBadge,.priorityBadge{display:inline-flex;align-items:center;justify-content:center;padding:1px 5px;border-radius:999px;font-size:10px;font-weight:600;white-space:nowrap;}
+.typeBadge,.statusBadge,.priorityBadge{display:inline-flex;align-items:center;justify-content:center;padding:1px 6px;border-radius:6px;font-size:10px;font-weight:650;white-space:nowrap;}
 .priorityBadge{min-width:34px;}
 .progressText{font-size:10px;font-weight:700;color:var(--vscode-textLink-foreground);white-space:nowrap;}
 .type-feature{background:#16a34a;color:#fff;}
@@ -221,11 +286,41 @@ th:nth-child(1){width:52px;}th:nth-child(3){width:78px;}th:nth-child(4){width:56
 .commitLink{font-size:11px;padding:2px 6px;}
 .stats{font-size:11px;opacity:.85;margin:0;white-space:nowrap;}
 .inlineDetailsRow td{padding:0 4px 8px;border-bottom:none;}
-.details{margin:0;padding:8px;border:1px solid var(--vscode-panel-border);font-size:12px;background:var(--vscode-editor-background);border-radius:6px;}
-.details h3{margin:0 0 6px;font-size:13px;}
-.detailsGrid{display:grid;grid-template-columns:100px 1fr;gap:4px 8px;}
-.detailsGrid .key{opacity:.75;}
-.detailsDescription{margin-top:8px;white-space:pre-wrap;line-height:1.4;}
+.details{margin:0;padding:10px;border:1px solid var(--vscode-panel-border);font-size:12px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.1);}
+.detailsHeader{display:grid;gap:4px;margin-bottom:8px;}
+.detailsTitle{font-size:13px;font-weight:700;line-height:1.3;}
+.detailsId{color:var(--vscode-descriptionForeground);font-size:11px;}
+.detailsPills{display:flex;flex-wrap:wrap;gap:4px;}
+.detailPill{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border-radius:6px;border:1px solid var(--vscode-panel-border);background:rgba(128,128,128,.1);font-size:10px;font-weight:650;color:var(--vscode-descriptionForeground);}
+.detailsGrid{display:grid;grid-template-columns:minmax(80px,110px) minmax(0,1fr);gap:5px 10px;}
+.detailsGrid .key{opacity:.78;font-size:11px;}
+.detailsGrid div:nth-child(2n){min-width:0;overflow-wrap:anywhere;}
+.detailsDescription{margin-top:8px;padding-top:8px;border-top:1px solid var(--vscode-panel-border);white-space:pre-wrap;line-height:1.45;}
+@media (max-width:560px){
+  .toolbar{grid-template-columns:1fr;gap:6px;}
+  .toolbarActions{justify-content:stretch;}
+  .toolbarActions .actionBtn{flex:1 1 0;min-width:0;}
+  .workspaceHeader{align-items:flex-start;flex-direction:column;gap:4px;}
+  .workspaceSummary{justify-content:flex-start;}
+  .hierarchyOverlay{display:none;}
+  table,tbody{display:block;}
+  thead{display:none;}
+  .beadRow{display:grid;grid-template-columns:48px minmax(0,1fr) 44px 74px;grid-template-areas:"type title title title" "type status priority updated";gap:4px 6px;padding:7px 6px;border-bottom:1px solid var(--vscode-panel-border);}
+  .beadRow td{display:flex;align-items:center;min-width:0;border-bottom:none;padding:0;}
+  .beadRow td:first-child{grid-area:type;align-items:flex-start;padding-top:2px;}
+  .beadRow td:nth-child(2){grid-area:title;}
+  .beadRow td:nth-child(3){grid-area:status;}
+  .beadRow td:nth-child(4){grid-area:priority;}
+  .beadRow td:nth-child(5){grid-area:updated;justify-content:flex-end;}
+  .titleCell{width:100%;padding-left:calc(var(--tree-width, 0px) * .65);}
+  .beadTitle{white-space:normal;overflow:hidden;}
+  .executionBadge{max-width:132px;}
+  .statusCell{gap:4px;}
+  .updatedCell{text-align:right;}
+  .inlineDetailsRow{display:block;}
+  .inlineDetailsRow td{display:block;padding:0 6px 8px;}
+  .detailsGrid{grid-template-columns:82px minmax(0,1fr);}
+}
 code{font-family:var(--vscode-editor-font-family);}
 </style>
 </head>

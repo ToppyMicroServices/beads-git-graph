@@ -54,6 +54,8 @@ let expandedDetailsRow: HTMLTableRowElement | null = null;
 let contextMenuRow: BeadRow | null = null;
 let contextMenuWorkspacePath = "";
 let sortState: { key: SortKey; desc: boolean } = { key: "updated", desc: true };
+let rowClickTimer: number | null = null;
+const collapsedIds = new Set<string>();
 
 const chips = queryElement<HTMLDivElement>("#chips");
 const preset = queryElement<HTMLSelectElement>("#preset");
@@ -219,9 +221,20 @@ function renderDetailsMarkup(item: BeadRowItem) {
   const parallel = item.parallelizable ? "Yes" : "-";
   const agent = item.agent !== "" ? item.agent : "-";
   const worktree = item.worktree !== "" ? item.worktree : "-";
+  const executionPills = [
+    item.status !== "" ? `<span class="detailPill">Status ${escapeHtml(item.status)}</span>` : "",
+    item.priority !== ""
+      ? `<span class="detailPill">Priority ${escapeHtml(item.priority)}</span>`
+      : "",
+    item.parallelizable ? '<span class="detailPill">Parallel OK</span>' : "",
+    item.agent !== "" ? `<span class="detailPill">Agent ${escapeHtml(item.agent)}</span>` : "",
+    item.worktree !== "" ? `<span class="detailPill">WT ${escapeHtml(item.worktree)}</span>` : ""
+  ]
+    .filter((pill) => pill !== "")
+    .join("");
 
   return (
-    `<div class="details"><h3>${escapeHtml(item.id)} - ${escapeHtml(item.title)}</h3><div class="detailsGrid">` +
+    `<div class="details"><div class="detailsHeader"><div class="detailsId">${escapeHtml(item.id)}</div><div class="detailsTitle">${escapeHtml(item.title)}</div>${executionPills === "" ? "" : `<div class="detailsPills">${executionPills}</div>`}</div><div class="detailsGrid">` +
     `<div class="key">Type</div><div>${escapeHtml(item.type || "-")}</div>` +
     `<div class="key">Parent</div><div>${escapeHtml(parent)}</div>` +
     `<div class="key">Epic</div><div>${escapeHtml(epic)}</div>` +
@@ -275,12 +288,52 @@ function getVisibleBeadRows(scope: ParentNode = document) {
   return Array.from(scope.querySelectorAll<BeadRow>("tbody .beadRow"));
 }
 
-function applyFilters() {
+function getRowsById(rows: BeadRow[]) {
+  const rowsById = new Map<string, BeadRow>();
+  for (const row of rows) {
+    const id = row.dataset.id || "";
+    if (id !== "") {
+      rowsById.set(id, row);
+    }
+  }
+  return rowsById;
+}
+
+function rowHasCollapsedAncestor(row: BeadRow, rowsById: Map<string, BeadRow>) {
+  const visited = new Set<string>();
+  let parentId = row.dataset.parentId || "";
+
+  while (parentId !== "") {
+    if (visited.has(parentId)) {
+      return false;
+    }
+    visited.add(parentId);
+    if (collapsedIds.has(parentId)) {
+      return true;
+    }
+
+    const parentRow = rowsById.get(parentId);
+    if (parentRow === undefined) {
+      return false;
+    }
+    parentId = parentRow.dataset.parentId || "";
+  }
+
+  return false;
+}
+
+function refreshRowVisibility() {
   const rows = getVisibleBeadRows();
+  const rowsById = getRowsById(rows);
   let visibleCount = 0;
+  let matchingCount = 0;
   for (const row of rows) {
     const status = (row.dataset.status || "") as StatusFilter;
-    const visible = activeFilters.has(status);
+    const filterVisible = activeFilters.has(status);
+    if (filterVisible) {
+      matchingCount += 1;
+    }
+    const visible = filterVisible && !rowHasCollapsedAncestor(row, rowsById);
     row.style.display = visible ? "" : "none";
     if (visible) {
       visibleCount += 1;
@@ -294,8 +347,53 @@ function applyFilters() {
   if (contextMenuRow !== null && contextMenuRow.style.display === "none") {
     closeContextMenu();
   }
-  stats.textContent = `${visibleCount} / ${rows.length} beads shown`;
+  stats.textContent =
+    matchingCount === rows.length
+      ? `${visibleCount} / ${rows.length} beads shown`
+      : `${visibleCount} / ${matchingCount} matching beads shown`;
+  stats.title = `${rows.length} total beads`;
   renderHierarchyOverlays();
+}
+
+function applyFilters() {
+  refreshRowVisibility();
+}
+
+function isCollapsibleRow(row: BeadRow) {
+  return parseInt(row.dataset.childCount || "0", 10) > 0;
+}
+
+function updateCollapseButton(row: BeadRow) {
+  const id = row.dataset.id || "";
+  const button = row.querySelector<HTMLButtonElement>(".collapseToggle");
+  const collapsed = id !== "" && collapsedIds.has(id);
+  row.classList.toggle("collapsedParent", collapsed);
+  if (button !== null) {
+    button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+}
+
+function toggleRowCollapse(row: BeadRow) {
+  const id = row.dataset.id || "";
+  if (id === "" || !isCollapsibleRow(row)) {
+    return false;
+  }
+
+  if (collapsedIds.has(id)) {
+    collapsedIds.delete(id);
+  } else {
+    collapsedIds.add(id);
+  }
+  updateCollapseButton(row);
+  refreshRowVisibility();
+  return true;
+}
+
+function clearRowClickTimer() {
+  if (rowClickTimer !== null) {
+    window.clearTimeout(rowClickTimer);
+    rowClickTimer = null;
+  }
 }
 
 function getSortValue(row: BeadRow, key: SortKey) {
@@ -373,7 +471,7 @@ function applySort() {
     icon.textContent = key === sortState.key ? (sortState.desc ? "▼" : "▲") : " ";
   }
 
-  renderHierarchyOverlays();
+  refreshRowVisibility();
 }
 
 function renderHierarchyOverlays() {
@@ -539,6 +637,7 @@ for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".s
   });
 }
 for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRow"))) {
+  const toggleButton = row.querySelector<HTMLButtonElement>(".collapseToggle");
   const selectRow = (event: MouseEvent) => {
     const target = event.target;
     if (target instanceof Element && target.closest("button")) {
@@ -563,8 +662,30 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
     }
   };
 
-  row.addEventListener("click", selectRow);
-  row.addEventListener("dblclick", selectRow);
+  toggleButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleRowCollapse(row);
+  });
+  row.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest("button")) {
+      return;
+    }
+    clearRowClickTimer();
+    rowClickTimer = window.setTimeout(() => {
+      rowClickTimer = null;
+      selectRow(event);
+    }, 160);
+  });
+  row.addEventListener("dblclick", (event) => {
+    if (event.target instanceof Element && event.target.closest("button")) {
+      return;
+    }
+    clearRowClickTimer();
+    event.preventDefault();
+    if (!toggleRowCollapse(row)) {
+      selectRow(event);
+    }
+  });
 }
 
 renderFilterChips();
