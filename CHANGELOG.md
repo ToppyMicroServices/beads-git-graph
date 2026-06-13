@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Add a dedicated Beads table column for parallel-ready and explicit parallel task markers.
+
 ## [0.1.34] - 2026-06-14
 
 ### Fixed

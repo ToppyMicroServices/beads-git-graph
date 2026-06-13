@@ -127,6 +127,17 @@ export function renderBeadsWebviewHtml(
             ]
               .filter((badge) => badge !== "")
               .join("");
+            const parallelTitle = item.parallelizable
+              ? item.parallelizableSource === "ready"
+                ? "Ready and unblocked; can run alongside other ready tasks."
+                : "Marked as parallelizable."
+              : "Not marked as parallelizable.";
+            const parallelLabel =
+              item.parallelizableSource === "ready" ? "Ready" : item.parallelizable ? "OK" : "";
+            const parallelCell =
+              parallelLabel === ""
+                ? `<span class="parallelEmpty" title="${escapeHtml(parallelTitle)}">-</span>`
+                : `<span class="parallelMarker ${escapeHtml(item.parallelizableSource === "ready" ? "readyParallelMarker" : "explicitParallelMarker")}" title="${escapeHtml(parallelTitle)}">${escapeHtml(parallelLabel)}</span>`;
             const serializedItem = {
               ...item,
               parentId: parentId ?? "",
@@ -134,16 +145,27 @@ export function renderBeadsWebviewHtml(
             };
             const treeWidth = depth > 0 ? depth * 18 : 0;
             const childCount = childCountByParent.get(item.id) ?? 0;
-            const rowClasses = childCount > 0 ? "beadRow hasChildren" : "beadRow";
+            const rowClasses = [
+              "beadRow",
+              childCount > 0 ? "hasChildren" : "",
+              item.parallelizable ? "parallelRow" : "",
+              item.parallelizableSource === "ready"
+                ? "parallelReadyRow"
+                : item.parallelizable
+                  ? "parallelExplicitRow"
+                  : ""
+            ]
+              .filter((className) => className !== "")
+              .join(" ");
             const hierarchyToggle =
               childCount > 0
                 ? `<button class="collapseToggle" type="button" aria-expanded="true" title="Toggle subprojects"><span class="collapseIcon" aria-hidden="true">▾</span></button>`
                 : '<span class="collapseSpacer" aria-hidden="true"></span>';
-            return `<tr class="${rowClasses}" data-id="${escapeHtml(item.id)}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-parent-id="${escapeHtml(parentId ?? "")}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" data-child-count="${childCount}" data-order-index="${orderIndex}" data-guide-columns="${guideColumns.map((value) => (value ? "1" : "0")).join("")}" data-last-sibling="${isLastSibling ? "1" : "0"}" data-status="${escapeHtml(normalizedStatus)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(serializedItem)))}" data-updated-ts="${updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td><div class="titleCell" style="--tree-width:${treeWidth}px">${hierarchyToggle}<div class="titleContent"><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div>${executionBadges === "" ? "" : `<div class="beadMeta">${executionBadges}</div>`}</div></div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
+            return `<tr class="${rowClasses}" data-id="${escapeHtml(item.id)}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-parent-id="${escapeHtml(parentId ?? "")}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" data-child-count="${childCount}" data-order-index="${orderIndex}" data-guide-columns="${guideColumns.map((value) => (value ? "1" : "0")).join("")}" data-last-sibling="${isLastSibling ? "1" : "0"}" data-status="${escapeHtml(normalizedStatus)}" data-parallelizable="${item.parallelizable ? "1" : "0"}" data-parallel-source="${escapeHtml(item.parallelizableSource)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(serializedItem)))}" data-updated-ts="${updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td class="parallelCell">${parallelCell}</td><td><div class="titleCell" style="--tree-width:${treeWidth}px">${hierarchyToggle}<div class="titleContent"><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div>${executionBadges === "" ? "" : `<div class="beadMeta">${executionBadges}</div>`}</div></div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
           })
           .join("");
 
-        return `<section data-workspace-path="${escapeHtml(group.workspacePath)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceSummary">${workspaceSummary}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div></section>`;
+        return `<section data-workspace-path="${escapeHtml(group.workspacePath)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceSummary">${workspaceSummary}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div></section>`;
       })
       .join("");
     const emptyHtml = result.emptyWorkspaces
@@ -231,13 +253,18 @@ table{position:relative;z-index:1;width:100%;border-collapse:separate;border-spa
 th,td{text-align:left;border-bottom:1px solid var(--vscode-panel-border);padding:6px 5px;vertical-align:middle;font-size:13px;}
 tbody tr:last-child td{border-bottom:none;}
 th{position:sticky;top:0;z-index:2;font-weight:700;line-height:18px;padding:6px 5px;opacity:.95;background:var(--vscode-sideBar-background,var(--vscode-editor-background));box-shadow:0 1px 0 var(--vscode-panel-border);}
-th:nth-child(1){width:52px;}th:nth-child(3){width:78px;}th:nth-child(4){width:56px;}th:nth-child(5){width:84px;}
+th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78px;}th:nth-child(5){width:56px;}th:nth-child(6){width:84px;}
 .sortToggle{display:inline-flex;align-items:center;justify-content:flex-start;width:100%;gap:4px;background:transparent;border:none;color:inherit;padding:0;cursor:pointer;font:inherit;}
 .sortToggle:hover{text-decoration:underline;}
 .beadRow{cursor:pointer;transition:background-color .12s ease;}
 .beadRow:hover{background:rgba(128,128,128,.08);}
 .beadRow.selected{background:rgba(59,130,246,.16);}
 .beadRow.selected td:first-child{box-shadow:inset 3px 0 0 var(--vscode-textLink-foreground,#3b82f6);}
+.beadRow.parallelReadyRow td{background:linear-gradient(90deg, rgba(34,197,94,.1), transparent 190px);}
+.parallelCell{text-align:center;}
+.parallelMarker{display:inline-flex;align-items:center;justify-content:center;min-width:42px;min-height:19px;padding:1px 6px;border-radius:999px;border:1px solid rgba(34,197,94,.62);font-size:10px;font-weight:750;line-height:15px;color:var(--vscode-testing-iconPassed, #22c55e);background:rgba(34,197,94,.16);white-space:nowrap;}
+.explicitParallelMarker{border-color:rgba(59,130,246,.62);color:var(--vscode-textLink-foreground, #3b82f6);background:rgba(59,130,246,.14);}
+.parallelEmpty{display:inline-flex;align-items:center;justify-content:center;min-width:42px;color:var(--vscode-descriptionForeground);opacity:.45;font-size:11px;}
 .beadId{font-size:10px;color:var(--vscode-descriptionForeground);margin-bottom:2px;}
 .titleCell{position:relative;display:flex;align-items:flex-start;gap:6px;min-width:0;padding-left:calc(var(--tree-width, 0px) + 4px);}
 .titleContent{min-width:0;flex:1 1 auto;}
@@ -304,13 +331,14 @@ th:nth-child(1){width:52px;}th:nth-child(3){width:78px;}th:nth-child(4){width:56
   .hierarchyOverlay{display:none;}
   table,tbody{display:block;}
   thead{display:none;}
-  .beadRow{display:grid;grid-template-columns:48px minmax(0,1fr) 44px 74px;grid-template-areas:"type title title title" "type status priority updated";gap:4px 6px;padding:7px 6px;border-bottom:1px solid var(--vscode-panel-border);}
+  .beadRow{display:grid;grid-template-columns:48px 56px minmax(0,1fr) 44px 74px;grid-template-areas:"type parallel title title title" "type parallel status priority updated";gap:4px 6px;padding:7px 6px;border-bottom:1px solid var(--vscode-panel-border);}
   .beadRow td{display:flex;align-items:center;min-width:0;border-bottom:none;padding:0;}
   .beadRow td:first-child{grid-area:type;align-items:flex-start;padding-top:2px;}
-  .beadRow td:nth-child(2){grid-area:title;}
-  .beadRow td:nth-child(3){grid-area:status;}
-  .beadRow td:nth-child(4){grid-area:priority;}
-  .beadRow td:nth-child(5){grid-area:updated;justify-content:flex-end;}
+  .beadRow td:nth-child(2){grid-area:parallel;align-items:flex-start;padding-top:2px;}
+  .beadRow td:nth-child(3){grid-area:title;}
+  .beadRow td:nth-child(4){grid-area:status;}
+  .beadRow td:nth-child(5){grid-area:priority;}
+  .beadRow td:nth-child(6){grid-area:updated;justify-content:flex-end;}
   .titleCell{width:100%;padding-left:calc(var(--tree-width, 0px) * .65);}
   .beadTitle{white-space:normal;overflow:hidden;}
   .executionBadge{max-width:132px;}

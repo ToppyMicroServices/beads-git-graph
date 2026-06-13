@@ -27,8 +27,14 @@ describe("beads webview presentation metadata", () => {
   });
 
   it("shows inferred parallel-ready task metadata", () => {
+    expect(beadsWebview).toContain("<th>Parallel</th>");
+    expect(beadsWebview).toContain("parallelCell");
+    expect(beadsWebview).toContain("parallelReadyRow");
+    expect(beadsWebview).toContain("data-parallel-source");
+    expect(beadsWebview).toContain("readyParallelMarker");
     expect(beadsWebview).toContain("Parallel ready");
     expect(beadsWebview).toContain("parallelizableSource");
+    expect(beadsMain).toContain("detailsCell.colSpan = 6");
     expect(beadsMain).toContain("Yes (ready)");
     expect(beadsMain).toContain("Parallel ready");
   });
