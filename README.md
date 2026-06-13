@@ -34,6 +34,14 @@ The Beads view surfaces optional execution hints from issue fields or labels:
 
 These hints are visual metadata. Beads ready/blocking behavior still comes from issue status and dependencies.
 
+Before merging a multi-agent PR, make sure every agent worktree contains the latest base branch:
+
+```bash
+pnpm run worktree-sync:guard -- --base origin/main
+```
+
+The PR CI also runs the guard against the PR head so stale branches fail before merge.
+
 ## Docs
 
 - [Contributing](./CONTRIBUTING.md)
