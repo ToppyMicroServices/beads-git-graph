@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.34] - 2026-06-14
+
 ### Fixed
 
 - Show ready, unblocked Beads tasks as parallel-ready candidates even when no explicit parallel metadata is set.
@@ -254,7 +256,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.33...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.34...HEAD
+[0.1.34]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.33...v0.1.34
 [0.1.33]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.32...v0.1.33
 [0.1.32]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.31...v0.1.32
 [0.1.31]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.30...v0.1.31
