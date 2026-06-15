@@ -14,6 +14,12 @@ import { type BeadLoadResult } from "./beadsViewTypes";
 import { escapeHtml, getNonce } from "./utils";
 
 const BEADS_WEBVIEW_SCRIPT = "beadsWebview.min.js";
+const GRAPH_NODE_WIDTH = 280;
+const GRAPH_NODE_HEIGHT_ESTIMATE = 150;
+const GRAPH_LEVEL_GAP = 96;
+const GRAPH_LANE_GAP = 54;
+const GRAPH_PADDING_X = 44;
+const GRAPH_PADDING_Y = 56;
 
 function renderBeadsDependencyGraph(items: BeadItem[], workspacePath: string) {
   const graph = buildBeadDependencyGraph(items);
@@ -38,11 +44,32 @@ function renderBeadsDependencyGraph(items: BeadItem[], workspacePath: string) {
         `<span class="graphEdge" data-from-id="${escapeHtml(edge.fromId)}" data-to-id="${escapeHtml(edge.toId)}" data-critical="${edge.critical ? "1" : "0"}"></span>`
     )
     .join("");
-  const stageHtml = Array.from({ length: maxLevel + 1 }, (_, level) => {
+  const laneCount = Math.max(1, ...Array.from(nodesByLevel.values()).map((nodes) => nodes.length));
+  const levelCount = maxLevel + 1;
+  const graphWidth =
+    GRAPH_PADDING_X * 2 +
+    levelCount * GRAPH_NODE_WIDTH +
+    Math.max(0, levelCount - 1) * GRAPH_LEVEL_GAP;
+  const graphHeight =
+    GRAPH_PADDING_Y * 2 +
+    laneCount * GRAPH_NODE_HEIGHT_ESTIMATE +
+    Math.max(0, laneCount - 1) * GRAPH_LANE_GAP;
+  const levelGuideHtml = Array.from({ length: levelCount }, (_, level) => {
+    const x = GRAPH_PADDING_X + level * (GRAPH_NODE_WIDTH + GRAPH_LEVEL_GAP) + GRAPH_NODE_WIDTH / 2;
+
+    return `<span class="graphLevelGuide" style="--graph-guide-x:${x}px"><span>L${level + 1}</span></span>`;
+  }).join("");
+  const nodeHtml = Array.from({ length: levelCount }, (_, level) => {
     const nodes = nodesByLevel.get(level) ?? [];
-    const nodeHtml = nodes
-      .map((node) => {
+    const laneOffset =
+      ((laneCount - nodes.length) * (GRAPH_NODE_HEIGHT_ESTIMATE + GRAPH_LANE_GAP)) / 2;
+
+    return nodes
+      .map((node, lane) => {
         const item = node.item;
+        const x = GRAPH_PADDING_X + level * (GRAPH_NODE_WIDTH + GRAPH_LEVEL_GAP);
+        const y =
+          GRAPH_PADDING_Y + laneOffset + lane * (GRAPH_NODE_HEIGHT_ESTIMATE + GRAPH_LANE_GAP);
         const normalizedStatus = normalizeBeadStatus(item.status);
         const normalizedPriority = normalizeBeadPriority(item.priority);
         const normalizedType = normalizeBeadType(item.type);
@@ -69,18 +96,16 @@ function renderBeadsDependencyGraph(items: BeadItem[], workspacePath: string) {
           normalizedStatus === "closed"
             ? "Closed beads cannot be started."
             : "Assign an agent and mark this bead in progress.";
-        return `<div class="graphNode ${node.critical ? "criticalGraphNode" : ""}" data-graph-id="${escapeHtml(item.id)}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${node.critical ? '<span class="criticalBadge">Critical</span>' : ""}</div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${agentLabel === "" ? "" : `<span class="executionBadge agentBadge">Agent ${escapeHtml(agentLabel)}</span>`}</div>${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(agentLabel)}" title="${escapeHtml(assignTitle)}"${assignDisabled}>Assign + Start</button></div></div>`;
+        return `<div class="graphNode ${node.critical ? "criticalGraphNode" : ""}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" style="--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${node.critical ? '<span class="criticalBadge">Critical</span>' : ""}</div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${agentLabel === "" ? "" : `<span class="executionBadge agentBadge">Agent ${escapeHtml(agentLabel)}</span>`}</div>${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(agentLabel)}" title="${escapeHtml(assignTitle)}"${assignDisabled}>Assign + Start</button></div></div>`;
       })
       .join("");
-
-    return `<div class="graphStage" data-graph-level="${level}"><div class="graphStageLabel">L${level + 1}</div>${nodeHtml}</div>`;
   }).join("");
   const criticalSummary =
     graph.criticalPathIds.length > 0
       ? `<span class="summaryPill criticalSummary" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}">${graph.criticalPathIds.length} critical</span>`
       : "";
 
-  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div class="workspaceName">Critical Path</div><div class="workspaceSummary"><span class="summaryPill">${graph.edges.length} deps</span>${criticalSummary}</div></div><div class="graphCanvas">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg><div class="graphGrid" style="--graph-columns:${maxLevel + 1}">${stageHtml}</div></div></div>`;
+  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div class="workspaceName">Critical Path</div><div class="workspaceSummary"><span class="summaryPill">${graph.edges.length} deps</span>${criticalSummary}</div></div><div class="graphCanvas" style="--graph-width:${graphWidth}px;--graph-height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div>`;
 }
 
 export function renderBeadsWebviewHtml(
@@ -417,17 +442,19 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .detailsGrid .key{opacity:.78;font-size:11px;}
 .detailsGrid div:nth-child(2n){min-width:0;overflow-wrap:anywhere;}
 .detailsDescription{margin-top:8px;padding-top:8px;border-top:1px solid var(--vscode-panel-border);white-space:pre-wrap;line-height:1.45;}
-.graphPane{position:relative;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);overflow:auto;padding:8px;}
-.graphHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;position:sticky;left:0;z-index:4;background:var(--vscode-editor-background);}
+.graphPane{position:relative;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);overflow:auto;padding:10px;max-height:calc(100vh - 132px);min-height:360px;}
+.graphHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;position:sticky;top:0;left:0;z-index:4;background:var(--vscode-editor-background);padding-bottom:6px;}
 .criticalSummary{border-color:rgba(236,72,153,.5);color:var(--vscode-charts-pink,#ec4899);}
-.graphCanvas{position:relative;min-width:max-content;padding:4px 2px 8px;}
+.graphCanvas{position:relative;width:max(100%, var(--graph-width, 960px));height:max(620px, var(--graph-height, 620px));background-image:linear-gradient(rgba(128,128,128,.11) 1px, transparent 1px),linear-gradient(90deg, rgba(128,128,128,.11) 1px, transparent 1px);background-size:48px 48px;}
 .dependencyOverlay{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none;overflow:visible;}
 .dependencyPath{fill:none;stroke:rgba(148,163,184,.8);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
 .dependencyPath.criticalDependencyPath{stroke:var(--vscode-charts-pink,#ec4899);stroke-width:2.8;}
-.graphGrid{position:relative;z-index:2;display:grid;grid-template-columns:repeat(var(--graph-columns), minmax(230px,1fr));gap:16px;align-items:start;min-width:100%;}
-.graphStage{display:grid;gap:8px;align-content:start;min-width:230px;}
-.graphStageLabel{font-size:10px;font-weight:700;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0;}
-.graphNode{border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));padding:8px;box-shadow:0 1px 3px rgba(0,0,0,.12);}
+.dependencyArrowHead{fill:rgba(148,163,184,.88);}
+.criticalDependencyArrowHead{fill:var(--vscode-charts-pink,#ec4899);}
+.graphLevelGuide{position:absolute;top:18px;bottom:18px;left:var(--graph-guide-x);z-index:0;border-left:1px dashed rgba(128,128,128,.28);}
+.graphLevelGuide span{position:absolute;top:0;left:8px;font-size:10px;font-weight:700;color:var(--vscode-descriptionForeground);letter-spacing:0;}
+.graphNodes{position:absolute;inset:0;z-index:2;}
+.graphNode{position:absolute;left:var(--graph-x);top:var(--graph-y);width:var(--graph-node-width,280px);border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));padding:8px;box-shadow:0 1px 3px rgba(0,0,0,.12);}
 .graphNode.criticalGraphNode{border-color:rgba(236,72,153,.62);box-shadow:inset 3px 0 0 var(--vscode-charts-pink,#ec4899), 0 1px 3px rgba(0,0,0,.12);}
 .graphNodeTop{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px;}
 .criticalBadge{display:inline-flex;align-items:center;min-height:17px;padding:1px 6px;border-radius:999px;border:1px solid rgba(236,72,153,.55);background:rgba(236,72,153,.14);color:var(--vscode-charts-pink,#ec4899);font-size:10px;font-weight:750;white-space:nowrap;}
@@ -464,8 +491,8 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
   .inlineDetailsRow{display:block;}
   .inlineDetailsRow td{display:block;padding:0 6px 8px;}
   .detailsGrid{grid-template-columns:82px minmax(0,1fr);}
-  .graphGrid{grid-template-columns:repeat(var(--graph-columns), minmax(210px,1fr));gap:12px;}
-  .graphStage{min-width:210px;}
+  .graphPane{max-height:calc(100vh - 118px);min-height:320px;padding:8px;}
+  .graphCanvas{height:max(560px, var(--graph-height, 560px));}
 }
 code{font-family:var(--vscode-editor-font-family);}
 </style>
