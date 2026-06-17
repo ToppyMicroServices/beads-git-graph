@@ -1,14 +1,22 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  beadPickAgent,
+  beadPickDependencyIds,
+  beadPickModel,
+  beadPickParallelizable,
   beadPickParentId,
   beadPickProgress,
+  beadPickSsot,
+  beadPickWorktree,
   beadsAsArray,
   beadShortDate,
   beadStatusLabel,
+  buildBeadDependencyGraph,
   buildBeadHierarchy,
   diffBeadItems,
   extractBeadItems,
+  inferReadyParallelizableItems,
   mergeBeadItems,
   normalizeBeadPriority,
   normalizeBeadStatus,
@@ -67,7 +75,60 @@ describe("toBeadItem", () => {
       createdAt: "2026-03-07T00:00:00Z",
       updatedAt: "2026-03-07T01:00:00Z",
       parentId: "",
+      dependencyIds: [],
+      parallelizable: false,
+      parallelizableSource: "",
+      parallelizableSuppressed: false,
+      agent: "",
+      model: "",
+      ssot: "",
+      worktree: "",
       commitHash: "abcdef1234567"
+    });
+  });
+
+  it("extracts multi-agent execution metadata from fields and labels", () => {
+    expect(
+      toBeadItem({
+        id: "neo-agent-task",
+        title: "Implement shard",
+        issue_type: "task",
+        parallelizable: true,
+        agent: "agent-a",
+        model: "gpt-5-codex",
+        ssot: "AGENTS.md, .beads/issues.jsonl",
+        worktree: "../beads-git-graph-agent-a"
+      })
+    ).toMatchObject({
+      parallelizable: true,
+      parallelizableSource: "explicit",
+      parallelizableSuppressed: false,
+      agent: "agent-a",
+      model: "gpt-5-codex",
+      ssot: "AGENTS.md, .beads/issues.jsonl",
+      worktree: "../beads-git-graph-agent-a"
+    });
+
+    expect(
+      toBeadItem({
+        id: "neo-agent-labels",
+        title: "Implement label shard",
+        labels: [
+          "parallel-ok",
+          "agent:agent-b",
+          "model:gpt-5",
+          "ssot:README.md",
+          "worktree:../beads-git-graph-agent-b"
+        ]
+      })
+    ).toMatchObject({
+      parallelizable: true,
+      parallelizableSource: "explicit",
+      parallelizableSuppressed: false,
+      agent: "agent-b",
+      model: "gpt-5",
+      ssot: "README.md",
+      worktree: "../beads-git-graph-agent-b"
     });
   });
 
@@ -121,7 +182,8 @@ describe("toBeadItem", () => {
         ]
       })
     ).toMatchObject({
-      parentId: "neo-epic"
+      parentId: "neo-epic",
+      dependencyIds: []
     });
   });
 
@@ -139,8 +201,50 @@ describe("toBeadItem", () => {
         ]
       })
     ).toMatchObject({
-      parentId: "neo-late-epic"
+      parentId: "neo-late-epic",
+      dependencyIds: []
     });
+  });
+
+  it("extracts execution dependencies separately from parent-child hierarchy", () => {
+    expect(
+      toBeadItem({
+        id: "neo-blocked",
+        title: "Blocked task",
+        dependencies: [
+          {
+            issue_id: "neo-blocked",
+            depends_on_id: "neo-parent",
+            type: "parent-child"
+          },
+          {
+            issue_id: "neo-blocked",
+            depends_on_id: "neo-blocker",
+            type: "blocks"
+          },
+          {
+            issue_id: "neo-blocked",
+            id: "neo-show-style-blocker",
+            dependency_type: "blocks"
+          }
+        ]
+      })
+    ).toMatchObject({
+      parentId: "neo-parent",
+      dependencyIds: ["neo-blocker", "neo-show-style-blocker"]
+    });
+  });
+
+  it("reads direct dependency id fields", () => {
+    expect(
+      beadPickDependencyIds(
+        {
+          blocked_by: "neo-a, neo-b",
+          dependsOn: ["neo-c", "neo-a"]
+        },
+        "neo-c"
+      )
+    ).toEqual(["neo-a", "neo-b"]);
   });
 });
 
@@ -313,6 +417,154 @@ describe("buildBeadHierarchy", () => {
       changed: [{ id: "neo-sync-a", fields: ["status"] }]
     });
   });
+
+  it("preserves execution metadata from issues.jsonl when CLI rows omit it", () => {
+    const cliItems = extractBeadItems([
+      {
+        id: "neo-agent-task",
+        title: "Task from CLI",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:00:00Z"
+      }
+    ]);
+    const jsonlItems = extractBeadItems([
+      {
+        id: "neo-agent-task",
+        title: "Task from CLI",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:00:00Z",
+        parallelizable: true,
+        agent: "agent-a",
+        model: "gpt-5-codex",
+        ssot: "AGENTS.md, .beads/issues.jsonl",
+        worktree: "../beads-git-graph-agent-a"
+      }
+    ]);
+
+    expect(mergeBeadItems(cliItems, jsonlItems)[0]).toMatchObject({
+      parallelizable: true,
+      parallelizableSource: "explicit",
+      agent: "agent-a",
+      model: "gpt-5-codex",
+      ssot: "AGENTS.md, .beads/issues.jsonl",
+      worktree: "../beads-git-graph-agent-a"
+    });
+  });
+
+  it("preserves dependency metadata from issues.jsonl when CLI rows omit it", () => {
+    const cliItems = extractBeadItems([
+      {
+        id: "neo-dependent",
+        title: "Dependent",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:00:00Z"
+      }
+    ]);
+    const jsonlItems = extractBeadItems([
+      {
+        id: "neo-dependent",
+        title: "Dependent",
+        issue_type: "task",
+        updated_at: "2026-03-10T00:00:00Z",
+        dependencies: [{ depends_on_id: "neo-blocker", type: "blocks" }]
+      }
+    ]);
+
+    expect(mergeBeadItems(cliItems, jsonlItems)[0]).toMatchObject({
+      dependencyIds: ["neo-blocker"]
+    });
+  });
+
+  it("builds a dependency graph with a critical path", () => {
+    const items = extractBeadItems([
+      { id: "neo-a", title: "A", issue_type: "task" },
+      {
+        id: "neo-b",
+        title: "B",
+        issue_type: "task",
+        dependencies: [{ depends_on_id: "neo-a", type: "blocks" }]
+      },
+      {
+        id: "neo-c",
+        title: "C",
+        issue_type: "task",
+        dependencies: [{ depends_on_id: "neo-b", type: "blocks" }]
+      },
+      {
+        id: "neo-side",
+        title: "Side",
+        issue_type: "task",
+        dependencies: [{ depends_on_id: "neo-a", type: "blocks" }]
+      }
+    ]);
+
+    const graph = buildBeadDependencyGraph(items);
+    const nodesById = new Map(graph.nodes.map((node) => [node.item.id, node]));
+
+    expect(graph.criticalPathIds).toEqual(["neo-a", "neo-b", "neo-c"]);
+    expect(nodesById.get("neo-a")).toMatchObject({ level: 0, critical: true });
+    expect(nodesById.get("neo-b")).toMatchObject({ level: 1, critical: true });
+    expect(nodesById.get("neo-c")).toMatchObject({ level: 2, critical: true });
+    expect(nodesById.get("neo-side")).toMatchObject({ level: 1, critical: false });
+    expect(graph.edges).toContainEqual({
+      fromId: "neo-b",
+      toId: "neo-c",
+      critical: true
+    });
+  });
+
+  it("marks multiple ready unblocked tasks as parallel candidates", () => {
+    const items = extractBeadItems([
+      {
+        id: "neo-ready-a",
+        title: "Ready A",
+        issue_type: "task",
+        status: "open"
+      },
+      {
+        id: "neo-ready-b",
+        title: "Ready B",
+        issue_type: "task",
+        status: "open"
+      },
+      {
+        id: "neo-blocked",
+        title: "Blocked",
+        issue_type: "task",
+        status: "blocked"
+      },
+      {
+        id: "neo-serial",
+        title: "Serial",
+        issue_type: "task",
+        status: "open",
+        labels: ["no-parallel"]
+      }
+    ]);
+
+    const inferred = inferReadyParallelizableItems(
+      items,
+      new Set(["neo-ready-a", "neo-ready-b", "neo-serial"])
+    );
+    const byId = new Map(inferred.map((item) => [item.id, item]));
+
+    expect(byId.get("neo-ready-a")).toMatchObject({
+      parallelizable: true,
+      parallelizableSource: "ready"
+    });
+    expect(byId.get("neo-ready-b")).toMatchObject({
+      parallelizable: true,
+      parallelizableSource: "ready"
+    });
+    expect(byId.get("neo-blocked")).toMatchObject({
+      parallelizable: false,
+      parallelizableSource: ""
+    });
+    expect(byId.get("neo-serial")).toMatchObject({
+      parallelizable: false,
+      parallelizableSuppressed: true
+    });
+  });
 });
 
 describe("bead normalization helpers", () => {
@@ -326,6 +578,17 @@ describe("bead normalization helpers", () => {
     expect(
       beadPickParentId({ dependencies: [{ depends_on_id: "neo-parent", type: "blocks" }] })
     ).toBe("");
+  });
+
+  it("reads parallel, model, ssot, agent, and worktree hints from direct fields or labels", () => {
+    expect(beadPickParallelizable({ parallel: "yes" })).toBe(true);
+    expect(beadPickParallelizable({ labels: ["sequential", "parallel-ok"] })).toBe(false);
+    expect(beadPickAgent({ labels: ["agent:agent-a"] })).toBe("agent-a");
+    expect(beadPickModel({ metadata: { model: "gpt-5-codex" } })).toBe("gpt-5-codex");
+    expect(beadPickModel({ labels: ["model:gpt-5"] })).toBe("gpt-5");
+    expect(beadPickSsot({ metadata: '{"ssot":"AGENTS.md"}' })).toBe("AGENTS.md");
+    expect(beadPickSsot({ tags: ["context:README.md"] })).toBe("README.md");
+    expect(beadPickWorktree({ tags: ["wt:../repo-agent-a"] })).toBe("../repo-agent-a");
   });
 
   it("extracts progress percentages from direct fields or notes", () => {
