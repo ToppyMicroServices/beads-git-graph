@@ -20,7 +20,9 @@ describe("isBeadsRequestMessage", () => {
         issueId: "neo-1",
         workspacePath: "/tmp/demo",
         title: "Demo",
-        agent: "agent-a"
+        agent: "gpt-5-codex",
+        model: "gpt-5-codex",
+        ssot: "AGENTS.md, .beads/issues.jsonl"
       })
     ).toBe(true);
   });
@@ -37,7 +39,7 @@ describe("isBeadsRequestMessage", () => {
         command: "assignStartBead",
         issueId: "neo-1",
         workspacePath: "/tmp/demo",
-        agent: 1234
+        model: 1234
       })
     ).toBe(false);
     expect(isBeadsRequestMessage({ command: "unknown" })).toBe(false);

@@ -2,6 +2,8 @@ import type { BeadsRequestMessage } from "../src/beadsProtocol";
 
 declare function acquireVsCodeApi(): {
   postMessage(message: BeadsRequestMessage): void;
+  getState(): BeadsWebviewState | undefined;
+  setState(state: BeadsWebviewState): void;
 };
 
 type SortKey = "updated" | "type" | "priority";
@@ -9,6 +11,10 @@ type StatusFilter = "open" | "in_progress" | "blocked" | "closed" | "other";
 type ViewMode = "table" | "graph";
 type BeadRow = HTMLTableRowElement & { dataset: DOMStringMap };
 type BeadSection = HTMLElement & { dataset: DOMStringMap };
+type BeadsWebviewState = {
+  viewMode?: ViewMode;
+  [key: string]: unknown;
+};
 
 interface BeadRowItem {
   id: string;
@@ -30,6 +36,8 @@ interface BeadRowItem {
   parallelizable: boolean;
   parallelizableSource: "explicit" | "ready" | "";
   agent: string;
+  model: string;
+  ssot: string;
   worktree: string;
 }
 
@@ -57,7 +65,7 @@ let expandedDetailsRow: HTMLTableRowElement | null = null;
 let contextMenuRow: BeadRow | null = null;
 let contextMenuWorkspacePath = "";
 let sortState: { key: SortKey; desc: boolean } = { key: "updated", desc: true };
-let activeViewMode: ViewMode = "table";
+let activeViewMode: ViewMode = normalizeViewMode(vscode.getState()?.viewMode);
 let rowClickTimer: number | null = null;
 const collapsedIds = new Set<string>();
 
@@ -86,6 +94,22 @@ function queryElement<T extends Element>(selector: string) {
     throw new Error(`Missing required element: ${selector}`);
   }
   return element;
+}
+
+function normalizeViewMode(value: unknown): ViewMode {
+  return value === "graph" ? "graph" : "table";
+}
+
+function saveViewMode(mode: ViewMode) {
+  vscode.setState({
+    ...vscode.getState(),
+    viewMode: mode
+  });
+}
+
+function normalizeOptionalDatasetValue(value: string | undefined) {
+  const trimmedValue = value?.trim();
+  return trimmedValue ? trimmedValue : undefined;
 }
 
 function decodeRowItem(row: BeadRow): BeadRowItem | null {
@@ -238,6 +262,8 @@ function renderDetailsMarkup(item: BeadRowItem) {
       : item.status === "in_progress" && item.assignee !== "" && item.assignee !== "-"
         ? item.assignee
         : "-";
+  const model = item.model !== "" ? item.model : agent;
+  const ssot = item.ssot !== "" ? item.ssot : "-";
   const worktree = item.worktree !== "" ? item.worktree : "-";
   const executionPills = [
     item.status !== "" ? `<span class="detailPill">Status ${escapeHtml(item.status)}</span>` : "",
@@ -247,7 +273,8 @@ function renderDetailsMarkup(item: BeadRowItem) {
     item.parallelizable
       ? `<span class="detailPill">${escapeHtml(item.parallelizableSource === "ready" ? "Parallel ready" : "Parallel OK")}</span>`
       : "",
-    agent !== "-" ? `<span class="detailPill">Agent ${escapeHtml(agent)}</span>` : "",
+    model !== "-" ? `<span class="detailPill">Model ${escapeHtml(model)}</span>` : "",
+    ssot !== "-" ? `<span class="detailPill">SSOT ${escapeHtml(ssot)}</span>` : "",
     item.worktree !== "" ? `<span class="detailPill">WT ${escapeHtml(item.worktree)}</span>` : ""
   ]
     .filter((pill) => pill !== "")
@@ -264,7 +291,8 @@ function renderDetailsMarkup(item: BeadRowItem) {
     `<div class="key">Priority</div><div>${escapeHtml(item.priority || "-")}</div>` +
     `<div class="key">Assignee</div><div>${escapeHtml(item.assignee || "-")}</div>` +
     `<div class="key">Parallel</div><div>${escapeHtml(parallel)}</div>` +
-    `<div class="key">Agent</div><div>${escapeHtml(agent)}</div>` +
+    `<div class="key">AI Model</div><div>${escapeHtml(model)}</div>` +
+    `<div class="key">SSOT / Context</div><div>${escapeHtml(ssot)}</div>` +
     `<div class="key">Worktree</div><div>${escapeHtml(worktree)}</div>` +
     `<div class="key">Labels</div><div>${escapeHtml(item.labels || "-")}</div>` +
     `<div class="key">Created</div><div>${escapeHtml(item.createdAt || "-")}</div>` +
@@ -388,6 +416,7 @@ function applyFilters() {
 
 function applyViewMode(mode: ViewMode) {
   activeViewMode = mode;
+  saveViewMode(mode);
   document.body.dataset.viewMode = mode;
   tableViewButton.classList.toggle("active", mode === "table");
   graphViewButton.classList.toggle("active", mode === "graph");
@@ -593,7 +622,9 @@ function refreshGraphNodeVisibility() {
 }
 
 function renderDependencyGraphOverlays() {
-  for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
+  for (const [paneIndex, pane] of Array.from(
+    document.querySelectorAll<HTMLElement>(".graphPane")
+  ).entries()) {
     const overlay = pane.querySelector<SVGElement>(".dependencyOverlay");
     const canvas = pane.querySelector<HTMLElement>(".graphCanvas");
     if (overlay === null || canvas === null) {
@@ -616,6 +647,9 @@ function renderDependencyGraphOverlays() {
         .filter((node) => node.style.display !== "none")
         .map((node) => [node.dataset.graphId || "", node])
     );
+    const markerId = `dependencyArrow-${paneIndex}`;
+    const criticalMarkerId = `criticalDependencyArrow-${paneIndex}`;
+    const markerDefs = `<defs><marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="dependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${criticalMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto"><path class="criticalDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker></defs>`;
     let paths = "";
     for (const edge of Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge"))) {
       const fromNode = nodesById.get(edge.dataset.fromId || "");
@@ -636,9 +670,10 @@ function renderDependencyGraphOverlays() {
           ? `M${x1.toFixed(1)} ${y1.toFixed(1)} C${(x1 + gap).toFixed(1)} ${y1.toFixed(1)} ${(x2 - gap).toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`
           : `M${x1.toFixed(1)} ${y1.toFixed(1)} C${(x1 + gap).toFixed(1)} ${y1.toFixed(1)} ${(x1 + gap).toFixed(1)} ${(y1 + y2) / 2} ${(x1 + 12).toFixed(1)} ${(y1 + y2) / 2} S${(x2 - gap).toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
       const criticalClass = edge.dataset.critical === "1" ? " criticalDependencyPath" : "";
-      paths += `<path class="dependencyPath${criticalClass}" d="${d}" />`;
+      const arrowId = edge.dataset.critical === "1" ? criticalMarkerId : markerId;
+      paths += `<path class="dependencyPath${criticalClass}" marker-end="url(#${arrowId})" d="${d}" />`;
     }
-    overlay.innerHTML = paths;
+    overlay.innerHTML = markerDefs + paths;
   }
 }
 
@@ -745,7 +780,9 @@ for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".a
       issueId,
       workspacePath,
       title: button.dataset.assignStartTitle || "",
-      agent: button.dataset.assignStartAgent || ""
+      agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent),
+      model: normalizeOptionalDatasetValue(button.dataset.assignStartModel),
+      ssot: normalizeOptionalDatasetValue(button.dataset.assignStartSsot)
     });
   });
 }
@@ -812,6 +849,6 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
 }
 
 renderFilterChips();
-applyViewMode("table");
+applyViewMode(activeViewMode);
 applySort();
 applyFilters();

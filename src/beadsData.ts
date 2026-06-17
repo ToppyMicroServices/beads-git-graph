@@ -18,6 +18,8 @@ export interface BeadItem {
   parallelizableSource: "explicit" | "ready" | "";
   parallelizableSuppressed: boolean;
   agent: string;
+  model: string;
+  ssot: string;
   worktree: string;
 }
 
@@ -150,6 +152,36 @@ function beadPickStringFromTokens(record: Record<string, unknown>, prefixes: str
   return "";
 }
 
+function beadPickStructuredString(
+  record: Record<string, unknown>,
+  keys: string[],
+  tokenPrefixes: string[]
+) {
+  const direct = beadPickString(record, keys, "");
+  if (direct !== "") {
+    return direct;
+  }
+
+  const metadata = record.metadata;
+  if (typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)) {
+    const metadataValue = beadPickString(metadata as Record<string, unknown>, keys);
+    if (metadataValue !== "") {
+      return metadataValue;
+    }
+  }
+  if (typeof metadata === "string" && metadata.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(metadata) as Record<string, unknown>;
+      const metadataValue = beadPickString(parsed, keys);
+      if (metadataValue !== "") {
+        return metadataValue;
+      }
+    } catch {}
+  }
+
+  return beadPickStringFromTokens(record, tokenPrefixes);
+}
+
 export function beadPickParallelizable(record: Record<string, unknown>) {
   return beadPickParallelizablePreference(record) === "yes";
 }
@@ -194,45 +226,34 @@ export function beadPickParallelizablePreference(record: Record<string, unknown>
 }
 
 export function beadPickAgent(record: Record<string, unknown>) {
-  const direct = beadPickString(
+  return beadPickStructuredString(
     record,
     ["agent", "agent_id", "agentId", "assigned_agent", "assignedAgent"],
-    ""
+    ["agent", "agent-id", "assigned-agent"]
   );
-  if (direct !== "") {
-    return direct;
-  }
+}
 
-  const metadata = record.metadata;
-  if (typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)) {
-    const metadataAgent = beadPickString(metadata as Record<string, unknown>, [
-      "agent",
-      "agent_id",
-      "agentId",
-      "assigned_agent",
-      "assignedAgent"
-    ]);
-    if (metadataAgent !== "") {
-      return metadataAgent;
-    }
-  }
-  if (typeof metadata === "string" && metadata.trim().startsWith("{")) {
-    try {
-      const parsed = JSON.parse(metadata) as Record<string, unknown>;
-      const metadataAgent = beadPickString(parsed, [
-        "agent",
-        "agent_id",
-        "agentId",
-        "assigned_agent",
-        "assignedAgent"
-      ]);
-      if (metadataAgent !== "") {
-        return metadataAgent;
-      }
-    } catch {}
-  }
+export function beadPickModel(record: Record<string, unknown>) {
+  return beadPickStructuredString(
+    record,
+    ["model", "ai_model", "aiModel", "agent_model", "agentModel"],
+    ["model", "ai-model", "agent-model"]
+  );
+}
 
-  return beadPickStringFromTokens(record, ["agent", "agent-id", "assigned-agent"]);
+export function beadPickSsot(record: Record<string, unknown>) {
+  return beadPickStructuredString(
+    record,
+    [
+      "ssot",
+      "context",
+      "reference_context",
+      "referenceContext",
+      "source_of_truth",
+      "sourceOfTruth"
+    ],
+    ["ssot", "context", "source-of-truth"]
+  );
 }
 
 export function beadPickWorktree(record: Record<string, unknown>) {
@@ -444,6 +465,8 @@ export function toBeadItem(item: unknown): BeadItem | null {
     parallelizableSource: parallelizablePreference === "yes" ? "explicit" : "",
     parallelizableSuppressed: parallelizablePreference === "no",
     agent: beadPickAgent(record),
+    model: beadPickModel(record),
+    ssot: beadPickSsot(record),
     worktree: beadPickWorktree(record),
     commitHash: beadPickString(record, ["commitHash", "commit_hash", "commit"], "")
   };
@@ -585,6 +608,8 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
       parallelizableSuppressed:
         !parallelizable && (item.parallelizableSuppressed || fallback.parallelizableSuppressed),
       agent: item.agent.trim() !== "" ? item.agent : fallback.agent,
+      model: item.model.trim() !== "" ? item.model : fallback.model,
+      ssot: item.ssot.trim() !== "" ? item.ssot : fallback.ssot,
       worktree: item.worktree.trim() !== "" ? item.worktree : fallback.worktree
     };
   });
@@ -745,6 +770,8 @@ export function diffBeadItems(
     "parallelizable",
     "parallelizableSuppressed",
     "agent",
+    "model",
+    "ssot",
     "worktree",
     "commitHash"
   ];

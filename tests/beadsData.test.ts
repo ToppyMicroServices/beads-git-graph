@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   beadPickAgent,
   beadPickDependencyIds,
+  beadPickModel,
   beadPickParallelizable,
   beadPickParentId,
   beadPickProgress,
+  beadPickSsot,
   beadPickWorktree,
   beadsAsArray,
   beadShortDate,
@@ -78,6 +80,8 @@ describe("toBeadItem", () => {
       parallelizableSource: "",
       parallelizableSuppressed: false,
       agent: "",
+      model: "",
+      ssot: "",
       worktree: "",
       commitHash: "abcdef1234567"
     });
@@ -91,6 +95,8 @@ describe("toBeadItem", () => {
         issue_type: "task",
         parallelizable: true,
         agent: "agent-a",
+        model: "gpt-5-codex",
+        ssot: "AGENTS.md, .beads/issues.jsonl",
         worktree: "../beads-git-graph-agent-a"
       })
     ).toMatchObject({
@@ -98,6 +104,8 @@ describe("toBeadItem", () => {
       parallelizableSource: "explicit",
       parallelizableSuppressed: false,
       agent: "agent-a",
+      model: "gpt-5-codex",
+      ssot: "AGENTS.md, .beads/issues.jsonl",
       worktree: "../beads-git-graph-agent-a"
     });
 
@@ -105,13 +113,21 @@ describe("toBeadItem", () => {
       toBeadItem({
         id: "neo-agent-labels",
         title: "Implement label shard",
-        labels: ["parallel-ok", "agent:agent-b", "worktree:../beads-git-graph-agent-b"]
+        labels: [
+          "parallel-ok",
+          "agent:agent-b",
+          "model:gpt-5",
+          "ssot:README.md",
+          "worktree:../beads-git-graph-agent-b"
+        ]
       })
     ).toMatchObject({
       parallelizable: true,
       parallelizableSource: "explicit",
       parallelizableSuppressed: false,
       agent: "agent-b",
+      model: "gpt-5",
+      ssot: "README.md",
       worktree: "../beads-git-graph-agent-b"
     });
   });
@@ -419,6 +435,8 @@ describe("buildBeadHierarchy", () => {
         updated_at: "2026-03-10T00:00:00Z",
         parallelizable: true,
         agent: "agent-a",
+        model: "gpt-5-codex",
+        ssot: "AGENTS.md, .beads/issues.jsonl",
         worktree: "../beads-git-graph-agent-a"
       }
     ]);
@@ -427,6 +445,8 @@ describe("buildBeadHierarchy", () => {
       parallelizable: true,
       parallelizableSource: "explicit",
       agent: "agent-a",
+      model: "gpt-5-codex",
+      ssot: "AGENTS.md, .beads/issues.jsonl",
       worktree: "../beads-git-graph-agent-a"
     });
   });
@@ -560,10 +580,14 @@ describe("bead normalization helpers", () => {
     ).toBe("");
   });
 
-  it("reads parallel, agent, and worktree hints from direct fields or labels", () => {
+  it("reads parallel, model, ssot, agent, and worktree hints from direct fields or labels", () => {
     expect(beadPickParallelizable({ parallel: "yes" })).toBe(true);
     expect(beadPickParallelizable({ labels: ["sequential", "parallel-ok"] })).toBe(false);
     expect(beadPickAgent({ labels: ["agent:agent-a"] })).toBe("agent-a");
+    expect(beadPickModel({ metadata: { model: "gpt-5-codex" } })).toBe("gpt-5-codex");
+    expect(beadPickModel({ labels: ["model:gpt-5"] })).toBe("gpt-5");
+    expect(beadPickSsot({ metadata: '{"ssot":"AGENTS.md"}' })).toBe("AGENTS.md");
+    expect(beadPickSsot({ tags: ["context:README.md"] })).toBe("README.md");
     expect(beadPickWorktree({ tags: ["wt:../repo-agent-a"] })).toBe("../repo-agent-a");
   });
 
