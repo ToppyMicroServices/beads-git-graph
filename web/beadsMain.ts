@@ -801,7 +801,7 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
       return;
     }
 
-        if (selectedRow === row) {
+    if (selectedRow === row) {
       clearSelectedRow();
       return;
     }
