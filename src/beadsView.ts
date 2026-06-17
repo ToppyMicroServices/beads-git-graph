@@ -6,8 +6,8 @@ import * as vscode from "vscode";
 
 import {
   type BeadItem,
-  deriveParallelMergeItems,
   beadsAsArray,
+  deriveParallelMergeItems,
   diffBeadItems,
   extractBeadItems,
   inferReadyParallelizableItems,
