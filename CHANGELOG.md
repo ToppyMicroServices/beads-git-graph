@@ -2,14 +2,48 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-14
+
 ### Changed
 
+- Promote the stable release version above the daily prerelease series so VS Marketplace shows the critical path graph release as current.
+
+## [0.1.36] - 2026-06-14
+
+### Added
+
+- Add a Beads critical path graph view with dependency edges and Assign + Start task actions.
+
+## [0.1.35] - 2026-06-14
+
+### Changed
+
+- Add a dedicated Beads table column for parallel-ready and explicit parallel task markers.
+
+## [0.1.34] - 2026-06-14
+
+### Fixed
+
+- Show ready, unblocked Beads tasks as parallel-ready candidates even when no explicit parallel metadata is set.
+
+## [0.1.33] - 2026-06-13
+
+### Added
+
+- Show optional parallel, agent, and worktree hints directly in Beads task rows and details.
+- Add a worktree sync guard for checking stale multi-agent PR or agent worktrees before merge.
+
+### Changed
+
+- Polish the Beads task screen with workspace summary pills, clearer row styling, responsive compact rows, and richer inline details.
 - Move the daily automation order so prerelease packaging runs before safe-update merging and backlog reporting
 - Make workflow-dispatched CI skip cross-platform smoke unless explicitly requested, so daily automation PR checks stay lightweight
 - Cut recurring GitHub Actions cost by making cross-platform smoke manual-only, moving CodeQL to a weekly cadence, and skipping daily prerelease packaging when nothing changed since the latest stable tag
 
 ### Fixed
 
+- Make EPIC double-click toggle subprojects instead of opening a stale details row.
+- Smooth Beads hierarchy guide lines so parent-child guides do not appear broken between rows.
 - Format the generated changelog before the daily changelog PR is committed, preventing the daily CI dispatch from failing on `CHANGELOG.md`
 - Publish the daily prerelease VSIX directly to Open VSX and VS Marketplace, and keep the stable `publish` workflow from re-running on `daily-*` tags
 
@@ -240,7 +274,12 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.32...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.36...v0.3.0
+[0.1.36]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.35...v0.1.36
+[0.1.35]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.34...v0.1.35
+[0.1.34]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.33...v0.1.34
+[0.1.33]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.32...v0.1.33
 [0.1.32]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.31...v0.1.32
 [0.1.31]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.30...v0.1.31
 [0.1.30]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.29...v0.1.30

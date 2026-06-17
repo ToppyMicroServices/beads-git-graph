@@ -1,4 +1,5 @@
 import * as cp from "node:child_process";
+import * as fs from "node:fs";
 import * as path from "node:path";
 
 import * as vscode from "vscode";
@@ -8,11 +9,12 @@ import {
   beadsAsArray,
   diffBeadItems,
   extractBeadItems,
+  inferReadyParallelizableItems,
   mergeBeadItems,
   toBeadItem
 } from "./beadsData";
 import { isBeadsRequestMessage } from "./beadsProtocol";
-import { syncBeadsWorkspace } from "./beadsSync";
+import { flushBeadsWorkspace, syncBeadsWorkspace } from "./beadsSync";
 import {
   type BeadGroup,
   type BeadLoadResult,
@@ -29,6 +31,17 @@ import { GitGraphView } from "./gitGraphView";
 type CreateBeadType = "task" | "feature" | "bug" | "epic" | "chore";
 type CreateBeadStatus = "open" | "in_progress" | "blocked" | "closed";
 type CreateBeadPriority = "P0" | "P1" | "P2" | "P3" | "P4";
+const DEFAULT_ASSIGN_MODEL = "gpt-5-codex";
+const ASSIGN_MODEL_OPTIONS = [DEFAULT_ASSIGN_MODEL, "gpt-5", "codex"];
+const ASSIGN_CONTEXT_CANDIDATES = [
+  "AGENTS.md",
+  ".codex",
+  ".agents",
+  ".beads/issues.jsonl",
+  "README.md",
+  "CONTRIBUTING.md",
+  "docs"
+];
 
 export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   public static readonly viewType = "beads-git-graph.beadsView";
@@ -406,14 +419,166 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
       try {
         await this.runBdCommand(["close", issueId], workspacePath);
-        await this.runBdCommand(["sync", "--flush-only"], workspacePath);
+        await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
         await this.refresh();
         vscode.window.showInformationMessage(`Closed bead ${issueId}.`);
       } catch (error) {
         const messageText = error instanceof Error ? error.message : "Unable to close bead.";
         vscode.window.showErrorMessage(messageText);
       }
+      return;
     }
+
+    if (
+      message.command === "assignStartBead" &&
+      typeof message.issueId === "string" &&
+      typeof message.workspacePath === "string"
+    ) {
+      const issueId = message.issueId.trim();
+      const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath.trim());
+      if (issueId === "" || workspacePath === null) {
+        if (workspacePath === null) {
+          vscode.window.showWarningMessage(
+            "Refusing to update a bead outside an initialized workspace folder."
+          );
+        }
+        return;
+      }
+
+      try {
+        await this.promptAssignAndStartBead(
+          workspacePath,
+          issueId,
+          message.title,
+          message.model?.trim() || message.agent,
+          message.ssot
+        );
+      } catch (error) {
+        const messageText =
+          error instanceof Error ? error.message : "Unable to assign and start bead.";
+        vscode.window.showErrorMessage(messageText);
+      }
+    }
+  }
+
+  private async promptAssignAndStartBead(
+    workspacePath: string,
+    issueId: string,
+    title: string | undefined,
+    currentModel: string | undefined,
+    currentSsot: string | undefined
+  ) {
+    const model = await this.pickAssignModel(currentModel);
+    if (model === undefined) {
+      return;
+    }
+
+    const ssot = await this.confirmAssignContext(workspacePath, issueId, title, model, currentSsot);
+    if (ssot === undefined) {
+      return;
+    }
+
+    await this.runBdCommand(["assign", issueId, model], workspacePath);
+    await this.runBdCommand(
+      [
+        "update",
+        issueId,
+        "--status",
+        "in_progress",
+        "--set-metadata",
+        `agent=${model}`,
+        "--set-metadata",
+        `model=${model}`,
+        "--set-metadata",
+        `ssot=${ssot}`
+      ],
+      workspacePath
+    );
+    await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
+    await this.refresh();
+    vscode.window.showInformationMessage(
+      `Started ${issueId} with ${model}. SSOT/context recorded.`
+    );
+  }
+
+  private async pickAssignModel(currentModel: string | undefined) {
+    const trimmedCurrent = currentModel?.trim() ?? "";
+    const options = [
+      ...new Set([trimmedCurrent, ...ASSIGN_MODEL_OPTIONS].filter((model) => model !== ""))
+    ];
+    const picked = await vscode.window.showQuickPick(
+      [
+        ...options.map((model, index) => ({
+          label: model,
+          description: index === 0 && trimmedCurrent !== "" ? "current" : "model"
+        })),
+        { label: "Custom...", description: "enter another model id" }
+      ],
+      {
+        title: "Assign AI Model",
+        placeHolder: "Choose the model that will work on this bead",
+        ignoreFocusOut: true
+      }
+    );
+    if (picked === undefined) {
+      return undefined;
+    }
+    if (picked.label !== "Custom...") {
+      return picked.label;
+    }
+
+    const customModel = await vscode.window.showInputBox({
+      title: "Assign AI Model",
+      prompt: "Model id",
+      value: trimmedCurrent || DEFAULT_ASSIGN_MODEL,
+      placeHolder: DEFAULT_ASSIGN_MODEL,
+      ignoreFocusOut: true,
+      validateInput: (value) => (value.trim() === "" ? "Model is required." : undefined)
+    });
+
+    return customModel?.trim();
+  }
+
+  private async confirmAssignContext(
+    workspacePath: string,
+    issueId: string,
+    title: string | undefined,
+    model: string,
+    currentSsot: string | undefined
+  ) {
+    const suggestedSsot = currentSsot?.trim() || this.inferAssignSsot(workspacePath, issueId);
+    const detail = `${issueId}${title ? `: ${title}` : ""}\nModel: ${model}\nSSOT/context: ${suggestedSsot}`;
+    const confirmation = await vscode.window.showInformationMessage(
+      "Start AI work with this model and SSOT/context?",
+      { modal: true, detail },
+      "Start",
+      "Edit Context"
+    );
+    if (confirmation === undefined) {
+      return undefined;
+    }
+    if (confirmation === "Start") {
+      return suggestedSsot;
+    }
+
+    const editedSsot = await vscode.window.showInputBox({
+      title: "SSOT / Context",
+      prompt: "Source of truth or context the AI should use",
+      value: suggestedSsot,
+      ignoreFocusOut: true,
+      validateInput: (value) =>
+        value.trim() === "" ? "SSOT/context is required for AI assignment." : undefined
+    });
+
+    return editedSsot?.trim();
+  }
+
+  private inferAssignSsot(workspacePath: string, issueId: string) {
+    const references = ASSIGN_CONTEXT_CANDIDATES.filter((candidate) =>
+      fs.existsSync(path.join(workspacePath, candidate))
+    );
+
+    return [`bd:${issueId}`, ...references].join(", ");
   }
 
   private async promptAndCreateBead(workspacePath: string) {
@@ -539,7 +704,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       await this.runBdCommand(["update", bead.id, "--status", values.status], workspacePath);
     }
 
-    await this.runBdCommand(["sync", "--flush-only"], workspacePath);
+    await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
     return bead;
   }
 
@@ -702,6 +867,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const stdout = await this.runBdCommand(["list", "--json", "--limit", "0", "--all"], cwd);
     const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
     const cliItems = extractBeadItems(parsed);
+    const warnings: BeadWarning[] = [];
+    const readyItemIds = await this.loadReadyItemIds(cwd, warnings);
     const itemsNeedingParentLookup = new Set<string>(
       beadsAsArray(parsed)
         .map((item) => {
@@ -722,7 +889,6 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         })
         .filter((id): id is string => id !== null)
     );
-    const warnings: BeadWarning[] = [];
 
     try {
       const issueFileUri = vscode.Uri.file(path.join(cwd, ".beads", "issues.jsonl"));
@@ -778,17 +944,41 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         });
       }
 
-      return { items: mergedItems, warnings };
+      return { items: inferReadyParallelizableItems(mergedItems, readyItemIds), warnings };
     } catch {
       const missingParentIds = cliItems
         .filter((item) => item.parentId.trim() === "" && itemsNeedingParentLookup.has(item.id))
         .map((item) => item.id);
       if (missingParentIds.length === 0) {
-        return { items: cliItems, warnings };
+        return { items: inferReadyParallelizableItems(cliItems, readyItemIds), warnings };
       }
 
       const parentLookupItems = await this.loadBdShowItems(missingParentIds, cwd);
-      return { items: mergeBeadItems(cliItems, parentLookupItems), warnings };
+      return {
+        items: inferReadyParallelizableItems(
+          mergeBeadItems(cliItems, parentLookupItems),
+          readyItemIds
+        ),
+        warnings
+      };
+    }
+  }
+
+  private async loadReadyItemIds(cwd: string, warnings: BeadWarning[]) {
+    try {
+      const stdout = await this.runBdCommand(["ready", "--json"], cwd);
+      const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
+      return new Set(extractBeadItems(parsed).map((item) => item.id));
+    } catch (error) {
+      warnings.push({
+        source: path.join(cwd, ".beads"),
+        workspacePath: cwd,
+        message:
+          error instanceof Error
+            ? `Unable to infer parallel-ready tasks from bd ready: ${error.message}`
+            : "Unable to infer parallel-ready tasks from bd ready."
+      });
+      return new Set<string>();
     }
   }
 

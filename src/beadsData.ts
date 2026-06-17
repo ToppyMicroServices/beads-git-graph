@@ -13,6 +13,14 @@ export interface BeadItem {
   labels: string;
   createdAt: string;
   parentId: string;
+  dependencyIds: string[];
+  parallelizable: boolean;
+  parallelizableSource: "explicit" | "ready" | "";
+  parallelizableSuppressed: boolean;
+  agent: string;
+  model: string;
+  ssot: string;
+  worktree: string;
 }
 
 export interface BeadHierarchyItem {
@@ -26,6 +34,24 @@ export interface BeadCollectionDiff {
   missingFromPrimary: string[];
   missingFromSecondary: string[];
   changed: Array<{ id: string; fields: string[] }>;
+}
+
+export interface BeadDependencyGraphNode {
+  item: BeadItem;
+  level: number;
+  critical: boolean;
+}
+
+export interface BeadDependencyGraphEdge {
+  fromId: string;
+  toId: string;
+  critical: boolean;
+}
+
+export interface BeadDependencyGraph {
+  nodes: BeadDependencyGraphNode[];
+  edges: BeadDependencyGraphEdge[];
+  criticalPathIds: string[];
 }
 
 export function beadsAsArray(parsed: unknown): unknown[] {
@@ -81,6 +107,164 @@ export function beadPickStringArray(
   return fallback;
 }
 
+function beadPickStringTokens(record: Record<string, unknown>, keys: string[]) {
+  const tokens: string[] = [];
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      tokens.push(...value.filter((v): v is string => typeof v === "string" && v.trim() !== ""));
+    } else if (typeof value === "string") {
+      tokens.push(...value.split(","));
+    }
+  }
+
+  return tokens.map((token) => token.trim()).filter((token) => token !== "");
+}
+
+function normalizeToken(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-");
+}
+
+function normalizeUniqueIds(ids: string[], selfId: string = "") {
+  return [...new Set(ids.map((id) => id.trim()).filter((id) => id !== "" && id !== selfId))].sort(
+    (a, b) => a.localeCompare(b)
+  );
+}
+
+function beadPickStringFromTokens(record: Record<string, unknown>, prefixes: string[]) {
+  const normalizedPrefixes = prefixes.map(normalizeToken);
+  for (const token of beadPickStringTokens(record, ["labels", "tags"])) {
+    const trimmed = token.trim();
+    const normalized = normalizeToken(trimmed);
+    for (const prefix of normalizedPrefixes) {
+      if (normalized.startsWith(`${prefix}:`) || normalized.startsWith(`${prefix}=`)) {
+        return trimmed.slice(prefix.length + 1).trim();
+      }
+      if (normalized.startsWith(`${prefix}/`)) {
+        return trimmed.slice(prefix.length + 1).trim();
+      }
+    }
+  }
+
+  return "";
+}
+
+function beadPickStructuredString(
+  record: Record<string, unknown>,
+  keys: string[],
+  tokenPrefixes: string[]
+) {
+  const direct = beadPickString(record, keys, "");
+  if (direct !== "") {
+    return direct;
+  }
+
+  const metadata = record.metadata;
+  if (typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)) {
+    const metadataValue = beadPickString(metadata as Record<string, unknown>, keys);
+    if (metadataValue !== "") {
+      return metadataValue;
+    }
+  }
+  if (typeof metadata === "string" && metadata.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(metadata) as Record<string, unknown>;
+      const metadataValue = beadPickString(parsed, keys);
+      if (metadataValue !== "") {
+        return metadataValue;
+      }
+    } catch {}
+  }
+
+  return beadPickStringFromTokens(record, tokenPrefixes);
+}
+
+export function beadPickParallelizable(record: Record<string, unknown>) {
+  return beadPickParallelizablePreference(record) === "yes";
+}
+
+export function beadPickParallelizablePreference(record: Record<string, unknown>) {
+  const directKeys = [
+    "parallelizable",
+    "parallel",
+    "parallel_ok",
+    "parallelOk",
+    "can_parallel",
+    "canParallel",
+    "can_run_parallel",
+    "canRunParallel"
+  ];
+
+  for (const key of directKeys) {
+    const value = record[key];
+    if (typeof value === "boolean") {
+      return value ? "yes" : "no";
+    }
+    if (typeof value === "string") {
+      const normalized = normalizeToken(value);
+      if (["true", "yes", "y", "1", "parallel", "parallel-ok"].includes(normalized)) {
+        return "yes";
+      }
+      if (["false", "no", "n", "0", "serial", "sequential"].includes(normalized)) {
+        return "no";
+      }
+    }
+  }
+
+  const labels = beadPickStringTokens(record, ["labels", "tags"]).map(normalizeToken);
+  if (labels.some((label) => ["serial", "sequential", "no-parallel"].includes(label))) {
+    return "no";
+  }
+  return labels.some((label) =>
+    ["parallel", "parallel-ok", "parallelizable", "multi-agent", "multiagent"].includes(label)
+  )
+    ? "yes"
+    : "";
+}
+
+export function beadPickAgent(record: Record<string, unknown>) {
+  return beadPickStructuredString(
+    record,
+    ["agent", "agent_id", "agentId", "assigned_agent", "assignedAgent"],
+    ["agent", "agent-id", "assigned-agent"]
+  );
+}
+
+export function beadPickModel(record: Record<string, unknown>) {
+  return beadPickStructuredString(
+    record,
+    ["model", "ai_model", "aiModel", "agent_model", "agentModel"],
+    ["model", "ai-model", "agent-model"]
+  );
+}
+
+export function beadPickSsot(record: Record<string, unknown>) {
+  return beadPickStructuredString(
+    record,
+    [
+      "ssot",
+      "context",
+      "reference_context",
+      "referenceContext",
+      "source_of_truth",
+      "sourceOfTruth"
+    ],
+    ["ssot", "context", "source-of-truth"]
+  );
+}
+
+export function beadPickWorktree(record: Record<string, unknown>) {
+  const direct = beadPickString(
+    record,
+    ["worktree", "worktree_path", "worktreePath", "worktree_branch", "worktreeBranch"],
+    ""
+  );
+  return direct !== "" ? direct : beadPickStringFromTokens(record, ["worktree", "wt"]);
+}
+
 export function beadPickParentId(record: Record<string, unknown>) {
   const explicitParentId = beadPickString(
     record,
@@ -112,18 +296,107 @@ export function beadPickParentId(record: Record<string, unknown>) {
     }
 
     const dependencyRecord = dependency as Record<string, unknown>;
-    const dependencyType = beadPickString(dependencyRecord, ["type"], "").toLowerCase();
+    const dependencyType = normalizeToken(
+      beadPickString(dependencyRecord, ["type", "dependency_type", "dependencyType"], "")
+    );
     if (dependencyType !== "parent-child") {
       continue;
     }
 
-    const parentId = beadPickString(dependencyRecord, ["depends_on_id", "dependsOnId"], "");
+    const parentId = beadPickString(
+      dependencyRecord,
+      ["depends_on_id", "dependsOnId", "id", "dependency_id", "dependencyId"],
+      ""
+    );
     if (parentId !== "") {
       return parentId;
     }
   }
 
   return "";
+}
+
+function beadPickStringList(record: Record<string, unknown>, keys: string[]) {
+  const values: string[] = [];
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      values.push(
+        ...value
+          .filter(
+            (item): item is string | number => typeof item === "string" || typeof item === "number"
+          )
+          .map((item) => String(item))
+      );
+    } else if (typeof value === "string" || typeof value === "number") {
+      values.push(...String(value).split(","));
+    }
+  }
+
+  return values.map((value) => value.trim()).filter((value) => value !== "");
+}
+
+function isExecutionDependencyType(type: string) {
+  const normalized = normalizeToken(type);
+  return (
+    normalized !== "" &&
+    ![
+      "parent-child",
+      "parent",
+      "child",
+      "relates-to",
+      "related",
+      "duplicate",
+      "duplicates",
+      "supersedes",
+      "superseded-by"
+    ].includes(normalized)
+  );
+}
+
+export function beadPickDependencyIds(record: Record<string, unknown>, selfId: string = "") {
+  const dependencyIds = beadPickStringList(record, [
+    "dependencyIds",
+    "dependency_ids",
+    "dependencies_ids",
+    "dependsOn",
+    "depends_on",
+    "depends_on_ids",
+    "blockedBy",
+    "blocked_by",
+    "blocked_by_ids",
+    "blockers"
+  ]);
+
+  const dependencies = record.dependencies;
+  if (Array.isArray(dependencies)) {
+    for (const dependency of dependencies) {
+      if (typeof dependency !== "object" || dependency === null) {
+        continue;
+      }
+
+      const dependencyRecord = dependency as Record<string, unknown>;
+      const dependencyType = beadPickString(
+        dependencyRecord,
+        ["type", "dependency_type", "dependencyType"],
+        "blocks"
+      );
+      if (!isExecutionDependencyType(dependencyType)) {
+        continue;
+      }
+
+      const dependencyId = beadPickString(
+        dependencyRecord,
+        ["depends_on_id", "dependsOnId", "dependency_id", "dependencyId", "id"],
+        ""
+      );
+      if (dependencyId !== "") {
+        dependencyIds.push(dependencyId);
+      }
+    }
+  }
+
+  return normalizeUniqueIds(dependencyIds, selfId);
 }
 
 export function beadPickProgress(record: Record<string, unknown>): number | null {
@@ -167,6 +440,7 @@ export function toBeadItem(item: unknown): BeadItem | null {
   const record = item as Record<string, unknown>;
   const id = beadPickString(record, ["id", "key", "slug", "issue", "name"]);
   const title = beadPickString(record, ["title", "summary", "name", "description"]);
+  const parallelizablePreference = beadPickParallelizablePreference(record);
 
   if (id === "" || title === "") {
     return null;
@@ -186,6 +460,14 @@ export function toBeadItem(item: unknown): BeadItem | null {
     createdAt: beadPickString(record, ["created_at", "createdAt", "created"], "-"),
     updatedAt: beadPickString(record, ["updated_at", "updatedAt", "updated", "modified_at"], "-"),
     parentId: beadPickParentId(record),
+    dependencyIds: beadPickDependencyIds(record, id),
+    parallelizable: parallelizablePreference === "yes",
+    parallelizableSource: parallelizablePreference === "yes" ? "explicit" : "",
+    parallelizableSuppressed: parallelizablePreference === "no",
+    agent: beadPickAgent(record),
+    model: beadPickModel(record),
+    ssot: beadPickSsot(record),
+    worktree: beadPickWorktree(record),
     commitHash: beadPickString(record, ["commitHash", "commit_hash", "commit"], "")
   };
 }
@@ -305,10 +587,30 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
       return item;
     }
 
+    const parallelizable = item.parallelizable || fallback.parallelizable;
+    const parallelizableSource = item.parallelizable
+      ? item.parallelizableSource
+      : fallback.parallelizable
+        ? fallback.parallelizableSource
+        : "";
+    const dependencyIds = normalizeUniqueIds(
+      [...item.dependencyIds, ...fallback.dependencyIds],
+      item.id
+    );
+
     return {
       ...fallback,
       ...item,
-      parentId: item.parentId.trim() !== "" ? item.parentId : fallback.parentId
+      parentId: item.parentId.trim() !== "" ? item.parentId : fallback.parentId,
+      dependencyIds,
+      parallelizable,
+      parallelizableSource,
+      parallelizableSuppressed:
+        !parallelizable && (item.parallelizableSuppressed || fallback.parallelizableSuppressed),
+      agent: item.agent.trim() !== "" ? item.agent : fallback.agent,
+      model: item.model.trim() !== "" ? item.model : fallback.model,
+      ssot: item.ssot.trim() !== "" ? item.ssot : fallback.ssot,
+      worktree: item.worktree.trim() !== "" ? item.worktree : fallback.worktree
     };
   });
 
@@ -320,6 +622,129 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
   }
 
   return merged;
+}
+
+export function inferReadyParallelizableItems(
+  items: BeadItem[],
+  readyItemIds: ReadonlySet<string>
+) {
+  const eligibleReadyIds = new Set(
+    items
+      .filter((item) => {
+        if (item.parallelizable || item.parallelizableSuppressed) {
+          return false;
+        }
+        if (!readyItemIds.has(item.id)) {
+          return false;
+        }
+        if (normalizeBeadType(item.type) === "epic") {
+          return false;
+        }
+        const status = normalizeBeadStatus(item.status);
+        return status === "open" || status === "in_progress";
+      })
+      .map((item) => item.id)
+  );
+
+  if (eligibleReadyIds.size < 2) {
+    return items;
+  }
+
+  return items.map((item) =>
+    eligibleReadyIds.has(item.id)
+      ? { ...item, parallelizable: true, parallelizableSource: "ready" as const }
+      : item
+  );
+}
+
+export function buildBeadDependencyGraph(items: BeadItem[]): BeadDependencyGraph {
+  const itemsById = new Map(items.map((item) => [item.id, item]));
+  const edges = items.flatMap((item) =>
+    item.dependencyIds
+      .filter((dependencyId) => itemsById.has(dependencyId))
+      .map((dependencyId) => ({ fromId: dependencyId, toId: item.id, critical: false }))
+  );
+  const incomingById = new Map<string, string[]>();
+  const outgoingById = new Map<string, string[]>();
+  for (const item of items) {
+    incomingById.set(item.id, []);
+    outgoingById.set(item.id, []);
+  }
+  for (const edge of edges) {
+    incomingById.get(edge.toId)?.push(edge.fromId);
+    outgoingById.get(edge.fromId)?.push(edge.toId);
+  }
+
+  const levelCache = new Map<string, number>();
+  const resolveLevel = (id: string, visiting: Set<string>): number => {
+    const cached = levelCache.get(id);
+    if (cached !== undefined) {
+      return cached;
+    }
+    if (visiting.has(id)) {
+      levelCache.set(id, 0);
+      return 0;
+    }
+
+    visiting.add(id);
+    const blockers = incomingById.get(id) ?? [];
+    const level =
+      blockers.length === 0
+        ? 0
+        : Math.max(...blockers.map((blockerId) => resolveLevel(blockerId, visiting) + 1));
+    visiting.delete(id);
+    levelCache.set(id, level);
+    return level;
+  };
+
+  const longestPathCache = new Map<string, string[]>();
+  const resolveLongestPath = (id: string, visiting: Set<string>): string[] => {
+    const cached = longestPathCache.get(id);
+    if (cached !== undefined) {
+      return cached;
+    }
+    if (visiting.has(id)) {
+      return [id];
+    }
+
+    visiting.add(id);
+    const blockers = incomingById.get(id) ?? [];
+    const prefix = blockers
+      .map((blockerId) => resolveLongestPath(blockerId, visiting))
+      .sort((a, b) => b.length - a.length || a.join("|").localeCompare(b.join("|")))[0];
+    visiting.delete(id);
+
+    const path = prefix ? [...prefix, id] : [id];
+    longestPathCache.set(id, path);
+    return path;
+  };
+
+  const criticalPathIds =
+    edges.length === 0
+      ? []
+      : (items
+          .map((item) => resolveLongestPath(item.id, new Set<string>()))
+          .sort((a, b) => b.length - a.length || a.join("|").localeCompare(b.join("|")))[0] ?? []);
+  const criticalIds = new Set(criticalPathIds);
+  const criticalEdges = new Set<string>();
+  for (let i = 1; i < criticalPathIds.length; i += 1) {
+    criticalEdges.add(`${criticalPathIds[i - 1]}\u0000${criticalPathIds[i]}`);
+  }
+
+  return {
+    nodes: items
+      .map((item) => ({
+        item,
+        level: resolveLevel(item.id, new Set<string>()),
+        critical: criticalIds.has(item.id)
+      }))
+      .sort((a, b) => a.level - b.level || a.item.id.localeCompare(b.item.id)),
+    edges: edges.map((edge) => ({
+      ...edge,
+      critical: criticalEdges.has(`${edge.fromId}\u0000${edge.toId}`)
+    })),
+    criticalPathIds
+  };
 }
 
 export function diffBeadItems(
@@ -341,6 +766,13 @@ export function diffBeadItems(
     "labels",
     "createdAt",
     "parentId",
+    "dependencyIds",
+    "parallelizable",
+    "parallelizableSuppressed",
+    "agent",
+    "model",
+    "ssot",
+    "worktree",
     "commitHash"
   ];
   const missingFromPrimary: string[] = [];
@@ -361,7 +793,14 @@ export function diffBeadItems(
       continue;
     }
 
-    const fields = comparableFields.filter((field) => primary?.[field] !== secondary[field]);
+    const fields = comparableFields.filter((field) => {
+      const primaryValue = primary?.[field];
+      const secondaryValue = secondary[field];
+      if (Array.isArray(primaryValue) && Array.isArray(secondaryValue)) {
+        return primaryValue.join("\u0000") !== secondaryValue.join("\u0000");
+      }
+      return primaryValue !== secondaryValue;
+    });
     if (fields.length > 0) {
       changed.push({ id, fields });
     }

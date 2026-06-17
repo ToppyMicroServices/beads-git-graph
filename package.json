@@ -1,7 +1,7 @@
 {
   "name": "beads-git-graph",
   "displayName": "Beads Git Graph",
-  "version": "0.1.32",
+  "version": "0.3.0",
   "description": "Git graph and Beads issue tools for VS Code.",
   "categories": [
     "Other",
@@ -58,18 +58,19 @@
     "format:fix": "oxfmt .",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
+    "worktree-sync:guard": "node scripts/worktree-sync-guard.mjs --all",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "@types/node": "^25.9.2",
+    "@types/node": "^25.9.3",
     "@types/vscode": "~1.110.0",
-    "dompurify": "^3.4.8",
-    "esbuild": "^0.28.0",
+    "dompurify": "^3.4.10",
+    "esbuild": "^0.28.1",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "fast-check": "^4.8.0",
-    "oxfmt": "^0.53.0",
-    "oxlint": "^1.68.0",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.70.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.16",
     "vitest": "^4.1.8"
