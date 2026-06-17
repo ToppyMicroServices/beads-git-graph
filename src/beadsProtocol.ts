@@ -12,6 +12,9 @@ export type BeadsRequestMessage =
       workspacePath: string;
       title?: string;
       agent?: string;
+      model?: string;
+      ssot?: string;
+      worktree?: string;
     };
 
 export function isBeadsRequestMessage(message: unknown): message is BeadsRequestMessage {
@@ -37,8 +40,10 @@ export function isBeadsRequestMessage(message: unknown): message is BeadsRequest
         typeof record.workspacePath === "string" &&
         (typeof record.title === "string" || typeof record.title === "undefined") &&
         (record.command !== "assignStartBead" ||
-          typeof record.agent === "string" ||
-          typeof record.agent === "undefined")
+          ((typeof record.agent === "string" || typeof record.agent === "undefined") &&
+            (typeof record.model === "string" || typeof record.model === "undefined") &&
+            (typeof record.ssot === "string" || typeof record.ssot === "undefined") &&
+            (typeof record.worktree === "string" || typeof record.worktree === "undefined")))
       );
     default:
       return false;

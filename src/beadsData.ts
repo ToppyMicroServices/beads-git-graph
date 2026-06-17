@@ -18,7 +18,11 @@ export interface BeadItem {
   parallelizableSource: "explicit" | "ready" | "";
   parallelizableSuppressed: boolean;
   agent: string;
+  model: string;
+  ssot: string;
   worktree: string;
+  synthetic: boolean;
+  syntheticKind: "" | "parallel-pr-merge";
 }
 
 export interface BeadHierarchyItem {
@@ -132,6 +136,21 @@ function normalizeUniqueIds(ids: string[], selfId: string = "") {
   );
 }
 
+function compareBeadItemsByUpdatedDesc(a: BeadItem, b: BeadItem) {
+  const aTime = Date.parse(a.updatedAt);
+  const bTime = Date.parse(b.updatedAt);
+  if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) {
+    return bTime - aTime;
+  }
+  if (!Number.isNaN(aTime)) {
+    return -1;
+  }
+  if (!Number.isNaN(bTime)) {
+    return 1;
+  }
+  return a.id.localeCompare(b.id);
+}
+
 function beadPickStringFromTokens(record: Record<string, unknown>, prefixes: string[]) {
   const normalizedPrefixes = prefixes.map(normalizeToken);
   for (const token of beadPickStringTokens(record, ["labels", "tags"])) {
@@ -148,6 +167,36 @@ function beadPickStringFromTokens(record: Record<string, unknown>, prefixes: str
   }
 
   return "";
+}
+
+function beadPickStructuredString(
+  record: Record<string, unknown>,
+  keys: string[],
+  tokenPrefixes: string[]
+) {
+  const direct = beadPickString(record, keys, "");
+  if (direct !== "") {
+    return direct;
+  }
+
+  const metadata = record.metadata;
+  if (typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)) {
+    const metadataValue = beadPickString(metadata as Record<string, unknown>, keys);
+    if (metadataValue !== "") {
+      return metadataValue;
+    }
+  }
+  if (typeof metadata === "string" && metadata.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(metadata) as Record<string, unknown>;
+      const metadataValue = beadPickString(parsed, keys);
+      if (metadataValue !== "") {
+        return metadataValue;
+      }
+    } catch {}
+  }
+
+  return beadPickStringFromTokens(record, tokenPrefixes);
 }
 
 export function beadPickParallelizable(record: Record<string, unknown>) {
@@ -194,45 +243,34 @@ export function beadPickParallelizablePreference(record: Record<string, unknown>
 }
 
 export function beadPickAgent(record: Record<string, unknown>) {
-  const direct = beadPickString(
+  return beadPickStructuredString(
     record,
     ["agent", "agent_id", "agentId", "assigned_agent", "assignedAgent"],
-    ""
+    ["agent", "agent-id", "assigned-agent"]
   );
-  if (direct !== "") {
-    return direct;
-  }
+}
 
-  const metadata = record.metadata;
-  if (typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)) {
-    const metadataAgent = beadPickString(metadata as Record<string, unknown>, [
-      "agent",
-      "agent_id",
-      "agentId",
-      "assigned_agent",
-      "assignedAgent"
-    ]);
-    if (metadataAgent !== "") {
-      return metadataAgent;
-    }
-  }
-  if (typeof metadata === "string" && metadata.trim().startsWith("{")) {
-    try {
-      const parsed = JSON.parse(metadata) as Record<string, unknown>;
-      const metadataAgent = beadPickString(parsed, [
-        "agent",
-        "agent_id",
-        "agentId",
-        "assigned_agent",
-        "assignedAgent"
-      ]);
-      if (metadataAgent !== "") {
-        return metadataAgent;
-      }
-    } catch {}
-  }
+export function beadPickModel(record: Record<string, unknown>) {
+  return beadPickStructuredString(
+    record,
+    ["model", "ai_model", "aiModel", "agent_model", "agentModel"],
+    ["model", "ai-model", "agent-model"]
+  );
+}
 
-  return beadPickStringFromTokens(record, ["agent", "agent-id", "assigned-agent"]);
+export function beadPickSsot(record: Record<string, unknown>) {
+  return beadPickStructuredString(
+    record,
+    [
+      "ssot",
+      "context",
+      "reference_context",
+      "referenceContext",
+      "source_of_truth",
+      "sourceOfTruth"
+    ],
+    ["ssot", "context", "source-of-truth"]
+  );
 }
 
 export function beadPickWorktree(record: Record<string, unknown>) {
@@ -444,8 +482,12 @@ export function toBeadItem(item: unknown): BeadItem | null {
     parallelizableSource: parallelizablePreference === "yes" ? "explicit" : "",
     parallelizableSuppressed: parallelizablePreference === "no",
     agent: beadPickAgent(record),
+    model: beadPickModel(record),
+    ssot: beadPickSsot(record),
     worktree: beadPickWorktree(record),
-    commitHash: beadPickString(record, ["commitHash", "commit_hash", "commit"], "")
+    commitHash: beadPickString(record, ["commitHash", "commit_hash", "commit"], ""),
+    synthetic: false,
+    syntheticKind: ""
   };
 }
 
@@ -455,14 +497,7 @@ export function extractBeadItems(parsed: unknown): BeadItem[] {
     .map((item) => toBeadItem(item))
     .filter((item): item is BeadItem => item !== null);
 
-  return mapped.sort((a, b) => {
-    const aTime = Date.parse(a.updatedAt);
-    const bTime = Date.parse(b.updatedAt);
-    if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) {
-      return bTime - aTime;
-    }
-    return a.id.localeCompare(b.id);
-  });
+  return mapped.sort(compareBeadItemsByUpdatedDesc);
 }
 
 function inferParentIdFromId(id: string, knownIds: Set<string>) {
@@ -585,7 +620,11 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
       parallelizableSuppressed:
         !parallelizable && (item.parallelizableSuppressed || fallback.parallelizableSuppressed),
       agent: item.agent.trim() !== "" ? item.agent : fallback.agent,
-      worktree: item.worktree.trim() !== "" ? item.worktree : fallback.worktree
+      model: item.model.trim() !== "" ? item.model : fallback.model,
+      ssot: item.ssot.trim() !== "" ? item.ssot : fallback.ssot,
+      worktree: item.worktree.trim() !== "" ? item.worktree : fallback.worktree,
+      synthetic: item.synthetic || fallback.synthetic,
+      syntheticKind: item.syntheticKind || fallback.syntheticKind
     };
   });
 
@@ -630,6 +669,90 @@ export function inferReadyParallelizableItems(
       ? { ...item, parallelizable: true, parallelizableSource: "ready" as const }
       : item
   );
+}
+
+export function deriveParallelMergeItems(items: BeadItem[]) {
+  const hierarchy = buildBeadHierarchy(items);
+  const itemsById = new Map(items.map((item) => [item.id, item]));
+  const groups = new Map<string, { anchorId: string; anchorTitle: string; entries: BeadItem[] }>();
+
+  for (const entry of hierarchy) {
+    const item = entry.item;
+    if (item.synthetic || !item.parallelizable || item.worktree.trim() === "") {
+      continue;
+    }
+
+    const anchorId = entry.parentId ?? entry.epicId;
+    const anchor = anchorId ? itemsById.get(anchorId) : undefined;
+    if (!anchorId || !anchor || anchor.synthetic) {
+      continue;
+    }
+
+    const group = groups.get(anchorId) ?? {
+      anchorId,
+      anchorTitle: anchor.title,
+      entries: []
+    };
+    group.entries.push(item);
+    groups.set(anchorId, group);
+  }
+
+  const derivedItems: BeadItem[] = [];
+  for (const group of groups.values()) {
+    const uniqueWorktrees = new Set(
+      group.entries.map((item) => item.worktree.trim()).filter((worktree) => worktree !== "")
+    );
+    if (group.entries.length < 2 || uniqueWorktrees.size < 2) {
+      continue;
+    }
+
+    const dependencyItems = [...group.entries].sort((a, b) => a.id.localeCompare(b.id));
+    const dependencyIds = dependencyItems.map((item) => item.id);
+    const mergeId = `merge:${group.anchorId}`;
+    if (itemsById.has(mergeId)) {
+      continue;
+    }
+
+    const latestItem = [...dependencyItems].sort(compareBeadItemsByUpdatedDesc)[0];
+    const priority = dependencyItems
+      .map((item) => normalizeBeadPriority(item.priority))
+      .sort((a, b) => Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10))[0];
+    const readyToMerge = dependencyItems.every(
+      (item) => normalizeBeadStatus(item.status) === "closed"
+    );
+    const worktreeSummary = dependencyItems
+      .map((item) => `${item.id} (${item.worktree.trim()})`)
+      .join(", ");
+
+    derivedItems.push({
+      id: mergeId,
+      title: `Merge parallel PRs (${dependencyIds.length})`,
+      type: "task",
+      status: readyToMerge ? "open" : "blocked",
+      progress: null,
+      priority,
+      updatedAt: latestItem?.updatedAt ?? "-",
+      commitHash: "",
+      description: `Derived merge step for parallel worktrees under ${group.anchorTitle}: ${worktreeSummary}`,
+      notes: "Wait for each parallel worktree PR to be ready, then merge them in sequence.",
+      assignee: "-",
+      labels: "derived, pr-merge",
+      createdAt: latestItem?.createdAt ?? "-",
+      parentId: group.anchorId,
+      dependencyIds,
+      parallelizable: false,
+      parallelizableSource: "",
+      parallelizableSuppressed: false,
+      agent: "",
+      model: "",
+      ssot: dependencyIds.map((id) => `bd:${id}`).join(", "),
+      worktree: "",
+      synthetic: true,
+      syntheticKind: "parallel-pr-merge"
+    });
+  }
+
+  return [...items, ...derivedItems].sort(compareBeadItemsByUpdatedDesc);
 }
 
 export function buildBeadDependencyGraph(items: BeadItem[]): BeadDependencyGraph {
@@ -745,6 +868,8 @@ export function diffBeadItems(
     "parallelizable",
     "parallelizableSuppressed",
     "agent",
+    "model",
+    "ssot",
     "worktree",
     "commitHash"
   ];

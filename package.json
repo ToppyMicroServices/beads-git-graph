@@ -64,7 +64,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
-    "@types/vscode": "~1.110.0",
+    "@types/vscode": "~1.120.0",
     "dompurify": "^3.4.10",
     "esbuild": "^0.28.1",
     "eslint-plugin-simple-import-sort": "^13.0.0",
@@ -73,7 +73,7 @@
     "oxlint": "^1.70.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.16",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   },
   "contributes": {
     "commands": [
@@ -381,7 +381,7 @@
   ],
   "icon": "resources/icon.png",
   "engines": {
-    "vscode": "^1.110.0"
+    "vscode": "^1.120.0"
   },
   "packageManager": "pnpm@10.29.3"
 }

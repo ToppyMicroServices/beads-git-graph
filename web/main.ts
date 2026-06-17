@@ -1,3 +1,5 @@
+import createDOMPurify from "dompurify";
+
 import { classifyCommitSubject } from "../src/commitTypes";
 import {
   filterBranchesForRemote,
@@ -6,7 +8,6 @@ import {
 } from "../src/remotes";
 import { Dropdown } from "./dropdown";
 import { Graph } from "./graph";
-import createDOMPurify = require("dompurify");
 import {
   abbrevCommit,
   addListenerToClass,
