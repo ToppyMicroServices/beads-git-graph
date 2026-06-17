@@ -7,6 +7,7 @@ import * as vscode from "vscode";
 import {
   type BeadItem,
   beadsAsArray,
+  deriveParallelMergeItems,
   diffBeadItems,
   extractBeadItems,
   inferReadyParallelizableItems,
@@ -41,6 +42,10 @@ const ASSIGN_CONTEXT_CANDIDATES = [
   "README.md",
   "CONTRIBUTING.md",
   "docs"
+];
+const COPILOT_ASSIGN_COMMAND_CANDIDATES = [
+  "workbench.action.chat.openSessionWithPrompt.copilotcli",
+  "workbench.action.chat.openSessionWithPrompt.copilot-cloud-agent"
 ];
 
 export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -246,7 +251,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           if (cliItems.length > 0) {
             groups.push({
               ...workspaceInfo,
-              items: cliItems
+              items: deriveParallelMergeItems(cliItems)
             });
           } else {
             emptyWorkspaces.push(workspaceInfo);
@@ -269,7 +274,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       if (legacyResult.items.length > 0) {
         groups.push({
           ...workspaceInfo,
-          items: legacyResult.items
+          items: deriveParallelMergeItems(legacyResult.items)
         });
       } else if (legacyResult.hasFiles) {
         emptyWorkspaces.push(workspaceInfo);
@@ -451,7 +456,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           issueId,
           message.title,
           message.model?.trim() || message.agent,
-          message.ssot
+          message.ssot,
+          message.worktree
         );
       } catch (error) {
         const messageText =
@@ -466,7 +472,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     issueId: string,
     title: string | undefined,
     currentModel: string | undefined,
-    currentSsot: string | undefined
+    currentSsot: string | undefined,
+    currentWorktree: string | undefined
   ) {
     const model = await this.pickAssignModel(currentModel);
     if (model === undefined) {
@@ -496,9 +503,85 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     );
     await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
     await this.refresh();
-    vscode.window.showInformationMessage(
-      `Started ${issueId} with ${model}. SSOT/context recorded.`
+
+    const openedChat = await this.openAssignAgentSession({
+      workspacePath,
+      issueId,
+      title,
+      model,
+      ssot,
+      worktree: currentWorktree
+    });
+
+    if (openedChat) {
+      vscode.window.showInformationMessage(
+        `Started ${issueId} with ${model}. Opened Copilot agent session.`
+      );
+      return;
+    }
+
+    vscode.window.showWarningMessage(
+      `Started ${issueId} with ${model}, but could not open a Copilot agent session automatically.`
     );
+  }
+
+  private buildAssignAgentPrompt(values: {
+    issueId: string;
+    title: string | undefined;
+    model: string;
+    ssot: string;
+    workspacePath: string;
+    worktree: string | undefined;
+  }) {
+    const lines = [
+      `Start work on bead ${values.issueId}${values.title ? `: ${values.title}` : ""}.`,
+      `Use model ${values.model}.`,
+      `Workspace: ${values.workspacePath}`,
+      `SSOT/context: ${values.ssot}`
+    ];
+
+    if ((values.worktree ?? "").trim() !== "") {
+      lines.push(`Preferred worktree: ${values.worktree?.trim()}`);
+    }
+
+    lines.push(
+      `Read AGENTS.md and the listed SSOT/context before changing code.`,
+      `Inspect the bead details with bd show ${values.issueId}.`,
+      `Keep the work scoped to this bead and proceed autonomously.`
+    );
+
+    return lines.join("\n");
+  }
+
+  private async openAssignAgentSession(values: {
+    workspacePath: string;
+    issueId: string;
+    title: string | undefined;
+    model: string;
+    ssot: string;
+    worktree: string | undefined;
+  }) {
+    const commands = new Set(await vscode.commands.getCommands(true));
+    const prompt = this.buildAssignAgentPrompt(values);
+    const resource = vscode.Uri.file(values.workspacePath);
+
+    for (const command of COPILOT_ASSIGN_COMMAND_CANDIDATES) {
+      if (!commands.has(command)) {
+        continue;
+      }
+
+      try {
+        await vscode.commands.executeCommand(command, {
+          prompt,
+          resource
+        });
+        return true;
+      } catch {
+        continue;
+      }
+    }
+
+    return false;
   }
 
   private async pickAssignModel(currentModel: string | undefined) {

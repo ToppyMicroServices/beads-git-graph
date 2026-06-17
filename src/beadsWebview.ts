@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 
+import { anonymizeAgentIdentity, buildAgentAliasMap } from "./agentDisplay";
 import {
   type BeadItem,
   beadShortDate,
@@ -21,7 +22,35 @@ const GRAPH_LANE_GAP = 54;
 const GRAPH_PADDING_X = 44;
 const GRAPH_PADDING_Y = 56;
 
-function renderBeadsDependencyGraph(items: BeadItem[], workspacePath: string) {
+function getRawAssigneeLabel(item: BeadItem) {
+  return item.assignee.trim() !== "" && item.assignee !== "-" ? item.assignee.trim() : "";
+}
+
+function getRawAgentLabel(item: BeadItem, normalizedStatus: string) {
+  if (item.agent.trim() !== "") {
+    return item.agent.trim();
+  }
+
+  return normalizedStatus === "in_progress" ? getRawAssigneeLabel(item) : "";
+}
+
+function getRawModelLabel(item: BeadItem, normalizedStatus: string) {
+  return item.model.trim() !== "" ? item.model.trim() : getRawAgentLabel(item, normalizedStatus);
+}
+
+function getDisplayLabel(value: string, agentAliases: ReadonlyMap<string, string>) {
+  return anonymizeAgentIdentity(value, agentAliases);
+}
+
+function isDerivedMergeTask(item: BeadItem) {
+  return item.synthetic && item.syntheticKind === "parallel-pr-merge";
+}
+
+function renderBeadsDependencyGraph(
+  items: BeadItem[],
+  workspacePath: string,
+  agentAliases: ReadonlyMap<string, string>
+) {
   const graph = buildBeadDependencyGraph(items);
   const maxLevel = Math.max(0, ...graph.nodes.map((node) => node.level));
   const nodesByLevel = new Map<number, typeof graph.nodes>();
@@ -73,14 +102,10 @@ function renderBeadsDependencyGraph(items: BeadItem[], workspacePath: string) {
         const normalizedStatus = normalizeBeadStatus(item.status);
         const normalizedPriority = normalizeBeadPriority(item.priority);
         const normalizedType = normalizeBeadType(item.type);
-        const agentLabel =
-          item.agent.trim() !== ""
-            ? item.agent.trim()
-            : item.assignee.trim() !== "" && item.assignee !== "-"
-              ? item.assignee.trim()
-              : "";
-        const modelLabel = item.model.trim() !== "" ? item.model.trim() : agentLabel;
+        const rawModelLabel = getRawModelLabel(item, normalizedStatus);
+        const modelLabel = getDisplayLabel(rawModelLabel, agentAliases);
         const ssotLabel = item.ssot.trim();
+        const derivedMerge = isDerivedMergeTask(item);
         const blockers = (blockersById.get(item.id) ?? []).sort((a, b) => a.localeCompare(b));
         const blocks = (blocksById.get(item.id) ?? []).sort((a, b) => a.localeCompare(b));
         const dependencyLines = [
@@ -93,12 +118,13 @@ function renderBeadsDependencyGraph(items: BeadItem[], workspacePath: string) {
         ]
           .filter((line) => line !== "")
           .join("");
-        const assignDisabled = normalizedStatus === "closed" ? " disabled" : "";
-        const assignTitle =
-          normalizedStatus === "closed"
+        const assignDisabled = normalizedStatus === "closed" || derivedMerge ? " disabled" : "";
+        const assignTitle = derivedMerge
+          ? "Derived merge tasks cannot be started with AI."
+          : normalizedStatus === "closed"
             ? "Closed beads cannot be started."
             : "Choose an AI model, attach SSOT/context, and mark this bead in progress.";
-        return `<div class="graphNode ${node.critical ? "criticalGraphNode" : ""}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" style="--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${node.critical ? '<span class="criticalBadge">Critical</span>' : ""}</div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${modelLabel === "" ? "" : `<span class="executionBadge modelBadge">Model ${escapeHtml(modelLabel)}</span>`}${ssotLabel === "" ? "" : `<span class="executionBadge ssotBadge">SSOT</span>`}</div>${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(agentLabel)}" data-assign-start-model="${escapeHtml(modelLabel)}" data-assign-start-ssot="${escapeHtml(ssotLabel)}" title="${escapeHtml(assignTitle)}"${assignDisabled}>Start AI</button></div></div>`;
+        return `<div class="graphNode ${node.critical ? "criticalGraphNode" : ""}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" style="--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${node.critical ? '<span class="criticalBadge">Critical</span>' : ""}</div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${derivedMerge ? `<span class="executionBadge mergeBadge">Merge PR</span>` : ""}${modelLabel === "" ? "" : `<span class="executionBadge modelBadge">Model ${escapeHtml(modelLabel)}</span>`}${ssotLabel === "" ? "" : `<span class="executionBadge ssotBadge">SSOT</span>`}</div>${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(ssotLabel)}" data-assign-start-worktree="${escapeHtml(item.worktree.trim())}" title="${escapeHtml(assignTitle)}"${assignDisabled}>Start AI</button></div></div>`;
       })
       .join("");
   }).join("");
@@ -136,6 +162,11 @@ export function renderBeadsWebviewHtml(
         '<div class="empty">Beads is not initialized in this workspace. Run <code>bd init</code> to create <code>.beads</code>, or add legacy <code>.beads/beads.json</code> or <code>.beads/issues.jsonl</code> data.</div>';
     }
   } else {
+    const agentAliases = buildAgentAliasMap(
+      rows.flatMap((group) =>
+        group.items.flatMap((item) => [item.agent, item.assignee, item.model])
+      )
+    );
     const populatedHtml = rows
       .map((group) => {
         const flatItems = flattenBeadHierarchy(group.items);
@@ -155,16 +186,7 @@ export function renderBeadsWebviewHtml(
           if (entry.item.parallelizable) {
             parallelCount += 1;
           }
-          const modelLabel =
-            entry.item.model.trim() !== ""
-              ? entry.item.model.trim()
-              : entry.item.agent.trim() !== ""
-                ? entry.item.agent.trim()
-                : status === "in_progress" &&
-                    entry.item.assignee.trim() !== "" &&
-                    entry.item.assignee !== "-"
-                  ? entry.item.assignee.trim()
-                  : "";
+          const modelLabel = getDisplayLabel(getRawModelLabel(entry.item, status), agentAliases);
           if (modelLabel !== "") {
             models.add(modelLabel);
           }
@@ -221,16 +243,15 @@ export function renderBeadsWebviewHtml(
                     .split(/[\\/]/)
                     .filter((part) => part !== "")
                     .pop() ?? item.worktree);
-            const rowAgentLabel =
-              item.agent.trim() !== ""
-                ? item.agent.trim()
-                : normalizedStatus === "in_progress" &&
-                    item.assignee.trim() !== "" &&
-                    item.assignee !== "-"
-                  ? item.assignee.trim()
-                  : "";
-            const rowModelLabel = item.model.trim() !== "" ? item.model.trim() : rowAgentLabel;
+            const rawAgentLabel = getRawAgentLabel(item, normalizedStatus);
+            const rawModelLabel = getRawModelLabel(item, normalizedStatus);
+            const rowAgentLabel = getDisplayLabel(rawAgentLabel, agentAliases);
+            const rowModelLabel = getDisplayLabel(rawModelLabel, agentAliases);
+            const rowAssigneeLabel = getDisplayLabel(getRawAssigneeLabel(item), agentAliases);
             const executionBadges = [
+              isDerivedMergeTask(item)
+                ? `<span class="executionBadge mergeBadge">Merge PR</span>`
+                : "",
               item.parallelizable
                 ? `<span class="executionBadge parallelBadge" title="${escapeHtml(item.parallelizableSource === "ready" ? "Ready and unblocked; can run alongside other ready tasks." : "Marked as parallelizable.")}">${escapeHtml(item.parallelizableSource === "ready" ? "Parallel ready" : "Parallel OK")}</span>`
                 : "",
@@ -257,6 +278,9 @@ export function renderBeadsWebviewHtml(
                 : `<span class="parallelMarker ${escapeHtml(item.parallelizableSource === "ready" ? "readyParallelMarker" : "explicitParallelMarker")}" title="${escapeHtml(parallelTitle)}">${escapeHtml(parallelLabel)}</span>`;
             const serializedItem = {
               ...item,
+              displayAgent: rowAgentLabel,
+              displayAssignee: rowAssigneeLabel === "" ? "-" : rowAssigneeLabel,
+              displayModel: rowModelLabel === "" ? "-" : rowModelLabel,
               parentId: parentId ?? "",
               epicId: epicId ?? ""
             };
@@ -283,7 +307,8 @@ export function renderBeadsWebviewHtml(
           .join("");
         const graphHtml = renderBeadsDependencyGraph(
           flatItems.map((entry) => entry.item),
-          group.workspacePath
+          group.workspacePath,
+          agentAliases
         );
 
         return `<section data-workspace-path="${escapeHtml(group.workspacePath)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceSummary">${workspaceSummary}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div>${graphHtml}</section>`;
@@ -408,6 +433,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .beadMeta{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:4px;}
 .executionBadge{display:inline-flex;align-items:center;max-width:100%;padding:1px 6px;border-radius:6px;border:1px solid rgba(128,128,128,.42);font-size:10px;font-weight:650;line-height:15px;color:var(--vscode-descriptionForeground);background:rgba(128,128,128,.1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .parallelBadge{border-color:rgba(34,197,94,.65);color:var(--vscode-testing-iconPassed, #22c55e);background:rgba(34,197,94,.16);}
+.mergeBadge{border-color:rgba(249,115,22,.55);color:var(--vscode-charts-orange, #f97316);background:rgba(249,115,22,.14);}
 .modelBadge{border-color:rgba(59,130,246,.55);color:var(--vscode-textLink-foreground, #3b82f6);background:rgba(59,130,246,.12);}
 .ssotBadge{border-color:rgba(168,85,247,.5);color:var(--vscode-charts-purple,#a855f7);background:rgba(168,85,247,.12);}
 .worktreeBadge{border-color:rgba(234,179,8,.55);color:var(--vscode-charts-yellow, #d97706);background:rgba(234,179,8,.12);}

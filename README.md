@@ -34,7 +34,7 @@ The Beads view surfaces optional execution hints from issue fields, metadata, or
 - `ssot: "AGENTS.md, .beads/issues.jsonl"` or label `ssot:AGENTS.md`
 - `worktree: "../repo-agent-a"` or label `worktree:../repo-agent-a`
 
-When you use **Start AI**, the extension asks for a model, automatically suggests SSOT/context from workspace files such as `AGENTS.md`, `.beads/issues.jsonl`, `README.md`, and `docs`, then records that metadata before marking the bead in progress.
+When you use **Start AI**, the extension asks for a model, automatically suggests SSOT/context from workspace files such as `AGENTS.md`, `.beads/issues.jsonl`, `README.md`, and `docs`, records that metadata, marks the bead in progress, then opens a GitHub Copilot Background Agent chat session with the bead prompt prefilled.
 
 These hints are visual metadata. Beads ready/blocking behavior still comes from issue status and dependencies.
 

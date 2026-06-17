@@ -48,6 +48,11 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("Start AI");
     expect(beadsWebview).toContain("data-assign-start-model");
     expect(beadsWebview).toContain("data-assign-start-ssot");
+    expect(beadsWebview).toContain("data-assign-start-worktree");
+    expect(beadsWebview).toContain("displayAgent");
+    expect(beadsWebview).toContain("displayModel");
+    expect(beadsWebview).toContain("displayAssignee");
+    expect(beadsWebview).toContain("mergeBadge");
     expect(beadsWebview).toContain("modelBadge");
     expect(beadsWebview).toContain("ssotBadge");
     expect(beadsWebview).toContain("max-height:calc(100vh - 132px)");
@@ -75,6 +80,9 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain(
       "ssot: normalizeOptionalDatasetValue(button.dataset.assignStartSsot)"
     );
+    expect(beadsMain).toContain(
+      "worktree: normalizeOptionalDatasetValue(button.dataset.assignStartWorktree)"
+    );
     expect(beadsMain).toContain("renderDependencyGraphOverlays");
     expect(beadsMain).toContain('command: "assignStartBead"');
     expect(beadsMain).toContain("detailsCell.colSpan = 6");
@@ -84,11 +92,26 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("Assign AI Model");
     expect(beadsView).toContain("Start AI work with this model and SSOT/context?");
     expect(beadsView).toContain("inferAssignSsot");
+    expect(beadsView).toContain("deriveParallelMergeItems");
+    expect(beadsView).toContain("openAssignAgentSession");
+    expect(beadsView).toContain("workbench.action.chat.openSessionWithPrompt.copilotcli");
     expect(beadsView).toContain("AGENTS.md");
     expect(beadsView).toContain(".beads/issues.jsonl");
     expect(beadsView).toContain("README.md");
     expect(beadsView).toContain("`model=$" + "{model}`");
     expect(beadsView).toContain("`ssot=$" + "{ssot}`");
+    expect(beadsView).toContain("Inspect the bead details with bd show");
     expect(beadsView).not.toContain("Assign Agent");
+  });
+
+  it("anonymizes email-like agent identities in display labels", () => {
+    expect(beadsWebview).toContain("buildAgentAliasMap");
+    expect(beadsWebview).toContain("anonymizeAgentIdentity");
+  });
+
+  it("surfaces derived parallel PR merge tasks in the table and graph", () => {
+    expect(beadsWebview).toContain("parallel-pr-merge");
+    expect(beadsWebview).toContain("Merge PR");
+    expect(beadsMain).toContain("Derived merge task");
   });
 });
