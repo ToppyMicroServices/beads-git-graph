@@ -119,12 +119,11 @@ function renderBeadsDependencyGraph(
           .filter((line) => line !== "")
           .join("");
         const assignDisabled = normalizedStatus === "closed" || derivedMerge ? " disabled" : "";
-        const assignTitle =
-          derivedMerge
-            ? "Derived merge tasks cannot be started with AI."
-            : normalizedStatus === "closed"
-              ? "Closed beads cannot be started."
-              : "Choose an AI model, attach SSOT/context, and mark this bead in progress.";
+        const assignTitle = derivedMerge
+          ? "Derived merge tasks cannot be started with AI."
+          : normalizedStatus === "closed"
+            ? "Closed beads cannot be started."
+            : "Choose an AI model, attach SSOT/context, and mark this bead in progress.";
         return `<div class="graphNode ${node.critical ? "criticalGraphNode" : ""}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" style="--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${node.critical ? '<span class="criticalBadge">Critical</span>' : ""}</div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${derivedMerge ? `<span class="executionBadge mergeBadge">Merge PR</span>` : ""}${modelLabel === "" ? "" : `<span class="executionBadge modelBadge">Model ${escapeHtml(modelLabel)}</span>`}${ssotLabel === "" ? "" : `<span class="executionBadge ssotBadge">SSOT</span>`}</div>${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(ssotLabel)}" data-assign-start-worktree="${escapeHtml(item.worktree.trim())}" title="${escapeHtml(assignTitle)}"${assignDisabled}>Start AI</button></div></div>`;
       })
       .join("");
@@ -164,7 +163,9 @@ export function renderBeadsWebviewHtml(
     }
   } else {
     const agentAliases = buildAgentAliasMap(
-      rows.flatMap((group) => group.items.flatMap((item) => [item.agent, item.assignee, item.model]))
+      rows.flatMap((group) =>
+        group.items.flatMap((item) => [item.agent, item.assignee, item.model])
+      )
     );
     const populatedHtml = rows
       .map((group) => {
@@ -304,7 +305,11 @@ export function renderBeadsWebviewHtml(
             return `<tr class="${rowClasses}" data-id="${escapeHtml(item.id)}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-parent-id="${escapeHtml(parentId ?? "")}" data-epic-id="${escapeHtml(epicId ?? "")}" data-bead-type="${escapeHtml(normalizedType)}" data-depth="${depth}" data-child-count="${childCount}" data-order-index="${orderIndex}" data-guide-columns="${guideColumns.map((value) => (value ? "1" : "0")).join("")}" data-last-sibling="${isLastSibling ? "1" : "0"}" data-status="${escapeHtml(normalizedStatus)}" data-parallelizable="${item.parallelizable ? "1" : "0"}" data-parallel-source="${escapeHtml(item.parallelizableSource)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(serializedItem)))}" data-updated-ts="${updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td class="parallelCell">${parallelCell}</td><td><div class="titleCell" style="--tree-width:${treeWidth}px">${hierarchyToggle}<div class="titleContent"><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div>${executionBadges === "" ? "" : `<div class="beadMeta">${executionBadges}</div>`}</div></div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
           })
           .join("");
-        const graphHtml = renderBeadsDependencyGraph(flatItems.map((entry) => entry.item), group.workspacePath, agentAliases);
+        const graphHtml = renderBeadsDependencyGraph(
+          flatItems.map((entry) => entry.item),
+          group.workspacePath,
+          agentAliases
+        );
 
         return `<section data-workspace-path="${escapeHtml(group.workspacePath)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceSummary">${workspaceSummary}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div>${graphHtml}</section>`;
       })

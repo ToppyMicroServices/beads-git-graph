@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { anonymizeAgentIdentity, buildAgentAliasMap, isEmailLikeIdentity } from "../src/agentDisplay";
+import {
+  anonymizeAgentIdentity,
+  buildAgentAliasMap,
+  isEmailLikeIdentity
+} from "../src/agentDisplay";
 
 describe("agent display aliases", () => {
   it("detects email-like identities", () => {

@@ -10,7 +10,10 @@ export function buildAgentAliasMap(values: Iterable<string>) {
     .sort((left, right) => left.localeCompare(right));
 
   return new Map(
-    uniqueSensitiveValues.map((value, index) => [value, `agent#${String(index + 1).padStart(2, "0")}`])
+    uniqueSensitiveValues.map((value, index) => [
+      value,
+      `agent#${String(index + 1).padStart(2, "0")}`
+    ])
   );
 }
 

@@ -674,10 +674,7 @@ export function inferReadyParallelizableItems(
 export function deriveParallelMergeItems(items: BeadItem[]) {
   const hierarchy = buildBeadHierarchy(items);
   const itemsById = new Map(items.map((item) => [item.id, item]));
-  const groups = new Map<
-    string,
-    { anchorId: string; anchorTitle: string; entries: BeadItem[] }
-  >();
+  const groups = new Map<string, { anchorId: string; anchorTitle: string; entries: BeadItem[] }>();
 
   for (const entry of hierarchy) {
     const item = entry.item;
