@@ -40,6 +40,11 @@ interface BeadRowItem {
   model: string;
   ssot: string;
   worktree: string;
+  synthetic: boolean;
+  syntheticKind: "" | "parallel-pr-merge";
+  displayAgent?: string;
+  displayAssignee?: string;
+  displayModel?: string;
 }
 
 const vscode = acquireVsCodeApi();
@@ -258,16 +263,15 @@ function renderDetailsMarkup(item: BeadRowItem) {
       : item.parallelizable
         ? "Yes (explicit)"
         : "-";
-  const agent =
-    item.agent !== ""
-      ? item.agent
-      : item.status === "in_progress" && item.assignee !== "" && item.assignee !== "-"
-        ? item.assignee
-        : "-";
-  const model = item.model !== "" ? item.model : agent;
+  const agent = item.displayAgent?.trim() || "-";
+  const assignee = item.displayAssignee?.trim() || item.assignee || "-";
+  const model = item.displayModel?.trim() || (item.model !== "" ? item.model : agent);
   const ssot = item.ssot !== "" ? item.ssot : "-";
   const worktree = item.worktree !== "" ? item.worktree : "-";
   const executionPills = [
+    item.syntheticKind === "parallel-pr-merge"
+      ? `<span class="detailPill">Derived merge task</span>`
+      : "",
     item.status !== "" ? `<span class="detailPill">Status ${escapeHtml(item.status)}</span>` : "",
     item.priority !== ""
       ? `<span class="detailPill">Priority ${escapeHtml(item.priority)}</span>`
@@ -291,8 +295,9 @@ function renderDetailsMarkup(item: BeadRowItem) {
     `<div class="key">Status</div><div>${escapeHtml(item.status || "-")}</div>` +
     `<div class="key">Progress</div><div>${escapeHtml(progress)}</div>` +
     `<div class="key">Priority</div><div>${escapeHtml(item.priority || "-")}</div>` +
-    `<div class="key">Assignee</div><div>${escapeHtml(item.assignee || "-")}</div>` +
+    `<div class="key">Assignee</div><div>${escapeHtml(assignee)}</div>` +
     `<div class="key">Parallel</div><div>${escapeHtml(parallel)}</div>` +
+    `<div class="key">Agent</div><div>${escapeHtml(agent)}</div>` +
     `<div class="key">AI Model</div><div>${escapeHtml(model)}</div>` +
     `<div class="key">SSOT / Context</div><div>${escapeHtml(ssot)}</div>` +
     `<div class="key">Worktree</div><div>${escapeHtml(worktree)}</div>` +
@@ -825,7 +830,8 @@ for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".a
       title: button.dataset.assignStartTitle || "",
       agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent),
       model: normalizeOptionalDatasetValue(button.dataset.assignStartModel),
-      ssot: normalizeOptionalDatasetValue(button.dataset.assignStartSsot)
+      ssot: normalizeOptionalDatasetValue(button.dataset.assignStartSsot),
+      worktree: normalizeOptionalDatasetValue(button.dataset.assignStartWorktree)
     });
   });
 }
