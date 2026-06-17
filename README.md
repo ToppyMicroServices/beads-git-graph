@@ -14,8 +14,8 @@ No telemetry. Privacy-first. Security-first.
 - Adds a Beads view in the Activity Bar
 - Lets you switch between Git Graph and Beads from the toolbar
 - Lets you refresh, create, close, and sync Beads items inside VS Code
-- Shows optional parallel, agent, and worktree hints on Beads items
-- Shows a Beads critical path graph with dependency edges and Assign + Start actions
+- Shows optional parallel, AI model, SSOT/context, and worktree hints on Beads items
+- Shows a Beads critical path graph with dependency edges and Start AI actions
 
 ## Use It
 
@@ -27,11 +27,14 @@ If your workspace has a `.beads` directory, the extension detects it automatical
 
 ## Multi-Agent Hints
 
-The Beads view surfaces optional execution hints from issue fields or labels:
+The Beads view surfaces optional execution hints from issue fields, metadata, or labels:
 
 - `parallelizable: true` or label `parallel-ok`
-- `agent: "agent-a"` or label `agent:agent-a`
+- `model: "gpt-5-codex"` or label `model:gpt-5-codex`
+- `ssot: "AGENTS.md, .beads/issues.jsonl"` or label `ssot:AGENTS.md`
 - `worktree: "../repo-agent-a"` or label `worktree:../repo-agent-a`
+
+When you use **Start AI**, the extension asks for a model, automatically suggests SSOT/context from workspace files such as `AGENTS.md`, `.beads/issues.jsonl`, `README.md`, and `docs`, then records that metadata before marking the bead in progress.
 
 These hints are visual metadata. Beads ready/blocking behavior still comes from issue status and dependencies.
 

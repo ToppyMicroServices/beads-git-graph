@@ -36,6 +36,8 @@ interface BeadRowItem {
   parallelizable: boolean;
   parallelizableSource: "explicit" | "ready" | "";
   agent: string;
+  model: string;
+  ssot: string;
   worktree: string;
 }
 
@@ -255,6 +257,8 @@ function renderDetailsMarkup(item: BeadRowItem) {
       : item.status === "in_progress" && item.assignee !== "" && item.assignee !== "-"
         ? item.assignee
         : "-";
+  const model = item.model !== "" ? item.model : agent;
+  const ssot = item.ssot !== "" ? item.ssot : "-";
   const worktree = item.worktree !== "" ? item.worktree : "-";
   const executionPills = [
     item.status !== "" ? `<span class="detailPill">Status ${escapeHtml(item.status)}</span>` : "",
@@ -264,7 +268,8 @@ function renderDetailsMarkup(item: BeadRowItem) {
     item.parallelizable
       ? `<span class="detailPill">${escapeHtml(item.parallelizableSource === "ready" ? "Parallel ready" : "Parallel OK")}</span>`
       : "",
-    agent !== "-" ? `<span class="detailPill">Agent ${escapeHtml(agent)}</span>` : "",
+    model !== "-" ? `<span class="detailPill">Model ${escapeHtml(model)}</span>` : "",
+    ssot !== "-" ? `<span class="detailPill">SSOT ${escapeHtml(ssot)}</span>` : "",
     item.worktree !== "" ? `<span class="detailPill">WT ${escapeHtml(item.worktree)}</span>` : ""
   ]
     .filter((pill) => pill !== "")
@@ -281,7 +286,8 @@ function renderDetailsMarkup(item: BeadRowItem) {
     `<div class="key">Priority</div><div>${escapeHtml(item.priority || "-")}</div>` +
     `<div class="key">Assignee</div><div>${escapeHtml(item.assignee || "-")}</div>` +
     `<div class="key">Parallel</div><div>${escapeHtml(parallel)}</div>` +
-    `<div class="key">Agent</div><div>${escapeHtml(agent)}</div>` +
+    `<div class="key">AI Model</div><div>${escapeHtml(model)}</div>` +
+    `<div class="key">SSOT / Context</div><div>${escapeHtml(ssot)}</div>` +
     `<div class="key">Worktree</div><div>${escapeHtml(worktree)}</div>` +
     `<div class="key">Labels</div><div>${escapeHtml(item.labels || "-")}</div>` +
     `<div class="key">Created</div><div>${escapeHtml(item.createdAt || "-")}</div>` +
@@ -769,7 +775,9 @@ for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".a
       issueId,
       workspacePath,
       title: button.dataset.assignStartTitle || "",
-      agent: button.dataset.assignStartAgent || ""
+      agent: button.dataset.assignStartAgent || "",
+      model: button.dataset.assignStartModel || "",
+      ssot: button.dataset.assignStartSsot || ""
     });
   });
 }

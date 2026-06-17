@@ -79,6 +79,8 @@ function renderBeadsDependencyGraph(items: BeadItem[], workspacePath: string) {
             : item.assignee.trim() !== "" && item.assignee !== "-"
               ? item.assignee.trim()
               : "";
+        const modelLabel = item.model.trim() !== "" ? item.model.trim() : agentLabel;
+        const ssotLabel = item.ssot.trim();
         const blockers = (blockersById.get(item.id) ?? []).sort((a, b) => a.localeCompare(b));
         const blocks = (blocksById.get(item.id) ?? []).sort((a, b) => a.localeCompare(b));
         const dependencyLines = [
@@ -95,8 +97,8 @@ function renderBeadsDependencyGraph(items: BeadItem[], workspacePath: string) {
         const assignTitle =
           normalizedStatus === "closed"
             ? "Closed beads cannot be started."
-            : "Assign an agent and mark this bead in progress.";
-        return `<div class="graphNode ${node.critical ? "criticalGraphNode" : ""}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" style="--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${node.critical ? '<span class="criticalBadge">Critical</span>' : ""}</div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${agentLabel === "" ? "" : `<span class="executionBadge agentBadge">Agent ${escapeHtml(agentLabel)}</span>`}</div>${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(agentLabel)}" title="${escapeHtml(assignTitle)}"${assignDisabled}>Assign + Start</button></div></div>`;
+            : "Choose an AI model, attach SSOT/context, and mark this bead in progress.";
+        return `<div class="graphNode ${node.critical ? "criticalGraphNode" : ""}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" style="--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${node.critical ? '<span class="criticalBadge">Critical</span>' : ""}</div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${modelLabel === "" ? "" : `<span class="executionBadge modelBadge">Model ${escapeHtml(modelLabel)}</span>`}${ssotLabel === "" ? "" : `<span class="executionBadge ssotBadge">SSOT</span>`}</div>${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(agentLabel)}" data-assign-start-model="${escapeHtml(modelLabel)}" data-assign-start-ssot="${escapeHtml(ssotLabel)}" title="${escapeHtml(assignTitle)}"${assignDisabled}>Start AI</button></div></div>`;
       })
       .join("");
   }).join("");
@@ -141,7 +143,7 @@ export function renderBeadsWebviewHtml(
         let activeCount = 0;
         let blockedCount = 0;
         let parallelCount = 0;
-        const agents = new Set<string>();
+        const models = new Set<string>();
         for (const entry of flatItems) {
           const status = normalizeBeadStatus(entry.item.status);
           if (status === "open" || status === "in_progress" || status === "blocked") {
@@ -153,16 +155,18 @@ export function renderBeadsWebviewHtml(
           if (entry.item.parallelizable) {
             parallelCount += 1;
           }
-          const agentLabel =
-            entry.item.agent.trim() !== ""
-              ? entry.item.agent.trim()
-              : status === "in_progress" &&
-                  entry.item.assignee.trim() !== "" &&
-                  entry.item.assignee !== "-"
-                ? entry.item.assignee.trim()
-                : "";
-          if (agentLabel !== "") {
-            agents.add(agentLabel);
+          const modelLabel =
+            entry.item.model.trim() !== ""
+              ? entry.item.model.trim()
+              : entry.item.agent.trim() !== ""
+                ? entry.item.agent.trim()
+                : status === "in_progress" &&
+                    entry.item.assignee.trim() !== "" &&
+                    entry.item.assignee !== "-"
+                  ? entry.item.assignee.trim()
+                  : "";
+          if (modelLabel !== "") {
+            models.add(modelLabel);
           }
           if (entry.parentId !== null) {
             childCountByParent.set(
@@ -181,8 +185,8 @@ export function renderBeadsWebviewHtml(
           parallelCount > 0
             ? `<span class="summaryPill parallelSummary">${parallelCount} parallel</span>`
             : "",
-          agents.size > 0
-            ? `<span class="summaryPill agentSummary">${agents.size} agents</span>`
+          models.size > 0
+            ? `<span class="summaryPill modelSummary">${models.size} models</span>`
             : ""
         ]
           .filter((pill) => pill !== "")
@@ -225,13 +229,15 @@ export function renderBeadsWebviewHtml(
                     item.assignee !== "-"
                   ? item.assignee.trim()
                   : "";
+            const rowModelLabel = item.model.trim() !== "" ? item.model.trim() : rowAgentLabel;
             const executionBadges = [
               item.parallelizable
                 ? `<span class="executionBadge parallelBadge" title="${escapeHtml(item.parallelizableSource === "ready" ? "Ready and unblocked; can run alongside other ready tasks." : "Marked as parallelizable.")}">${escapeHtml(item.parallelizableSource === "ready" ? "Parallel ready" : "Parallel OK")}</span>`
                 : "",
-              rowAgentLabel === ""
+              rowModelLabel === ""
                 ? ""
-                : `<span class="executionBadge agentBadge">Agent ${escapeHtml(rowAgentLabel)}</span>`,
+                : `<span class="executionBadge modelBadge">Model ${escapeHtml(rowModelLabel)}</span>`,
+              item.ssot.trim() === "" ? "" : `<span class="executionBadge ssotBadge">SSOT</span>`,
               worktreeLabel === ""
                 ? ""
                 : `<span class="executionBadge worktreeBadge">WT ${escapeHtml(worktreeLabel)}</span>`
@@ -363,7 +369,7 @@ body[data-has-sync-warnings="1"] #syncBeads .toolbarActionLabel{font-weight:700;
 .activeSummary{border-color:rgba(59,130,246,.4);color:var(--vscode-textLink-foreground,#3b82f6);}
 .blockedSummary{border-color:rgba(239,68,68,.5);color:var(--vscode-errorForeground,#ef4444);}
 .parallelSummary{border-color:rgba(34,197,94,.45);color:var(--vscode-testing-iconPassed,#22c55e);}
-.agentSummary{border-color:rgba(234,179,8,.5);color:var(--vscode-charts-yellow,#d97706);}
+.modelSummary{border-color:rgba(234,179,8,.5);color:var(--vscode-charts-yellow,#d97706);}
 section{margin-bottom:12px;}
 .tableWrap{position:relative;border:1px solid var(--vscode-panel-border);border-radius:8px;overflow:hidden;background:var(--vscode-editor-background);}
 body[data-view-mode="graph"] .tableWrap{display:none;}
@@ -402,7 +408,8 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .beadMeta{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:4px;}
 .executionBadge{display:inline-flex;align-items:center;max-width:100%;padding:1px 6px;border-radius:6px;border:1px solid rgba(128,128,128,.42);font-size:10px;font-weight:650;line-height:15px;color:var(--vscode-descriptionForeground);background:rgba(128,128,128,.1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .parallelBadge{border-color:rgba(34,197,94,.65);color:var(--vscode-testing-iconPassed, #22c55e);background:rgba(34,197,94,.16);}
-.agentBadge{border-color:rgba(59,130,246,.55);color:var(--vscode-textLink-foreground, #3b82f6);background:rgba(59,130,246,.12);}
+.modelBadge{border-color:rgba(59,130,246,.55);color:var(--vscode-textLink-foreground, #3b82f6);background:rgba(59,130,246,.12);}
+.ssotBadge{border-color:rgba(168,85,247,.5);color:var(--vscode-charts-purple,#a855f7);background:rgba(168,85,247,.12);}
 .worktreeBadge{border-color:rgba(234,179,8,.55);color:var(--vscode-charts-yellow, #d97706);background:rgba(234,179,8,.12);}
 .statusCell{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .typeBadge,.statusBadge,.priorityBadge{display:inline-flex;align-items:center;justify-content:center;padding:1px 6px;border-radius:6px;font-size:10px;font-weight:650;white-space:nowrap;}

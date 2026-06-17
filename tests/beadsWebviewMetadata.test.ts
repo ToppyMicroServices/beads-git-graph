@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = join(import.meta.dirname, "..");
 const beadsWebview = readFileSync(join(repoRoot, "src", "beadsWebview.ts"), "utf8");
+const beadsView = readFileSync(join(repoRoot, "src", "beadsView.ts"), "utf8");
 const beadsMain = readFileSync(join(repoRoot, "web", "beadsMain.ts"), "utf8");
 
 describe("beads webview presentation metadata", () => {
@@ -39,12 +40,16 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("Parallel ready");
   });
 
-  it("shows dependency graph controls and agent start actions", () => {
+  it("shows dependency graph controls and AI start actions", () => {
     expect(beadsWebview).toContain('id="graphView"');
     expect(beadsWebview).toContain("Critical Path");
     expect(beadsWebview).toContain("dependencyOverlay");
     expect(beadsWebview).toContain("criticalGraphNode");
-    expect(beadsWebview).toContain("Assign + Start");
+    expect(beadsWebview).toContain("Start AI");
+    expect(beadsWebview).toContain("data-assign-start-model");
+    expect(beadsWebview).toContain("data-assign-start-ssot");
+    expect(beadsWebview).toContain("modelBadge");
+    expect(beadsWebview).toContain("ssotBadge");
     expect(beadsWebview).toContain("max-height:calc(100vh - 132px)");
     expect(beadsWebview).toContain("graphLevelGuide");
     expect(beadsWebview).toContain("graphNodes");
@@ -60,8 +65,22 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("saveViewMode(mode)");
     expect(beadsMain).toContain("marker-end");
     expect(beadsMain).toContain("criticalDependencyArrow");
+    expect(beadsMain).toContain('model: button.dataset.assignStartModel || ""');
+    expect(beadsMain).toContain('ssot: button.dataset.assignStartSsot || ""');
     expect(beadsMain).toContain("renderDependencyGraphOverlays");
     expect(beadsMain).toContain('command: "assignStartBead"');
     expect(beadsMain).toContain("detailsCell.colSpan = 6");
+  });
+
+  it("starts AI work with model and inferred SSOT context", () => {
+    expect(beadsView).toContain("Assign AI Model");
+    expect(beadsView).toContain("Start AI work with this model and SSOT/context?");
+    expect(beadsView).toContain("inferAssignSsot");
+    expect(beadsView).toContain("AGENTS.md");
+    expect(beadsView).toContain(".beads/issues.jsonl");
+    expect(beadsView).toContain("README.md");
+    expect(beadsView).toContain("`model=$" + "{model}`");
+    expect(beadsView).toContain("`ssot=$" + "{ssot}`");
+    expect(beadsView).not.toContain("Assign Agent");
   });
 });
