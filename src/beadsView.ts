@@ -450,7 +450,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           workspacePath,
           issueId,
           message.title,
-          message.model ?? message.agent,
+          message.model?.trim() || message.agent,
           message.ssot
         );
       } catch (error) {
