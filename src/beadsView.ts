@@ -1,4 +1,5 @@
 import * as cp from "node:child_process";
+import * as fs from "node:fs";
 import * as path from "node:path";
 
 import * as vscode from "vscode";
@@ -6,6 +7,7 @@ import * as vscode from "vscode";
 import {
   type BeadItem,
   beadsAsArray,
+  deriveParallelMergeItems,
   diffBeadItems,
   extractBeadItems,
   inferReadyParallelizableItems,
@@ -30,6 +32,21 @@ import { GitGraphView } from "./gitGraphView";
 type CreateBeadType = "task" | "feature" | "bug" | "epic" | "chore";
 type CreateBeadStatus = "open" | "in_progress" | "blocked" | "closed";
 type CreateBeadPriority = "P0" | "P1" | "P2" | "P3" | "P4";
+const DEFAULT_ASSIGN_MODEL = "gpt-5-codex";
+const ASSIGN_MODEL_OPTIONS = [DEFAULT_ASSIGN_MODEL, "gpt-5", "codex"];
+const ASSIGN_CONTEXT_CANDIDATES = [
+  "AGENTS.md",
+  ".codex",
+  ".agents",
+  ".beads/issues.jsonl",
+  "README.md",
+  "CONTRIBUTING.md",
+  "docs"
+];
+const COPILOT_ASSIGN_COMMAND_CANDIDATES = [
+  "workbench.action.chat.openSessionWithPrompt.copilotcli",
+  "workbench.action.chat.openSessionWithPrompt.copilot-cloud-agent"
+];
 
 export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   public static readonly viewType = "beads-git-graph.beadsView";
@@ -234,7 +251,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           if (cliItems.length > 0) {
             groups.push({
               ...workspaceInfo,
-              items: cliItems
+              items: deriveParallelMergeItems(cliItems)
             });
           } else {
             emptyWorkspaces.push(workspaceInfo);
@@ -257,7 +274,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       if (legacyResult.items.length > 0) {
         groups.push({
           ...workspaceInfo,
-          items: legacyResult.items
+          items: deriveParallelMergeItems(legacyResult.items)
         });
       } else if (legacyResult.hasFiles) {
         emptyWorkspaces.push(workspaceInfo);
@@ -434,7 +451,14 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       }
 
       try {
-        await this.promptAssignAndStartBead(workspacePath, issueId, message.title, message.agent);
+        await this.promptAssignAndStartBead(
+          workspacePath,
+          issueId,
+          message.title,
+          message.model?.trim() || message.agent,
+          message.ssot,
+          message.worktree
+        );
       } catch (error) {
         const messageText =
           error instanceof Error ? error.message : "Unable to assign and start bead.";
@@ -447,31 +471,197 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     workspacePath: string,
     issueId: string,
     title: string | undefined,
-    currentAgent: string | undefined
+    currentModel: string | undefined,
+    currentSsot: string | undefined,
+    currentWorktree: string | undefined
   ) {
-    const agent = await vscode.window.showInputBox({
-      title: "Assign Agent",
-      prompt: `Agent for ${issueId}${title ? `: ${title}` : ""}`,
-      value: currentAgent ?? "",
-      placeHolder: "agent-a",
-      ignoreFocusOut: true,
-      validateInput: (value) => (value.trim() === "" ? "Agent is required." : undefined)
-    });
-    if (agent === undefined) {
+    const model = await this.pickAssignModel(currentModel);
+    if (model === undefined) {
       return;
     }
 
-    const trimmedAgent = agent.trim();
-    await this.runBdCommand(["assign", issueId, trimmedAgent], workspacePath);
+    const ssot = await this.confirmAssignContext(workspacePath, issueId, title, model, currentSsot);
+    if (ssot === undefined) {
+      return;
+    }
+
+    await this.runBdCommand(["assign", issueId, model], workspacePath);
     await this.runBdCommand(
-      ["update", issueId, "--status", "in_progress", "--set-metadata", `agent=${trimmedAgent}`],
+      [
+        "update",
+        issueId,
+        "--status",
+        "in_progress",
+        "--set-metadata",
+        `agent=${model}`,
+        "--set-metadata",
+        `model=${model}`,
+        "--set-metadata",
+        `ssot=${ssot}`
+      ],
       workspacePath
     );
     await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
     await this.refresh();
-    vscode.window.showInformationMessage(
-      `Assigned ${issueId} to ${trimmedAgent} and marked it in progress.`
+
+    const openedChat = await this.openAssignAgentSession({
+      workspacePath,
+      issueId,
+      title,
+      model,
+      ssot,
+      worktree: currentWorktree
+    });
+
+    if (openedChat) {
+      vscode.window.showInformationMessage(
+        `Started ${issueId} with ${model}. Opened Copilot agent session.`
+      );
+      return;
+    }
+
+    vscode.window.showWarningMessage(
+      `Started ${issueId} with ${model}, but could not open a Copilot agent session automatically.`
     );
+  }
+
+  private buildAssignAgentPrompt(values: {
+    issueId: string;
+    title: string | undefined;
+    model: string;
+    ssot: string;
+    workspacePath: string;
+    worktree: string | undefined;
+  }) {
+    const lines = [
+      `Start work on bead ${values.issueId}${values.title ? `: ${values.title}` : ""}.`,
+      `Use model ${values.model}.`,
+      `Workspace: ${values.workspacePath}`,
+      `SSOT/context: ${values.ssot}`
+    ];
+
+    if ((values.worktree ?? "").trim() !== "") {
+      lines.push(`Preferred worktree: ${values.worktree?.trim()}`);
+    }
+
+    lines.push(
+      `Read AGENTS.md and the listed SSOT/context before changing code.`,
+      `Inspect the bead details with bd show ${values.issueId}.`,
+      `Keep the work scoped to this bead and proceed autonomously.`
+    );
+
+    return lines.join("\n");
+  }
+
+  private async openAssignAgentSession(values: {
+    workspacePath: string;
+    issueId: string;
+    title: string | undefined;
+    model: string;
+    ssot: string;
+    worktree: string | undefined;
+  }) {
+    const commands = new Set(await vscode.commands.getCommands(true));
+    const prompt = this.buildAssignAgentPrompt(values);
+    const resource = vscode.Uri.file(values.workspacePath);
+
+    for (const command of COPILOT_ASSIGN_COMMAND_CANDIDATES) {
+      if (!commands.has(command)) {
+        continue;
+      }
+
+      try {
+        await vscode.commands.executeCommand(command, {
+          prompt,
+          resource
+        });
+        return true;
+      } catch {
+        continue;
+      }
+    }
+
+    return false;
+  }
+
+  private async pickAssignModel(currentModel: string | undefined) {
+    const trimmedCurrent = currentModel?.trim() ?? "";
+    const options = [
+      ...new Set([trimmedCurrent, ...ASSIGN_MODEL_OPTIONS].filter((model) => model !== ""))
+    ];
+    const picked = await vscode.window.showQuickPick(
+      [
+        ...options.map((model, index) => ({
+          label: model,
+          description: index === 0 && trimmedCurrent !== "" ? "current" : "model"
+        })),
+        { label: "Custom...", description: "enter another model id" }
+      ],
+      {
+        title: "Assign AI Model",
+        placeHolder: "Choose the model that will work on this bead",
+        ignoreFocusOut: true
+      }
+    );
+    if (picked === undefined) {
+      return undefined;
+    }
+    if (picked.label !== "Custom...") {
+      return picked.label;
+    }
+
+    const customModel = await vscode.window.showInputBox({
+      title: "Assign AI Model",
+      prompt: "Model id",
+      value: trimmedCurrent || DEFAULT_ASSIGN_MODEL,
+      placeHolder: DEFAULT_ASSIGN_MODEL,
+      ignoreFocusOut: true,
+      validateInput: (value) => (value.trim() === "" ? "Model is required." : undefined)
+    });
+
+    return customModel?.trim();
+  }
+
+  private async confirmAssignContext(
+    workspacePath: string,
+    issueId: string,
+    title: string | undefined,
+    model: string,
+    currentSsot: string | undefined
+  ) {
+    const suggestedSsot = currentSsot?.trim() || this.inferAssignSsot(workspacePath, issueId);
+    const detail = `${issueId}${title ? `: ${title}` : ""}\nModel: ${model}\nSSOT/context: ${suggestedSsot}`;
+    const confirmation = await vscode.window.showInformationMessage(
+      "Start AI work with this model and SSOT/context?",
+      { modal: true, detail },
+      "Start",
+      "Edit Context"
+    );
+    if (confirmation === undefined) {
+      return undefined;
+    }
+    if (confirmation === "Start") {
+      return suggestedSsot;
+    }
+
+    const editedSsot = await vscode.window.showInputBox({
+      title: "SSOT / Context",
+      prompt: "Source of truth or context the AI should use",
+      value: suggestedSsot,
+      ignoreFocusOut: true,
+      validateInput: (value) =>
+        value.trim() === "" ? "SSOT/context is required for AI assignment." : undefined
+    });
+
+    return editedSsot?.trim();
+  }
+
+  private inferAssignSsot(workspacePath: string, issueId: string) {
+    const references = ASSIGN_CONTEXT_CANDIDATES.filter((candidate) =>
+      fs.existsSync(path.join(workspacePath, candidate))
+    );
+
+    return [`bd:${issueId}`, ...references].join(", ");
   }
 
   private async promptAndCreateBead(workspacePath: string) {
