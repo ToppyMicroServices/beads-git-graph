@@ -1,4 +1,5 @@
 import type { BeadsRequestMessage } from "../src/beadsProtocol";
+import { isCollapsedByEpic, shouldShowBeadRow } from "./beadsRowVisibility";
 
 declare function acquireVsCodeApi(): {
   postMessage(message: BeadsRequestMessage): void;
@@ -68,6 +69,7 @@ let sortState: { key: SortKey; desc: boolean } = { key: "updated", desc: true };
 let activeViewMode: ViewMode = normalizeViewMode(vscode.getState()?.viewMode);
 let rowClickTimer: number | null = null;
 const collapsedIds = new Set<string>();
+const collapsedEpicIds = new Set<string>();
 
 const chips = queryElement<HTMLDivElement>("#chips");
 const preset = queryElement<HTMLSelectElement>("#preset");
@@ -343,6 +345,14 @@ function getVisibleBeadRows(scope: ParentNode = document) {
   return Array.from(scope.querySelectorAll<BeadRow>("tbody .beadRow"));
 }
 
+function getRowVisibilityState(row: BeadRow) {
+  return {
+    id: row.dataset.id || "",
+    epicId: row.dataset.epicId || "",
+    status: (row.dataset.status || "") as StatusFilter
+  };
+}
+
 function getRowsById(rows: BeadRow[]) {
   const rowsById = new Map<string, BeadRow>();
   for (const row of rows) {
@@ -388,7 +398,9 @@ function refreshRowVisibility() {
     if (filterVisible) {
       matchingCount += 1;
     }
-    const visible = filterVisible && !rowHasCollapsedAncestor(row, rowsById);
+    const visible =
+      shouldShowBeadRow(getRowVisibilityState(row), activeFilters, collapsedEpicIds) &&
+      !rowHasCollapsedAncestor(row, rowsById);
     row.style.display = visible ? "" : "none";
     if (visible) {
       visibleCount += 1;
@@ -461,6 +473,37 @@ function clearRowClickTimer() {
     window.clearTimeout(rowClickTimer);
     rowClickTimer = null;
   }
+}
+
+function isEpicRow(row: BeadRow) {
+  return row.dataset.beadType === "epic";
+}
+
+function toggleEpicSubprojects(row: BeadRow) {
+  if (!isEpicRow(row)) {
+    return false;
+  }
+
+  const epicId = row.dataset.id || "";
+  if (epicId === "") {
+    return false;
+  }
+
+  if (collapsedEpicIds.has(epicId)) {
+    collapsedEpicIds.delete(epicId);
+  } else {
+    collapsedEpicIds.add(epicId);
+  }
+
+  if (
+    selectedRow !== null &&
+    (selectedRow === row || isCollapsedByEpic(getRowVisibilityState(selectedRow), collapsedEpicIds))
+  ) {
+    clearSelectedRow();
+  }
+
+  applyFilters();
+  return true;
 }
 
 function getSortValue(row: BeadRow, key: SortKey) {
@@ -839,6 +882,12 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
     }
     clearRowClickTimer();
     event.preventDefault();
+    if (toggleEpicSubprojects(row)) {
+      if (selectedRow === row) {
+        clearSelectedRow();
+      }
+      return;
+    }
     if (toggleRowCollapse(row)) {
       if (selectedRow === row) {
         clearSelectedRow();
