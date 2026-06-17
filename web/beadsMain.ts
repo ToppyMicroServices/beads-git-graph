@@ -107,6 +107,11 @@ function saveViewMode(mode: ViewMode) {
   });
 }
 
+function normalizeOptionalDatasetValue(value: string | undefined) {
+  const trimmedValue = value?.trim();
+  return trimmedValue ? trimmedValue : undefined;
+}
+
 function decodeRowItem(row: BeadRow): BeadRowItem | null {
   const encoded = row.dataset.item;
   if (!encoded) {
@@ -775,9 +780,9 @@ for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".a
       issueId,
       workspacePath,
       title: button.dataset.assignStartTitle || "",
-      agent: button.dataset.assignStartAgent || "",
-      model: button.dataset.assignStartModel || "",
-      ssot: button.dataset.assignStartSsot || ""
+      agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent),
+      model: normalizeOptionalDatasetValue(button.dataset.assignStartModel),
+      ssot: normalizeOptionalDatasetValue(button.dataset.assignStartSsot)
     });
   });
 }
