@@ -66,9 +66,15 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("normalizeOptionalDatasetValue");
     expect(beadsMain).toContain("marker-end");
     expect(beadsMain).toContain("criticalDependencyArrow");
-    expect(beadsMain).toContain("agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent)");
-    expect(beadsMain).toContain("model: normalizeOptionalDatasetValue(button.dataset.assignStartModel)");
-    expect(beadsMain).toContain("ssot: normalizeOptionalDatasetValue(button.dataset.assignStartSsot)");
+    expect(beadsMain).toContain(
+      "agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent)"
+    );
+    expect(beadsMain).toContain(
+      "model: normalizeOptionalDatasetValue(button.dataset.assignStartModel)"
+    );
+    expect(beadsMain).toContain(
+      "ssot: normalizeOptionalDatasetValue(button.dataset.assignStartSsot)"
+    );
     expect(beadsMain).toContain("renderDependencyGraphOverlays");
     expect(beadsMain).toContain('command: "assignStartBead"');
     expect(beadsMain).toContain("detailsCell.colSpan = 6");
