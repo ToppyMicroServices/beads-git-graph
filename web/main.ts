@@ -6,7 +6,7 @@ import {
 } from "../src/remotes";
 import { Dropdown } from "./dropdown";
 import { Graph } from "./graph";
-import createDOMPurify = require("dompurify");
+import createDOMPurify from "dompurify";
 import {
   abbrevCommit,
   addListenerToClass,
