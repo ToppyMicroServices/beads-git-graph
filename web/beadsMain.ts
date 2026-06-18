@@ -136,6 +136,33 @@ function decodeRowItem(row: BeadRow): BeadRowItem | null {
   }
 }
 
+function decodeEncodedJson<T>(encoded: string | undefined): T | null {
+  if (!encoded) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(decodeURIComponent(encoded)) as T;
+  } catch {
+    return null;
+  }
+}
+
+function toExecutionTarget(item: BeadRowItem) {
+  return {
+    issueId: item.id,
+    title: item.title || "",
+    model: item.model || undefined,
+    ssot: item.ssot || undefined,
+    worktree: item.worktree || undefined
+  };
+}
+
+function findSectionRows(button: HTMLElement) {
+  const section = button.closest("section[data-workspace-path]");
+  return section === null ? [] : getVisibleBeadRows(section);
+}
+
 function closeContextMenu() {
   rowContextMenu.classList.remove("open");
   contextMenuRow = null;
@@ -816,6 +843,26 @@ for (const button of Array.from(
     vscode.postMessage({ command: "syncBeads", workspacePath });
   });
 }
+for (const button of Array.from(
+  document.querySelectorAll<HTMLButtonElement>(".startParallelBeads")
+)) {
+  button.addEventListener("click", () => {
+    const workspacePath = button.dataset.startParallelWorkspace || "";
+    const items = decodeEncodedJson<
+      Array<{
+        issueId: string;
+        title?: string;
+        model?: string;
+        ssot?: string;
+        worktree?: string;
+      }>
+    >(button.dataset.startParallelItems);
+    if (!bdAvailable || workspacePath === "" || items === null || items.length === 0) {
+      return;
+    }
+    vscode.postMessage({ command: "startParallelBeads", workspacePath, items });
+  });
+}
 for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".assignStartBead"))) {
   button.addEventListener("click", () => {
     const issueId = button.dataset.assignStartId || "";
@@ -832,6 +879,34 @@ for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".a
       model: normalizeOptionalDatasetValue(button.dataset.assignStartModel),
       ssot: normalizeOptionalDatasetValue(button.dataset.assignStartSsot),
       worktree: normalizeOptionalDatasetValue(button.dataset.assignStartWorktree)
+    });
+  });
+}
+for (const button of Array.from(
+  document.querySelectorAll<HTMLButtonElement>(".mergeParallelPrs")
+)) {
+  button.addEventListener("click", () => {
+    const issueId = button.dataset.mergeId || "";
+    const workspacePath = button.dataset.mergeWorkspace || "";
+    const dependencyIds = (button.dataset.mergeDependencies || "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter((id) => id !== "");
+    if (!bdAvailable || issueId === "" || workspacePath === "" || dependencyIds.length === 0) {
+      return;
+    }
+
+    const dependencySet = new Set(dependencyIds);
+    const dependencies = findSectionRows(button)
+      .map((row) => decodeRowItem(row))
+      .filter((item): item is BeadRowItem => item !== null && dependencySet.has(item.id))
+      .map(toExecutionTarget);
+    vscode.postMessage({
+      command: "mergeParallelPrs",
+      issueId,
+      workspacePath,
+      title: button.dataset.mergeTitle || "",
+      dependencies
     });
   });
 }

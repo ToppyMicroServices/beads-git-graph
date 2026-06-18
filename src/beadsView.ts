@@ -14,7 +14,7 @@ import {
   mergeBeadItems,
   toBeadItem
 } from "./beadsData";
-import { isBeadsRequestMessage } from "./beadsProtocol";
+import { type BeadsExecutionTarget, isBeadsRequestMessage } from "./beadsProtocol";
 import { flushBeadsWorkspace, syncBeadsWorkspace } from "./beadsSync";
 import {
   type BeadGroup,
@@ -33,7 +33,6 @@ type CreateBeadType = "task" | "feature" | "bug" | "epic" | "chore";
 type CreateBeadStatus = "open" | "in_progress" | "blocked" | "closed";
 type CreateBeadPriority = "P0" | "P1" | "P2" | "P3" | "P4";
 const DEFAULT_ASSIGN_MODEL = "gpt-5-codex";
-const ASSIGN_MODEL_OPTIONS = [DEFAULT_ASSIGN_MODEL, "gpt-5", "codex"];
 const ASSIGN_CONTEXT_CANDIDATES = [
   "AGENTS.md",
   ".codex",
@@ -47,6 +46,12 @@ const COPILOT_ASSIGN_COMMAND_CANDIDATES = [
   "workbench.action.chat.openSessionWithPrompt.copilotcli",
   "workbench.action.chat.openSessionWithPrompt.copilot-cloud-agent"
 ];
+
+interface GitWorktreeInfo {
+  path: string;
+  branch: string;
+  head: string;
+}
 
 export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   public static readonly viewType = "beads-git-graph.beadsView";
@@ -451,7 +456,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       }
 
       try {
-        await this.promptAssignAndStartBead(
+        await this.autoAssignAndStartBead(
           workspacePath,
           issueId,
           message.title,
@@ -464,10 +469,64 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           error instanceof Error ? error.message : "Unable to assign and start bead.";
         vscode.window.showErrorMessage(messageText);
       }
+      return;
+    }
+
+    if (
+      message.command === "startParallelBeads" &&
+      typeof message.workspacePath === "string" &&
+      Array.isArray(message.items)
+    ) {
+      const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath.trim());
+      if (workspacePath === null) {
+        vscode.window.showWarningMessage(
+          "Refusing to start parallel beads outside an initialized workspace folder."
+        );
+        return;
+      }
+
+      try {
+        await this.startParallelBeads(workspacePath, message.items);
+      } catch (error) {
+        const messageText =
+          error instanceof Error ? error.message : "Unable to start parallel beads.";
+        vscode.window.showErrorMessage(messageText);
+      }
+      return;
+    }
+
+    if (
+      message.command === "mergeParallelPrs" &&
+      typeof message.issueId === "string" &&
+      typeof message.workspacePath === "string"
+    ) {
+      const issueId = message.issueId.trim();
+      const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath.trim());
+      if (issueId === "" || workspacePath === null) {
+        if (workspacePath === null) {
+          vscode.window.showWarningMessage(
+            "Refusing to merge PRs outside an initialized workspace folder."
+          );
+        }
+        return;
+      }
+
+      try {
+        await this.mergeParallelPullRequests(
+          workspacePath,
+          issueId,
+          message.title,
+          message.dependencies
+        );
+      } catch (error) {
+        const messageText =
+          error instanceof Error ? error.message : "Unable to merge parallel PRs.";
+        vscode.window.showErrorMessage(messageText);
+      }
     }
   }
 
-  private async promptAssignAndStartBead(
+  private async autoAssignAndStartBead(
     workspacePath: string,
     issueId: string,
     title: string | undefined,
@@ -475,53 +534,164 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     currentSsot: string | undefined,
     currentWorktree: string | undefined
   ) {
-    const model = await this.pickAssignModel(currentModel);
-    if (model === undefined) {
-      return;
-    }
+    const model = this.resolveAssignModel(currentModel);
+    const ssot = this.resolveAssignSsot(workspacePath, issueId, currentSsot);
+    const worktree = this.resolveAssignWorktree(workspacePath, issueId, currentWorktree);
 
-    const ssot = await this.confirmAssignContext(workspacePath, issueId, title, model, currentSsot);
-    if (ssot === undefined) {
-      return;
-    }
-
-    await this.runBdCommand(["assign", issueId, model], workspacePath);
-    await this.runBdCommand(
-      [
-        "update",
-        issueId,
-        "--status",
-        "in_progress",
-        "--set-metadata",
-        `agent=${model}`,
-        "--set-metadata",
-        `model=${model}`,
-        "--set-metadata",
-        `ssot=${ssot}`
-      ],
-      workspacePath
-    );
-    await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
-    await this.refresh();
-
-    const openedChat = await this.openAssignAgentSession({
+    const openedChat = await this.assignAndStartBead({
       workspacePath,
       issueId,
       title,
       model,
       ssot,
-      worktree: currentWorktree
+      worktree
     });
+    await this.refresh();
 
     if (openedChat) {
       vscode.window.showInformationMessage(
-        `Started ${issueId} with ${model}. Opened Copilot agent session.`
+        `Started ${issueId} with ${model}. Opened Copilot agent session for ${path.basename(worktree)}.`
       );
       return;
     }
 
     vscode.window.showWarningMessage(
       `Started ${issueId} with ${model}, but could not open a Copilot agent session automatically.`
+    );
+  }
+
+  private async assignAndStartBead(values: {
+    workspacePath: string;
+    issueId: string;
+    title: string | undefined;
+    model: string;
+    ssot: string;
+    worktree: string;
+  }) {
+    const worktree = await this.ensureAgentWorktree(
+      values.workspacePath,
+      values.issueId,
+      values.worktree
+    );
+    const metadata = [
+      `agent=${values.model}`,
+      `model=${values.model}`,
+      `ssot=${values.ssot}`,
+      `worktree=${worktree}`
+    ];
+
+    await this.runBdCommand(["assign", values.issueId, values.model], values.workspacePath);
+    await this.runBdCommand(
+      [
+        "update",
+        values.issueId,
+        "--status",
+        "in_progress",
+        ...metadata.flatMap((entry) => ["--set-metadata", entry])
+      ],
+      values.workspacePath
+    );
+    await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), values.workspacePath);
+
+    return this.openAssignAgentSession({ ...values, worktree });
+  }
+
+  private async startParallelBeads(workspacePath: string, items: BeadsExecutionTarget[]) {
+    const candidates = items
+      .map((item) => ({
+        issueId: item.issueId.trim(),
+        title: item.title,
+        model: this.resolveAssignModel(item.model),
+        ssot: "",
+        worktree: ""
+      }))
+      .filter((item) => item.issueId !== "");
+
+    if (candidates.length === 0) {
+      vscode.window.showWarningMessage("No parallel beads were available to start.");
+      return;
+    }
+
+    const uniqueCandidates = [...new Map(candidates.map((item) => [item.issueId, item])).values()];
+    let openedCount = 0;
+    for (const candidate of uniqueCandidates) {
+      const source = items.find((item) => item.issueId.trim() === candidate.issueId);
+      candidate.ssot = this.resolveAssignSsot(workspacePath, candidate.issueId, source?.ssot);
+      candidate.worktree = this.resolveAssignWorktree(
+        workspacePath,
+        candidate.issueId,
+        source?.worktree
+      );
+      const opened = await this.assignAndStartBead({
+        workspacePath,
+        issueId: candidate.issueId,
+        title: candidate.title,
+        model: candidate.model,
+        ssot: candidate.ssot,
+        worktree: candidate.worktree
+      });
+      if (opened) {
+        openedCount += 1;
+      }
+    }
+
+    await this.refresh();
+    vscode.window.showInformationMessage(
+      `Started ${uniqueCandidates.length} parallel bead(s). Opened ${openedCount} Copilot session(s).`
+    );
+  }
+
+  private async mergeParallelPullRequests(
+    workspacePath: string,
+    issueId: string,
+    title: string | undefined,
+    dependencies: BeadsExecutionTarget[]
+  ) {
+    const worktrees = await this.resolveDependencyWorktrees(workspacePath, dependencies);
+    if (worktrees.length === 0) {
+      throw new Error("No dependency worktrees were found for this parallel merge task.");
+    }
+
+    const confirmation = await vscode.window.showWarningMessage(
+      `Auto-merge PRs for ${issueId}${title ? `: ${title}` : ""}?`,
+      {
+        modal: true,
+        detail:
+          "The extension will fetch origin, verify each agent worktree contains origin/main and has no uncommitted changes, then ask GitHub CLI to auto-merge the matching branch PRs."
+      },
+      "Merge PRs"
+    );
+    if (confirmation !== "Merge PRs") {
+      return;
+    }
+
+    await this.runGitCommand(["fetch", "origin"], workspacePath);
+    await this.assertWorktreesReadyForMerge(worktrees);
+
+    const mergedPrs: string[] = [];
+    for (const worktree of worktrees) {
+      if (worktree.branch.trim() === "") {
+        throw new Error(`Worktree ${worktree.path} is detached; cannot find a branch PR.`);
+      }
+
+      const pullRequest = await this.findOpenPullRequestForBranch(worktree.branch, workspacePath);
+      if (pullRequest === null) {
+        throw new Error(`No open pull request was found for branch ${worktree.branch}.`);
+      }
+
+      await this.runExternalCommand(
+        "gh",
+        ["pr", "merge", String(pullRequest.number), "--auto", "--squash", "--delete-branch"],
+        workspacePath
+      );
+      mergedPrs.push(`#${pullRequest.number}`);
+    }
+
+    await this.runGitCommand(["pull", "--rebase"], workspacePath);
+    await syncBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
+    await this.refresh();
+    vscode.window.showInformationMessage(
+      `Queued auto-merge for ${mergedPrs.join(", ")} and synced Beads.`
     );
   }
 
@@ -584,76 +754,16 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     return false;
   }
 
-  private async pickAssignModel(currentModel: string | undefined) {
-    const trimmedCurrent = currentModel?.trim() ?? "";
-    const options = [
-      ...new Set([trimmedCurrent, ...ASSIGN_MODEL_OPTIONS].filter((model) => model !== ""))
-    ];
-    const picked = await vscode.window.showQuickPick(
-      [
-        ...options.map((model, index) => ({
-          label: model,
-          description: index === 0 && trimmedCurrent !== "" ? "current" : "model"
-        })),
-        { label: "Custom...", description: "enter another model id" }
-      ],
-      {
-        title: "Assign AI Model",
-        placeHolder: "Choose the model that will work on this bead",
-        ignoreFocusOut: true
-      }
-    );
-    if (picked === undefined) {
-      return undefined;
-    }
-    if (picked.label !== "Custom...") {
-      return picked.label;
-    }
-
-    const customModel = await vscode.window.showInputBox({
-      title: "Assign AI Model",
-      prompt: "Model id",
-      value: trimmedCurrent || DEFAULT_ASSIGN_MODEL,
-      placeHolder: DEFAULT_ASSIGN_MODEL,
-      ignoreFocusOut: true,
-      validateInput: (value) => (value.trim() === "" ? "Model is required." : undefined)
-    });
-
-    return customModel?.trim();
+  private resolveAssignModel(currentModel: string | undefined) {
+    return currentModel?.trim() || DEFAULT_ASSIGN_MODEL;
   }
 
-  private async confirmAssignContext(
+  private resolveAssignSsot(
     workspacePath: string,
     issueId: string,
-    title: string | undefined,
-    model: string,
     currentSsot: string | undefined
   ) {
-    const suggestedSsot = currentSsot?.trim() || this.inferAssignSsot(workspacePath, issueId);
-    const detail = `${issueId}${title ? `: ${title}` : ""}\nModel: ${model}\nSSOT/context: ${suggestedSsot}`;
-    const confirmation = await vscode.window.showInformationMessage(
-      "Start AI work with this model and SSOT/context?",
-      { modal: true, detail },
-      "Start",
-      "Edit Context"
-    );
-    if (confirmation === undefined) {
-      return undefined;
-    }
-    if (confirmation === "Start") {
-      return suggestedSsot;
-    }
-
-    const editedSsot = await vscode.window.showInputBox({
-      title: "SSOT / Context",
-      prompt: "Source of truth or context the AI should use",
-      value: suggestedSsot,
-      ignoreFocusOut: true,
-      validateInput: (value) =>
-        value.trim() === "" ? "SSOT/context is required for AI assignment." : undefined
-    });
-
-    return editedSsot?.trim();
+    return currentSsot?.trim() || this.inferAssignSsot(workspacePath, issueId);
   }
 
   private inferAssignSsot(workspacePath: string, issueId: string) {
@@ -662,6 +772,174 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     );
 
     return [`bd:${issueId}`, ...references].join(", ");
+  }
+
+  private resolveAssignWorktree(
+    workspacePath: string,
+    issueId: string,
+    currentWorktree: string | undefined
+  ) {
+    const trimmed = currentWorktree?.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+
+    const safeIssueId = issueId.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 80);
+    return path.join(path.dirname(workspacePath), `${path.basename(workspacePath)}-${safeIssueId}`);
+  }
+
+  private async resolveDependencyWorktrees(
+    workspacePath: string,
+    dependencies: BeadsExecutionTarget[]
+  ) {
+    const knownWorktrees = await this.listGitWorktrees(workspacePath);
+    const knownByPath = new Map(
+      knownWorktrees.map((worktree) => [path.resolve(worktree.path), worktree])
+    );
+    const resolved: GitWorktreeInfo[] = [];
+
+    for (const dependency of dependencies) {
+      const worktreeHint = dependency.worktree?.trim();
+      if (!worktreeHint) {
+        throw new Error(`Bead ${dependency.issueId} has no worktree metadata.`);
+      }
+
+      const requestedPath = path.resolve(workspacePath, worktreeHint);
+      const worktree = knownByPath.get(requestedPath);
+      if (!worktree) {
+        throw new Error(
+          `Worktree for bead ${dependency.issueId} is not registered with git worktree list: ${worktreeHint}`
+        );
+      }
+      resolved.push(worktree);
+    }
+
+    return [...new Map(resolved.map((worktree) => [worktree.path, worktree])).values()];
+  }
+
+  private async ensureAgentWorktree(workspacePath: string, issueId: string, worktreeHint: string) {
+    const worktreePath = path.resolve(workspacePath, worktreeHint);
+    const knownWorktrees = await this.listGitWorktrees(workspacePath);
+    const knownWorktree = knownWorktrees.find(
+      (worktree) => path.resolve(worktree.path) === worktreePath
+    );
+    if (knownWorktree) {
+      return knownWorktree.path;
+    }
+
+    if (fs.existsSync(worktreePath)) {
+      throw new Error(
+        `Worktree path already exists but is not registered with git worktree list: ${worktreePath}`
+      );
+    }
+
+    const branchName = `agent/${issueId.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 80)}`;
+    const branchExists = await this.gitRefExists(workspacePath, `refs/heads/${branchName}`);
+    await this.runGitCommand(
+      branchExists
+        ? ["worktree", "add", worktreePath, branchName]
+        : ["worktree", "add", "-b", branchName, worktreePath, "HEAD"],
+      workspacePath
+    );
+
+    return worktreePath;
+  }
+
+  private async gitRefExists(cwd: string, refName: string) {
+    try {
+      await this.runGitCommand(["show-ref", "--verify", "--quiet", refName], cwd);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async listGitWorktrees(cwd: string) {
+    const stdout = await this.runGitCommand(["worktree", "list", "--porcelain"], cwd);
+    const worktrees: GitWorktreeInfo[] = [];
+    let current: GitWorktreeInfo | null = null;
+
+    for (const rawLine of stdout.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (line === "") {
+        if (current !== null) {
+          worktrees.push(current);
+          current = null;
+        }
+        continue;
+      }
+
+      const [key, ...valueParts] = line.split(" ");
+      const value = valueParts.join(" ");
+      if (key === "worktree") {
+        if (current !== null) {
+          worktrees.push(current);
+        }
+        current = { path: value, branch: "", head: "" };
+      } else if (current !== null && key === "branch") {
+        current.branch = value.replace(/^refs\/heads\//, "");
+      } else if (current !== null && key === "HEAD") {
+        current.head = value;
+      }
+    }
+
+    if (current !== null) {
+      worktrees.push(current);
+    }
+
+    return worktrees;
+  }
+
+  private async assertWorktreesReadyForMerge(worktrees: GitWorktreeInfo[]) {
+    for (const worktree of worktrees) {
+      try {
+        await this.runGitCommand(
+          ["merge-base", "--is-ancestor", "origin/main", "HEAD"],
+          worktree.path
+        );
+      } catch {
+        throw new Error(
+          `Worktree ${worktree.path} does not contain origin/main; rebase or merge the latest base before PR merge.`
+        );
+      }
+
+      const status = await this.runGitCommand(["status", "--porcelain"], worktree.path);
+      if (status.trim() !== "") {
+        throw new Error(
+          `Worktree ${worktree.path} has uncommitted changes; commit or clean it before PR merge.`
+        );
+      }
+    }
+  }
+
+  private async findOpenPullRequestForBranch(branch: string, cwd: string) {
+    let stdout = "";
+    try {
+      stdout = await this.runExternalCommand(
+        "gh",
+        ["pr", "view", branch, "--json", "number,state,isDraft,url"],
+        cwd
+      );
+    } catch {
+      return null;
+    }
+
+    const parsed = JSON.parse(stdout) as {
+      number?: unknown;
+      state?: unknown;
+      isDraft?: unknown;
+      url?: unknown;
+    };
+    if (typeof parsed.number !== "number") {
+      return null;
+    }
+    if (parsed.state !== "OPEN") {
+      return null;
+    }
+    if (parsed.isDraft === true) {
+      throw new Error(`Pull request #${parsed.number} for ${branch} is still draft.`);
+    }
+    return { number: parsed.number, url: typeof parsed.url === "string" ? parsed.url : "" };
   }
 
   private async promptAndCreateBead(workspacePath: string) {
@@ -1162,6 +1440,34 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         reject(
           new Error(
             stderr.trim() || `${gitPath} ${args.join(" ")} failed with exit code ${code ?? -1}.`
+          )
+        );
+      });
+    });
+  }
+
+  private async runExternalCommand(command: string, args: string[], cwd: string) {
+    return new Promise<string>((resolve, reject) => {
+      const child = cp.spawn(command, args, { cwd });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString();
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+      child.on("error", (error) => {
+        reject(error);
+      });
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolve(stdout);
+          return;
+        }
+        reject(
+          new Error(
+            stderr.trim() || `${command} ${args.join(" ")} failed with exit code ${code ?? -1}.`
           )
         );
       });
