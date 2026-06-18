@@ -25,6 +25,21 @@ describe("isBeadsRequestMessage", () => {
         ssot: "AGENTS.md, .beads/issues.jsonl"
       })
     ).toBe(true);
+    expect(
+      isBeadsRequestMessage({
+        command: "startParallelBeads",
+        workspacePath: "/tmp/demo",
+        items: [{ issueId: "neo-1", title: "Demo", worktree: "../repo-neo-1" }]
+      })
+    ).toBe(true);
+    expect(
+      isBeadsRequestMessage({
+        command: "mergeParallelPrs",
+        issueId: "merge:neo-epic",
+        workspacePath: "/tmp/demo",
+        dependencies: [{ issueId: "neo-1", worktree: "../repo-neo-1" }]
+      })
+    ).toBe(true);
   });
 
   it("rejects malformed messages", () => {
@@ -40,6 +55,21 @@ describe("isBeadsRequestMessage", () => {
         issueId: "neo-1",
         workspacePath: "/tmp/demo",
         model: 1234
+      })
+    ).toBe(false);
+    expect(
+      isBeadsRequestMessage({
+        command: "startParallelBeads",
+        workspacePath: "/tmp/demo",
+        items: [{ title: "missing id" }]
+      })
+    ).toBe(false);
+    expect(
+      isBeadsRequestMessage({
+        command: "mergeParallelPrs",
+        issueId: "merge:neo-epic",
+        workspacePath: "/tmp/demo",
+        dependencies: [{ issueId: 1234 }]
       })
     ).toBe(false);
     expect(isBeadsRequestMessage({ command: "unknown" })).toBe(false);

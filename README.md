@@ -15,7 +15,7 @@ No telemetry. Privacy-first. Security-first.
 - Lets you switch between Git Graph and Beads from the toolbar
 - Lets you refresh, create, close, and sync Beads items inside VS Code
 - Shows optional parallel, AI model, SSOT/context, and worktree hints on Beads items
-- Shows a Beads critical path graph with dependency edges and Start AI actions
+- Shows a Beads critical path graph with dependency edges, Start AI, Start Parallel, and merge actions
 
 ## Use It
 
@@ -34,11 +34,15 @@ The Beads view surfaces optional execution hints from issue fields, metadata, or
 - `ssot: "AGENTS.md, .beads/issues.jsonl"` or label `ssot:AGENTS.md`
 - `worktree: "../repo-agent-a"` or label `worktree:../repo-agent-a`
 
-When you use **Start AI**, the extension asks for a model, automatically suggests SSOT/context from workspace files such as `AGENTS.md`, `.beads/issues.jsonl`, `README.md`, and `docs`, records that metadata, marks the bead in progress, then opens a GitHub Copilot Background Agent chat session with the bead prompt prefilled.
+When you use **Start AI**, the extension automatically picks the configured or default model, infers SSOT/context from workspace files such as `AGENTS.md`, `.beads/issues.jsonl`, `README.md`, and `docs`, creates or reuses a git worktree for the task, records model/SSOT/worktree metadata, marks the bead in progress, then opens a GitHub Copilot Background Agent chat session with the bead prompt prefilled.
+
+When multiple ready tasks can run in parallel, **Start Parallel** assigns and starts them in one action. Each task receives its own worktree so the Beads table and graph can show which worktree is expected to carry that agent's changes.
 
 These hints are visual metadata. Beads ready/blocking behavior still comes from issue status and dependencies.
 
-Before merging a multi-agent PR, make sure every agent worktree contains the latest base branch:
+For derived parallel merge tasks, **Merge PRs** checks the registered agent worktrees before asking GitHub CLI to auto-merge their branch PRs. It blocks if a worktree is not registered, does not contain `origin/main`, or has uncommitted changes.
+
+You can run the same guard manually:
 
 ```bash
 pnpm run worktree-sync:guard -- --base origin/main

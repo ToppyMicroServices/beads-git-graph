@@ -15,7 +15,42 @@ export type BeadsRequestMessage =
       model?: string;
       ssot?: string;
       worktree?: string;
+    }
+  | {
+      command: "startParallelBeads";
+      workspacePath: string;
+      items: BeadsExecutionTarget[];
+    }
+  | {
+      command: "mergeParallelPrs";
+      issueId: string;
+      workspacePath: string;
+      title?: string;
+      dependencies: BeadsExecutionTarget[];
     };
+
+export interface BeadsExecutionTarget {
+  issueId: string;
+  title?: string;
+  model?: string;
+  ssot?: string;
+  worktree?: string;
+}
+
+function isBeadsExecutionTarget(value: unknown): value is BeadsExecutionTarget {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.issueId === "string" &&
+    (typeof record.title === "string" || typeof record.title === "undefined") &&
+    (typeof record.model === "string" || typeof record.model === "undefined") &&
+    (typeof record.ssot === "string" || typeof record.ssot === "undefined") &&
+    (typeof record.worktree === "string" || typeof record.worktree === "undefined")
+  );
+}
 
 export function isBeadsRequestMessage(message: unknown): message is BeadsRequestMessage {
   if (typeof message !== "object" || message === null) {
@@ -31,8 +66,22 @@ export function isBeadsRequestMessage(message: unknown): message is BeadsRequest
     case "syncBeads":
     case "createBead":
       return typeof record.workspacePath === "string";
+    case "startParallelBeads":
+      return (
+        typeof record.workspacePath === "string" &&
+        Array.isArray(record.items) &&
+        record.items.every(isBeadsExecutionTarget)
+      );
     case "openGitGraphForCommit":
       return typeof record.commitHash === "string";
+    case "mergeParallelPrs":
+      return (
+        typeof record.issueId === "string" &&
+        typeof record.workspacePath === "string" &&
+        (typeof record.title === "string" || typeof record.title === "undefined") &&
+        Array.isArray(record.dependencies) &&
+        record.dependencies.every(isBeadsExecutionTarget)
+      );
     case "closeBead":
     case "assignStartBead":
       return (

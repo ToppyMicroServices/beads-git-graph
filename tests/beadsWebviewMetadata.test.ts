@@ -46,6 +46,8 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("dependencyOverlay");
     expect(beadsWebview).toContain("criticalGraphNode");
     expect(beadsWebview).toContain("Start AI");
+    expect(beadsWebview).toContain("Start Parallel");
+    expect(beadsWebview).toContain("data-start-parallel-items");
     expect(beadsWebview).toContain("data-assign-start-model");
     expect(beadsWebview).toContain("data-assign-start-ssot");
     expect(beadsWebview).toContain("data-assign-start-worktree");
@@ -85,23 +87,31 @@ describe("beads webview presentation metadata", () => {
     );
     expect(beadsMain).toContain("renderDependencyGraphOverlays");
     expect(beadsMain).toContain('command: "assignStartBead"');
+    expect(beadsMain).toContain('command: "startParallelBeads"');
     expect(beadsMain).toContain("detailsCell.colSpan = 6");
   });
 
-  it("starts AI work with model and inferred SSOT context", () => {
-    expect(beadsView).toContain("Assign AI Model");
-    expect(beadsView).toContain("Start AI work with this model and SSOT/context?");
+  it("starts AI work with automatic model, SSOT, and worktree context", () => {
+    expect(beadsView).toContain("DEFAULT_ASSIGN_MODEL");
+    expect(beadsView).toContain("resolveAssignModel");
+    expect(beadsView).toContain("resolveAssignSsot");
+    expect(beadsView).toContain("resolveAssignWorktree");
+    expect(beadsView).toContain("ensureAgentWorktree");
+    expect(beadsView).toContain('"worktree", "add"');
     expect(beadsView).toContain("inferAssignSsot");
     expect(beadsView).toContain("deriveParallelMergeItems");
     expect(beadsView).toContain("openAssignAgentSession");
+    expect(beadsView).toContain("startParallelBeads");
     expect(beadsView).toContain("workbench.action.chat.openSessionWithPrompt.copilotcli");
     expect(beadsView).toContain("AGENTS.md");
     expect(beadsView).toContain(".beads/issues.jsonl");
     expect(beadsView).toContain("README.md");
-    expect(beadsView).toContain("`model=$" + "{model}`");
-    expect(beadsView).toContain("`ssot=$" + "{ssot}`");
+    expect(beadsView).toContain("`model=$" + "{values.model}`");
+    expect(beadsView).toContain("`ssot=$" + "{values.ssot}`");
+    expect(beadsView).toContain("`worktree=$" + "{worktree}`");
     expect(beadsView).toContain("Inspect the bead details with bd show");
     expect(beadsView).not.toContain("Assign Agent");
+    expect(beadsView).not.toContain("Assign AI Model");
   });
 
   it("anonymizes email-like agent identities in display labels", () => {
@@ -112,6 +122,12 @@ describe("beads webview presentation metadata", () => {
   it("surfaces derived parallel PR merge tasks in the table and graph", () => {
     expect(beadsWebview).toContain("parallel-pr-merge");
     expect(beadsWebview).toContain("Merge PR");
+    expect(beadsWebview).toContain("Merge PRs");
+    expect(beadsWebview).toContain("data-merge-dependencies");
     expect(beadsMain).toContain("Derived merge task");
+    expect(beadsMain).toContain('command: "mergeParallelPrs"');
+    expect(beadsView).toContain("mergeParallelPullRequests");
+    expect(beadsView).toContain("assertWorktreesReadyForMerge");
+    expect(beadsView).toContain("gh");
   });
 });
