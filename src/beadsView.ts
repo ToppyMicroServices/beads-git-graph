@@ -689,15 +689,14 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         ["pr", "merge", String(pullRequest.number), "--auto", "--squash", "--delete-branch"],
         workspacePath
       );
+      await this.waitForPullRequestMerged(pullRequest.number, workspacePath);
       mergedPrs.push(`#${pullRequest.number}`);
     }
 
     await this.runGitCommand(["pull", "--rebase"], workspacePath);
     await syncBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
     await this.refresh();
-    vscode.window.showInformationMessage(
-      `Queued auto-merge for ${mergedPrs.join(", ")} and synced Beads.`
-    );
+    vscode.window.showInformationMessage(`Merged ${mergedPrs.join(", ")} and synced Beads.`);
   }
 
   private buildAssignAgentPrompt(values: {
@@ -738,7 +737,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }) {
     const commands = new Set(await vscode.commands.getCommands(true));
     const prompt = this.buildAssignAgentPrompt(values);
-    const resource = vscode.Uri.file(values.workspacePath);
+    const resource = vscode.Uri.file(values.worktree?.trim() || values.workspacePath);
 
     for (const command of COPILOT_ASSIGN_COMMAND_CANDIDATES) {
       if (!commands.has(command)) {
@@ -797,8 +796,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         if (entries.length > 0) {
           return entries;
         }
-      } catch {
-        continue;
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : "unknown manifest parse error";
+        throw new Error(`Unable to read SSOT usage manifest at ${manifestPath}: ${messageText}`);
       }
     }
 
@@ -845,6 +845,28 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       });
 
     return [...new Set(normalized)];
+  }
+
+  private async waitForPullRequestMerged(pullRequestNumber: number, cwd: string) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const stdout = await this.runExternalCommand(
+        "gh",
+        ["pr", "view", String(pullRequestNumber), "--json", "state"],
+        cwd
+      );
+      const parsed = JSON.parse(stdout) as { state?: unknown };
+      if (parsed.state === "MERGED") {
+        return;
+      }
+      if (parsed.state === "CLOSED") {
+        throw new Error(`Pull request #${pullRequestNumber} closed without merging.`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+
+    throw new Error(
+      `Pull request #${pullRequestNumber} was queued but did not merge within 5 minutes; Beads sync was skipped.`
+    );
   }
 
   private resolveAssignWorktree(

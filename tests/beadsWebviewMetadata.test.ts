@@ -48,6 +48,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("Start AI");
     expect(beadsWebview).toContain("Start Parallel");
     expect(beadsWebview).toContain("data-start-parallel-items");
+    expect(beadsWebview).toContain('item.parallelizable && !item.synthetic && status === "open"');
     expect(beadsWebview).toContain("data-assign-start-model");
     expect(beadsWebview).toContain("data-assign-start-ssot");
     expect(beadsWebview).toContain("data-assign-start-worktree");
@@ -101,12 +102,14 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("SSOT_USAGE_MANIFEST_CANDIDATES");
     expect(beadsView).toContain("loadAssignSsotManifestEntries");
     expect(beadsView).toContain("normalizeSsotManifestEntries");
+    expect(beadsView).toContain("Unable to read SSOT usage manifest at");
     expect(beadsView).toContain("ssot-usage.json");
     expect(beadsView).toContain("inferAssignSsot");
     expect(beadsView).toContain("deriveParallelMergeItems");
     expect(beadsView).toContain("openAssignAgentSession");
     expect(beadsView).toContain("startParallelBeads");
     expect(beadsView).toContain("workbench.action.chat.openSessionWithPrompt.copilotcli");
+    expect(beadsView).toContain("vscode.Uri.file(values.worktree?.trim() || values.workspacePath)");
     expect(beadsView).toContain("AGENTS.md");
     expect(beadsView).toContain(".beads/issues.jsonl");
     expect(beadsView).toContain("README.md");
@@ -132,6 +135,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain('command: "mergeParallelPrs"');
     expect(beadsView).toContain("mergeParallelPullRequests");
     expect(beadsView).toContain("assertWorktreesReadyForMerge");
+    expect(beadsView).toContain("waitForPullRequestMerged");
     expect(beadsView).toContain("gh");
   });
 });
