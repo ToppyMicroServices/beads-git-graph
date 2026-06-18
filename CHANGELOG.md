@@ -4,11 +4,27 @@
 
 <!-- daily-generated:start -->
 
+<!-- daily-generated:end -->
+
+## [0.3.1] - 2026-06-19
+
+### Added
+
+- Add multi-agent Beads automation with Start Parallel, agent worktree context, and PR merge actions.
+- Add SSOT usage manifest support for automatically suggesting task context.
+
+### Fixed
+
+- Open assigned Copilot sessions from the agent worktree when available.
+- Wait for GitHub PR auto-merge to complete before pulling and syncing Beads.
+- Surface invalid SSOT usage manifests instead of silently falling back.
+- Limit Start Parallel to open parallel-ready tasks.
+- Preserve Graph mode selection and render dependency nodes in a scrollable graph space.
+
 ### Daily Snapshot
 
 - [`981e7b4`](https://github.com/ToppyMicroServices/beads-git-graph/commit/981e7b47262852cf5a77cf43de8badfe3465c9fd) build(deps-dev): bump oxlint from 1.69.0 to 1.70.0 (#146)
 - [`dce7c99`](https://github.com/ToppyMicroServices/beads-git-graph/commit/dce7c99783aaca7d2cf869b8c8a7671423c94be7) build(deps-dev): bump dompurify from 3.4.9 to 3.4.10 (#144)
-<!-- daily-generated:end -->
 
 ## [0.3.0] - 2026-06-14
 
@@ -282,7 +298,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.36...v0.3.0
 [0.1.36]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.35...v0.1.36
 [0.1.35]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.34...v0.1.35
