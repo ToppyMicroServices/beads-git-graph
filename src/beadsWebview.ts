@@ -208,11 +208,7 @@ export function renderBeadsWebviewHtml(
           .map((entry) => entry.item)
           .filter((item) => {
             const status = normalizeBeadStatus(item.status);
-            return (
-              item.parallelizable &&
-              !item.synthetic &&
-              (status === "open" || status === "in_progress")
-            );
+            return item.parallelizable && !item.synthetic && status === "open";
           })
           .map((item) => ({
             issueId: item.id,
