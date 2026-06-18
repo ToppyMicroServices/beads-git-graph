@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "description": "SSOT/context manifest used when assigning Beads tasks to agents.",
+  "default": [
+    "bd:${issueId}",
+    "AGENTS.md",
+    ".beads/issues.jsonl",
+    "README.md",
+    "CONTRIBUTING.md",
+    "docs"
+  ],
+  "contexts": [
+    {
+      "id": "agent-rules",
+      "path": "AGENTS.md",
+      "use": "Repository-local instructions and workflow rules."
+    },
+    {
+      "id": "beads-state",
+      "path": ".beads/issues.jsonl",
+      "use": "Task status, dependencies, and execution metadata."
+    },
+    {
+      "id": "product-readme",
+      "path": "README.md",
+      "use": "User-facing behavior and extension workflow."
+    },
+    {
+      "id": "contributing",
+      "path": "CONTRIBUTING.md",
+      "use": "Development and contribution conventions."
+    },
+    {
+      "id": "docs",
+      "path": "docs",
+      "use": "Longer-lived project notes and release guard documentation."
+    }
+  ]
+}
