@@ -33,6 +33,11 @@ type CreateBeadType = "task" | "feature" | "bug" | "epic" | "chore";
 type CreateBeadStatus = "open" | "in_progress" | "blocked" | "closed";
 type CreateBeadPriority = "P0" | "P1" | "P2" | "P3" | "P4";
 const DEFAULT_ASSIGN_MODEL = "gpt-5-codex";
+const SSOT_USAGE_MANIFEST_CANDIDATES = [
+  "ssot-usage.json",
+  ".beads/ssot-usage.json",
+  ".codex/ssot-usage.json"
+];
 const ASSIGN_CONTEXT_CANDIDATES = [
   "AGENTS.md",
   ".codex",
@@ -767,11 +772,79 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   private inferAssignSsot(workspacePath: string, issueId: string) {
+    const manifestEntries = this.loadAssignSsotManifestEntries(workspacePath, issueId);
+    if (manifestEntries.length > 0) {
+      return manifestEntries.join(", ");
+    }
+
     const references = ASSIGN_CONTEXT_CANDIDATES.filter((candidate) =>
       fs.existsSync(path.join(workspacePath, candidate))
     );
 
     return [`bd:${issueId}`, ...references].join(", ");
+  }
+
+  private loadAssignSsotManifestEntries(workspacePath: string, issueId: string) {
+    for (const candidate of SSOT_USAGE_MANIFEST_CANDIDATES) {
+      const manifestPath = path.join(workspacePath, candidate);
+      if (!fs.existsSync(manifestPath)) {
+        continue;
+      }
+
+      try {
+        const parsed = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+        const entries = this.normalizeSsotManifestEntries(workspacePath, issueId, parsed);
+        if (entries.length > 0) {
+          return entries;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return [];
+  }
+
+  private normalizeSsotManifestEntries(
+    workspacePath: string,
+    issueId: string,
+    manifest: Record<string, unknown>
+  ) {
+    const values: string[] = [];
+    const pushValue = (value: unknown) => {
+      if (typeof value === "string") {
+        values.push(value);
+        return;
+      }
+      if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        return;
+      }
+
+      const record = value as Record<string, unknown>;
+      const candidate = record.ref ?? record.path ?? record.url ?? record.id;
+      if (typeof candidate === "string") {
+        values.push(candidate);
+      }
+    };
+
+    if (Array.isArray(manifest.default)) {
+      manifest.default.forEach(pushValue);
+    }
+    if (Array.isArray(manifest.contexts)) {
+      manifest.contexts.forEach(pushValue);
+    }
+
+    const normalized = values
+      .map((value) => value.replace(/\$\{issueId\}/g, issueId).trim())
+      .filter((value) => value !== "")
+      .filter((value) => {
+        if (/^[a-z][a-z0-9+.-]*:/i.test(value)) {
+          return true;
+        }
+        return fs.existsSync(path.join(workspacePath, value));
+      });
+
+    return [...new Set(normalized)];
   }
 
   private resolveAssignWorktree(

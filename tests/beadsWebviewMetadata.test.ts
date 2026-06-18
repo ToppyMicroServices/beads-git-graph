@@ -98,6 +98,10 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("resolveAssignWorktree");
     expect(beadsView).toContain("ensureAgentWorktree");
     expect(beadsView).toContain('"worktree", "add"');
+    expect(beadsView).toContain("SSOT_USAGE_MANIFEST_CANDIDATES");
+    expect(beadsView).toContain("loadAssignSsotManifestEntries");
+    expect(beadsView).toContain("normalizeSsotManifestEntries");
+    expect(beadsView).toContain("ssot-usage.json");
     expect(beadsView).toContain("inferAssignSsot");
     expect(beadsView).toContain("deriveParallelMergeItems");
     expect(beadsView).toContain("openAssignAgentSession");

@@ -40,6 +40,26 @@ When multiple ready tasks can run in parallel, **Start Parallel** assigns and st
 
 These hints are visual metadata. Beads ready/blocking behavior still comes from issue status and dependencies.
 
+## SSOT Usage
+
+The extension reads SSOT/context from `ssot-usage.json`, `.beads/ssot-usage.json`, or `.codex/ssot-usage.json` before falling back to built-in workspace defaults. The manifest can list default refs and richer context records:
+
+```json
+{
+  "version": 1,
+  "default": ["bd:${issueId}", "AGENTS.md", ".beads/issues.jsonl", "README.md"],
+  "contexts": [
+    {
+      "id": "agent-rules",
+      "path": "AGENTS.md",
+      "use": "Repository-local instructions and workflow rules."
+    }
+  ]
+}
+```
+
+Only existing local paths are added; refs such as `bd:${issueId}` and URLs are kept as-is.
+
 For derived parallel merge tasks, **Merge PRs** checks the registered agent worktrees before asking GitHub CLI to auto-merge their branch PRs. It blocks if a worktree is not registered, does not contain `origin/main`, or has uncommitted changes.
 
 You can run the same guard manually:
