@@ -6,8 +6,27 @@
 
 ### Daily Snapshot
 
-- [`981e7b4`](https://github.com/ToppyMicroServices/beads-git-graph/commit/981e7b47262852cf5a77cf43de8badfe3465c9fd) build(deps-dev): bump oxlint from 1.69.0 to 1.70.0 (#146)
-- [`dce7c99`](https://github.com/ToppyMicroServices/beads-git-graph/commit/dce7c99783aaca7d2cf869b8c8a7671423c94be7) build(deps-dev): bump dompurify from 3.4.9 to 3.4.10 (#144)
+- [`87ef601`](https://github.com/ToppyMicroServices/beads-git-graph/commit/87ef601aaeef8a81416a8e43473573d774dcf4e4) build(deps-dev): bump dompurify from 3.4.10 to 3.4.11 (#152)
+- [`f332c94`](https://github.com/ToppyMicroServices/beads-git-graph/commit/f332c949f2170767e98e4005796cc3ab4687f3d8) Merge pull request #117 from ToppyMicroServices/automation/daily-changelog
+- [`27caf08`](https://github.com/ToppyMicroServices/beads-git-graph/commit/27caf08946daf7293fa9120fe765c9ffe683a9a6) Merge branch 'main' into automation/daily-changelog
+- [`d8083a7`](https://github.com/ToppyMicroServices/beads-git-graph/commit/d8083a7a5e15d1ff9b2b74d188ca40fe609d82ec) Merge pull request #148 from ToppyMicroServices/dependabot/npm_and_yarn/vitest-4.1.9
+- [`a8b119e`](https://github.com/ToppyMicroServices/beads-git-graph/commit/a8b119e5c7d42e38bee3bfe6e3a40c9f27abbc81) Merge branch 'main' into dependabot/npm_and_yarn/vitest-4.1.9
+- [`147a9ff`](https://github.com/ToppyMicroServices/beads-git-graph/commit/147a9fff44e8adfeb57659bc8ae66afe4f8b3182) Merge pull request #151 from ToppyMicroServices/fix/pr-145-followup
+- [`b1fd4ca`](https://github.com/ToppyMicroServices/beads-git-graph/commit/b1fd4cace9aff69bbb4d66e4df9dcfe55e1d70a7) style: sort imports
+- [`934237b`](https://github.com/ToppyMicroServices/beads-git-graph/commit/934237badb61a2b832d5bac433d402962253c56e) style: apply oxfmt
+- [`5e33a21`](https://github.com/ToppyMicroServices/beads-git-graph/commit/5e33a2159acbbcfce15f1f297be9a95a63949791) fix: beads-git-graph across the codebase
+- [`43b8677`](https://github.com/ToppyMicroServices/beads-git-graph/commit/43b86775e07c06138313cebe3bc32abf92ae8cfb) Merge pull request #150 from ToppyMicroServices/chore/update-beads-task-status
+- [`4548c57`](https://github.com/ToppyMicroServices/beads-git-graph/commit/4548c57ffb18d706beec105b5f7053e54b1b1a83) chore: update beads task status
+- [`26eb25f`](https://github.com/ToppyMicroServices/beads-git-graph/commit/26eb25fb1b8f221d22dc11c2d0503e5c97c5114e) Merge pull request #149 from ToppyMicroServices/chore/typescript-vscode-baseline
+- [`f946181`](https://github.com/ToppyMicroServices/beads-git-graph/commit/f946181358d54e9a2f14b821c06cfcac8a07d434) style: sort web import groups
+- [`bc9f994`](https://github.com/ToppyMicroServices/beads-git-graph/commit/bc9f994eb2c5cf5f34ade16140f28f8f6833c821) chore: record beads progress updates
+- [`3619b67`](https://github.com/ToppyMicroServices/beads-git-graph/commit/3619b67e98c3eff6eefeebe7c45179474dc029f5) chore: modernize TypeScript and VS Code baseline
+- [`8fa76dc`](https://github.com/ToppyMicroServices/beads-git-graph/commit/8fa76dcf967b4b2e3562cd7d340fd5dc0b442a7e) Merge pull request #130 from ToppyMicroServices/fix/epic-double-click-subprojects
+- [`f772435`](https://github.com/ToppyMicroServices/beads-git-graph/commit/f7724352b911a16297b342262bcb30e83c3fe86b) fix: wire epic visibility helper into webview
+- [`b595816`](https://github.com/ToppyMicroServices/beads-git-graph/commit/b595816255e0c4ecba8cec54e9ceddc7ea9f26ef) style: format beads main merge resolution
+- [`f2ef266`](https://github.com/ToppyMicroServices/beads-git-graph/commit/f2ef2668099c5227a2770d13362e996613d3a08a) Merge remote-tracking branch 'origin/main' into fix/epic-double-click-subprojects
+- [`65f361e`](https://github.com/ToppyMicroServices/beads-git-graph/commit/65f361eef54ed98b893a8fabcf28ef1f683b04df) Merge main into fix/epic-double-click-subprojects
+- ...and 15 more unreleased commits.
 <!-- daily-generated:end -->
 
 ## [0.3.0] - 2026-06-14
