@@ -4,6 +4,9 @@
 
 <!-- daily-generated:start -->
 
+### Daily Snapshot
+
+- No unreleased commits are queued above the latest stable tag.
 <!-- daily-generated:end -->
 
 ## [0.3.1] - 2026-06-19
