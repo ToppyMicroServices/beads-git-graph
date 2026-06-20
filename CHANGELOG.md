@@ -6,6 +6,23 @@
 
 <!-- daily-generated:end -->
 
+## [0.3.2] - 2026-06-20
+
+### Added
+
+- Add Beads Table and Graph execution badges for state, owner, model, worktree, SSOT, and dependency warnings.
+- Add dependency lint warnings for ready or sibling tasks that likely need blocked-by edges.
+- Show aggregated multi-agent worktree preflight results before PR merge actions.
+
+### Fixed
+
+- Keep Graph dependency edges aligned while scrolling in Graph mode.
+- Block multi-agent PR merge when any agent worktree is stale, dirty, or detached, with all reasons shown together.
+
+### Changed
+
+- Update GitHub Actions checkout usage to actions/checkout 7.0.0.
+
 ## [0.3.1] - 2026-06-19
 
 ### Added
@@ -298,7 +315,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.36...v0.3.0
 [0.1.36]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.1.35...v0.1.36
