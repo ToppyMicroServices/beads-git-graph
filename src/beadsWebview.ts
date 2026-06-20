@@ -63,9 +63,39 @@ function getWorktreeLabel(item: BeadItem) {
   );
 }
 
+function getPullRequestLabel(item: BeadItem) {
+  const value = item.pullRequest.trim();
+  if (value === "") {
+    return "";
+  }
+
+  return value.startsWith("#") ? value : `#${value}`;
+}
+
+function hasPassedChecks(item: BeadItem) {
+  return ["passed", "success", "successful", "green", "ready"].includes(
+    item.checkStatus.trim().toLowerCase()
+  );
+}
+
+function hasBlockingSyncRisk(item: BeadItem) {
+  return ["blocked", "dirty", "detached", "high", "stale"].includes(
+    item.syncRisk.trim().toLowerCase()
+  );
+}
+
 function getExecutionStateLabel(item: BeadItem, normalizedStatus: string, derivedMerge: boolean) {
   if (derivedMerge) {
     return normalizedStatus === "open" ? "Merge ready" : "Waiting PRs";
+  }
+  if (hasBlockingSyncRisk(item)) {
+    return "Sync risk";
+  }
+  if (item.pullRequest.trim() !== "" && hasPassedChecks(item)) {
+    return "Checks passed";
+  }
+  if (item.pullRequest.trim() !== "") {
+    return "PR open";
   }
   if (normalizedStatus === "in_progress") {
     return "Running";
@@ -191,7 +221,11 @@ function renderBeadsDependencyGraph(
         const ownerLabel = getDisplayLabel(rawAgentLabel, agentAliases);
         const modelLabel = getDisplayLabel(rawModelLabel, agentAliases);
         const worktreeLabel = getWorktreeLabel(item);
+        const pullRequestLabel = getPullRequestLabel(item);
         const ssotLabel = item.ssot.trim();
+        const branchLabel = item.branch.trim();
+        const checkStatusLabel = item.checkStatus.trim();
+        const syncRiskLabel = item.syncRisk.trim();
         const derivedMerge = isDerivedMergeTask(item);
         const executionStateLabel = getExecutionStateLabel(item, normalizedStatus, derivedMerge);
         const dependencyWarning = dependencyWarnings.get(item.id) ?? "";
@@ -229,6 +263,18 @@ function renderBeadsDependencyGraph(
           worktreeLabel === ""
             ? ""
             : `<span class="executionBadge worktreeBadge">WT ${escapeHtml(worktreeLabel)}</span>`,
+          branchLabel === ""
+            ? ""
+            : `<span class="executionBadge branchBadge">BR ${escapeHtml(branchLabel)}</span>`,
+          pullRequestLabel === ""
+            ? ""
+            : `<span class="executionBadge prBadge">PR ${escapeHtml(pullRequestLabel)}</span>`,
+          checkStatusLabel === ""
+            ? ""
+            : `<span class="executionBadge checkBadge">Checks ${escapeHtml(checkStatusLabel)}</span>`,
+          syncRiskLabel === ""
+            ? ""
+            : `<span class="executionBadge syncRiskBadge" title="Merge/sync risk">${escapeHtml(syncRiskLabel)}</span>`,
           ssotLabel === "" ? "" : `<span class="executionBadge ssotBadge">SSOT</span>`,
           dependencyWarning === ""
             ? ""
@@ -333,6 +379,31 @@ export function renderBeadsWebviewHtml(
             ssot: item.ssot,
             worktree: item.worktree
           }));
+        const parallelStartTargetIds = new Set(
+          parallelStartTargets.map((target) => target.issueId)
+        );
+        const skippedParallelTargets = flatItems
+          .map((entry) => entry.item)
+          .filter((item) => {
+            const status = normalizeBeadStatus(item.status);
+            return (
+              !parallelStartTargetIds.has(item.id) &&
+              !item.synthetic &&
+              (status === "open" || status === "in_progress" || status === "blocked")
+            );
+          })
+          .map((item) => {
+            const status = normalizeBeadStatus(item.status);
+            const reason =
+              status === "blocked"
+                ? "blocked"
+                : status === "in_progress"
+                  ? "already in progress"
+                  : item.parallelizable
+                    ? "not open"
+                    : "not marked parallel";
+            return { issueId: item.id, title: item.title, reason };
+          });
         const workspaceSummary = [
           `<span class="summaryPill">${flatItems.length} total</span>`,
           `<span class="summaryPill activeSummary">${activeCount} active</span>`,
@@ -375,11 +446,15 @@ export function renderBeadsWebviewHtml(
             const prioritySortOrder = parseInt(normalizedPriority.substring(1), 10);
             const shortUpdated = beadShortDate(item.updatedAt);
             const worktreeLabel = getWorktreeLabel(item);
+            const pullRequestLabel = getPullRequestLabel(item);
             const rawAgentLabel = getRawAgentLabel(item, normalizedStatus);
             const rawModelLabel = getRawModelLabel(item, normalizedStatus);
             const rowAgentLabel = getDisplayLabel(rawAgentLabel, agentAliases);
             const rowModelLabel = getDisplayLabel(rawModelLabel, agentAliases);
             const rowAssigneeLabel = getDisplayLabel(getRawAssigneeLabel(item), agentAliases);
+            const branchLabel = item.branch.trim();
+            const checkStatusLabel = item.checkStatus.trim();
+            const syncRiskLabel = item.syncRisk.trim();
             const executionStateLabel = getExecutionStateLabel(
               item,
               normalizedStatus,
@@ -406,6 +481,18 @@ export function renderBeadsWebviewHtml(
               worktreeLabel === ""
                 ? ""
                 : `<span class="executionBadge worktreeBadge">WT ${escapeHtml(worktreeLabel)}</span>`,
+              branchLabel === ""
+                ? ""
+                : `<span class="executionBadge branchBadge">BR ${escapeHtml(branchLabel)}</span>`,
+              pullRequestLabel === ""
+                ? ""
+                : `<span class="executionBadge prBadge">PR ${escapeHtml(pullRequestLabel)}</span>`,
+              checkStatusLabel === ""
+                ? ""
+                : `<span class="executionBadge checkBadge">Checks ${escapeHtml(checkStatusLabel)}</span>`,
+              syncRiskLabel === ""
+                ? ""
+                : `<span class="executionBadge syncRiskBadge" title="Merge/sync risk">${escapeHtml(syncRiskLabel)}</span>`,
               dependencyWarning === ""
                 ? ""
                 : `<span class="executionBadge dependencyWarningBadge" title="${escapeHtml(dependencyWarning)}">Dep warn</span>`
@@ -460,7 +547,7 @@ export function renderBeadsWebviewHtml(
         );
         const parallelAction =
           parallelStartTargets.length > 0
-            ? `<button class="startParallelBeads workspaceAction" type="button" data-start-parallel-workspace="${escapeHtml(group.workspacePath)}" data-start-parallel-items="${encodeJsonData(parallelStartTargets)}" title="Assign and start all parallel-ready tasks with Copilot">${parallelStartTargets.length} Start Parallel</button>`
+            ? `<button class="startParallelBeads workspaceAction" type="button" data-start-parallel-workspace="${escapeHtml(group.workspacePath)}" data-start-parallel-items="${encodeJsonData(parallelStartTargets)}" data-start-parallel-skipped="${encodeJsonData(skippedParallelTargets)}" title="Assign and start all parallel-ready tasks with Copilot${skippedParallelTargets.length > 0 ? `; ${skippedParallelTargets.length} active task(s) skipped with reasons` : ""}">${parallelStartTargets.length} Start Parallel</button>`
             : "";
 
         return `<section data-workspace-path="${escapeHtml(group.workspacePath)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceHeaderRight"><div class="workspaceSummary">${workspaceSummary}</div>${parallelAction}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated">▼</span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div>${graphHtml}</section>`;
@@ -594,6 +681,10 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .modelBadge{border-color:rgba(59,130,246,.55);color:var(--vscode-textLink-foreground, #3b82f6);background:rgba(59,130,246,.12);}
 .ssotBadge{border-color:rgba(168,85,247,.5);color:var(--vscode-charts-purple,#a855f7);background:rgba(168,85,247,.12);}
 .worktreeBadge{border-color:rgba(234,179,8,.55);color:var(--vscode-charts-yellow, #d97706);background:rgba(234,179,8,.12);}
+.branchBadge{border-color:rgba(20,184,166,.5);color:var(--vscode-charts-cyan,#14b8a6);background:rgba(20,184,166,.12);}
+.prBadge{border-color:rgba(249,115,22,.55);color:var(--vscode-charts-orange,#f97316);background:rgba(249,115,22,.13);}
+.checkBadge{border-color:rgba(34,197,94,.55);color:var(--vscode-testing-iconPassed,#22c55e);background:rgba(34,197,94,.13);}
+.syncRiskBadge{border-color:rgba(239,68,68,.55);color:var(--vscode-errorForeground,#ef4444);background:rgba(239,68,68,.13);}
 .dependencyWarningBadge{border-color:rgba(245,158,11,.62);color:var(--vscode-editorWarning-foreground,#f59e0b);background:rgba(245,158,11,.15);}
 .statusCell{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .typeBadge,.statusBadge,.priorityBadge{display:inline-flex;align-items:center;justify-content:center;padding:1px 6px;border-radius:6px;font-size:10px;font-weight:650;white-space:nowrap;}

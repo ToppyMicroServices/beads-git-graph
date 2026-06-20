@@ -97,6 +97,9 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain('command: "assignStartBead"');
     expect(beadsMain).toContain('command: "startParallelBeads"');
     expect(beadsMain).toContain("detailsCell.colSpan = 6");
+    expect(beadsMain).toContain("Sync Risk");
+    expect(beadsMain).toContain("Branch");
+    expect(beadsMain).toContain("Checks");
   });
 
   it("starts AI work with automatic model, SSOT, and worktree context", () => {
@@ -115,6 +118,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("deriveParallelMergeItems");
     expect(beadsView).toContain("openAssignAgentSession");
     expect(beadsView).toContain("startParallelBeads");
+    expect(beadsView).toContain("formatSkippedParallelTargets");
     expect(beadsView).toContain("workbench.action.chat.openSessionWithPrompt.copilotcli");
     expect(beadsView).toContain("vscode.Uri.file(values.worktree?.trim() || values.workspacePath)");
     expect(beadsView).toContain("AGENTS.md");
@@ -123,6 +127,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("`model=$" + "{values.model}`");
     expect(beadsView).toContain("`ssot=$" + "{values.ssot}`");
     expect(beadsView).toContain("`worktree=$" + "{worktree}`");
+    expect(beadsView).toContain("`branch=$" + "{agentWorktree.branch.trim()}`");
     expect(beadsView).toContain("Inspect the bead details with bd show");
     expect(beadsView).not.toContain("Assign Agent");
     expect(beadsView).not.toContain("Assign AI Model");
@@ -137,12 +142,22 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("parallel-pr-merge");
     expect(beadsWebview).toContain("Merge PR");
     expect(beadsWebview).toContain("Merge PRs");
+    expect(beadsWebview).toContain("branchBadge");
+    expect(beadsWebview).toContain("prBadge");
+    expect(beadsWebview).toContain("checkBadge");
+    expect(beadsWebview).toContain("syncRiskBadge");
+    expect(beadsWebview).toContain("Checks passed");
+    expect(beadsWebview).toContain("Sync risk");
     expect(beadsWebview).toContain("data-merge-dependencies");
     expect(beadsMain).toContain("Derived merge task");
     expect(beadsMain).toContain('command: "mergeParallelPrs"');
     expect(beadsView).toContain("mergeParallelPullRequests");
     expect(beadsView).toContain("assertWorktreesReadyForMerge");
     expect(beadsView).toContain("checkWorktreesReadyForMerge");
+    expect(beadsView).toContain("assertPullRequestsReadyForMerge");
+    expect(beadsView).toContain("findBlockingPullRequestCheckReasons");
+    expect(beadsView).toContain("statusCheckRollup");
+    expect(beadsView).toContain("Cannot merge parallel PRs until PR checks are ready");
     expect(beadsView).toContain("formatWorktreeMergeChecks");
     expect(beadsView).toContain("Cannot merge parallel PRs until agent worktrees are synced");
     expect(beadsView).toContain("waitForPullRequestMerged");

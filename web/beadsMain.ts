@@ -40,6 +40,10 @@ interface BeadRowItem {
   model: string;
   ssot: string;
   worktree: string;
+  branch: string;
+  pullRequest: string;
+  checkStatus: string;
+  syncRisk: string;
   synthetic: boolean;
   syntheticKind: "" | "parallel-pr-merge";
   displayAgent?: string;
@@ -295,6 +299,15 @@ function renderDetailsMarkup(item: BeadRowItem) {
   const model = item.displayModel?.trim() || (item.model !== "" ? item.model : agent);
   const ssot = item.ssot !== "" ? item.ssot : "-";
   const worktree = item.worktree !== "" ? item.worktree : "-";
+  const branch = item.branch !== "" ? item.branch : "-";
+  const pullRequest =
+    item.pullRequest !== ""
+      ? item.pullRequest.startsWith("#")
+        ? item.pullRequest
+        : `#${item.pullRequest}`
+      : "-";
+  const checkStatus = item.checkStatus !== "" ? item.checkStatus : "-";
+  const syncRisk = item.syncRisk !== "" ? item.syncRisk : "-";
   const executionPills = [
     item.syntheticKind === "parallel-pr-merge"
       ? `<span class="detailPill">Derived merge task</span>`
@@ -308,7 +321,11 @@ function renderDetailsMarkup(item: BeadRowItem) {
       : "",
     model !== "-" ? `<span class="detailPill">Model ${escapeHtml(model)}</span>` : "",
     ssot !== "-" ? `<span class="detailPill">SSOT ${escapeHtml(ssot)}</span>` : "",
-    item.worktree !== "" ? `<span class="detailPill">WT ${escapeHtml(item.worktree)}</span>` : ""
+    item.worktree !== "" ? `<span class="detailPill">WT ${escapeHtml(item.worktree)}</span>` : "",
+    branch !== "-" ? `<span class="detailPill">Branch ${escapeHtml(branch)}</span>` : "",
+    pullRequest !== "-" ? `<span class="detailPill">PR ${escapeHtml(pullRequest)}</span>` : "",
+    checkStatus !== "-" ? `<span class="detailPill">Checks ${escapeHtml(checkStatus)}</span>` : "",
+    syncRisk !== "-" ? `<span class="detailPill">Sync ${escapeHtml(syncRisk)}</span>` : ""
   ]
     .filter((pill) => pill !== "")
     .join("");
@@ -328,6 +345,10 @@ function renderDetailsMarkup(item: BeadRowItem) {
     `<div class="key">AI Model</div><div>${escapeHtml(model)}</div>` +
     `<div class="key">SSOT / Context</div><div>${escapeHtml(ssot)}</div>` +
     `<div class="key">Worktree</div><div>${escapeHtml(worktree)}</div>` +
+    `<div class="key">Branch</div><div>${escapeHtml(branch)}</div>` +
+    `<div class="key">PR</div><div>${escapeHtml(pullRequest)}</div>` +
+    `<div class="key">Checks</div><div>${escapeHtml(checkStatus)}</div>` +
+    `<div class="key">Sync Risk</div><div>${escapeHtml(syncRisk)}</div>` +
     `<div class="key">Labels</div><div>${escapeHtml(item.labels || "-")}</div>` +
     `<div class="key">Created</div><div>${escapeHtml(item.createdAt || "-")}</div>` +
     `<div class="key">Updated</div><div>${escapeHtml(item.updatedAt || "-")}</div>` +
@@ -862,10 +883,22 @@ for (const button of Array.from(
         worktree?: string;
       }>
     >(button.dataset.startParallelItems);
+    const skipped = decodeEncodedJson<
+      Array<{
+        issueId: string;
+        title?: string;
+        reason: string;
+      }>
+    >(button.dataset.startParallelSkipped);
     if (!bdAvailable || workspacePath === "" || items === null || items.length === 0) {
       return;
     }
-    vscode.postMessage({ command: "startParallelBeads", workspacePath, items });
+    vscode.postMessage({
+      command: "startParallelBeads",
+      workspacePath,
+      items,
+      skipped: skipped ?? []
+    });
   });
 }
 for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".assignStartBead"))) {

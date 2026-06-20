@@ -21,6 +21,10 @@ export interface BeadItem {
   model: string;
   ssot: string;
   worktree: string;
+  branch: string;
+  pullRequest: string;
+  checkStatus: string;
+  syncRisk: string;
   synthetic: boolean;
   syntheticKind: "" | "parallel-pr-merge";
 }
@@ -282,6 +286,38 @@ export function beadPickWorktree(record: Record<string, unknown>) {
   return direct !== "" ? direct : beadPickStringFromTokens(record, ["worktree", "wt"]);
 }
 
+export function beadPickBranch(record: Record<string, unknown>) {
+  return beadPickStructuredString(
+    record,
+    ["branch", "git_branch", "gitBranch", "pr_branch", "prBranch"],
+    ["branch", "git-branch", "pr-branch"]
+  );
+}
+
+export function beadPickPullRequest(record: Record<string, unknown>) {
+  return beadPickStructuredString(
+    record,
+    ["pull_request", "pullRequest", "pr", "pr_number", "prNumber", "github_pr", "githubPr"],
+    ["pr", "pull-request", "github-pr"]
+  );
+}
+
+export function beadPickCheckStatus(record: Record<string, unknown>) {
+  return beadPickStructuredString(
+    record,
+    ["check_status", "checkStatus", "checks", "checks_status", "ci_status", "ciStatus"],
+    ["checks", "check-status", "ci"]
+  );
+}
+
+export function beadPickSyncRisk(record: Record<string, unknown>) {
+  return beadPickStructuredString(
+    record,
+    ["sync_risk", "syncRisk", "merge_risk", "mergeRisk", "worktree_risk", "worktreeRisk"],
+    ["sync-risk", "merge-risk", "worktree-risk", "risk"]
+  );
+}
+
 export function beadPickParentId(record: Record<string, unknown>) {
   const explicitParentId = beadPickString(
     record,
@@ -485,6 +521,10 @@ export function toBeadItem(item: unknown): BeadItem | null {
     model: beadPickModel(record),
     ssot: beadPickSsot(record),
     worktree: beadPickWorktree(record),
+    branch: beadPickBranch(record),
+    pullRequest: beadPickPullRequest(record),
+    checkStatus: beadPickCheckStatus(record),
+    syncRisk: beadPickSyncRisk(record),
     commitHash: beadPickString(record, ["commitHash", "commit_hash", "commit"], ""),
     synthetic: false,
     syntheticKind: ""
@@ -623,6 +663,10 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
       model: item.model.trim() !== "" ? item.model : fallback.model,
       ssot: item.ssot.trim() !== "" ? item.ssot : fallback.ssot,
       worktree: item.worktree.trim() !== "" ? item.worktree : fallback.worktree,
+      branch: item.branch.trim() !== "" ? item.branch : fallback.branch,
+      pullRequest: item.pullRequest.trim() !== "" ? item.pullRequest : fallback.pullRequest,
+      checkStatus: item.checkStatus.trim() !== "" ? item.checkStatus : fallback.checkStatus,
+      syncRisk: item.syncRisk.trim() !== "" ? item.syncRisk : fallback.syncRisk,
       synthetic: item.synthetic || fallback.synthetic,
       syntheticKind: item.syntheticKind || fallback.syntheticKind
     };
@@ -747,6 +791,10 @@ export function deriveParallelMergeItems(items: BeadItem[]) {
       model: "",
       ssot: dependencyIds.map((id) => `bd:${id}`).join(", "),
       worktree: "",
+      branch: "",
+      pullRequest: "",
+      checkStatus: readyToMerge ? "ready" : "waiting",
+      syncRisk: readyToMerge ? "pending preflight" : "blocked",
       synthetic: true,
       syntheticKind: "parallel-pr-merge"
     });

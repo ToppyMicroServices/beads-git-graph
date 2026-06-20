@@ -20,6 +20,7 @@ export type BeadsRequestMessage =
       command: "startParallelBeads";
       workspacePath: string;
       items: BeadsExecutionTarget[];
+      skipped?: BeadsExecutionSkip[];
     }
   | {
       command: "mergeParallelPrs";
@@ -37,6 +38,12 @@ export interface BeadsExecutionTarget {
   worktree?: string;
 }
 
+export interface BeadsExecutionSkip {
+  issueId: string;
+  title?: string;
+  reason: string;
+}
+
 function isBeadsExecutionTarget(value: unknown): value is BeadsExecutionTarget {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -49,6 +56,19 @@ function isBeadsExecutionTarget(value: unknown): value is BeadsExecutionTarget {
     (typeof record.model === "string" || typeof record.model === "undefined") &&
     (typeof record.ssot === "string" || typeof record.ssot === "undefined") &&
     (typeof record.worktree === "string" || typeof record.worktree === "undefined")
+  );
+}
+
+function isBeadsExecutionSkip(value: unknown): value is BeadsExecutionSkip {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.issueId === "string" &&
+    typeof record.reason === "string" &&
+    (typeof record.title === "string" || typeof record.title === "undefined")
   );
 }
 
@@ -70,7 +90,9 @@ export function isBeadsRequestMessage(message: unknown): message is BeadsRequest
       return (
         typeof record.workspacePath === "string" &&
         Array.isArray(record.items) &&
-        record.items.every(isBeadsExecutionTarget)
+        record.items.every(isBeadsExecutionTarget) &&
+        (typeof record.skipped === "undefined" ||
+          (Array.isArray(record.skipped) && record.skipped.every(isBeadsExecutionSkip)))
       );
     case "openGitGraphForCommit":
       return typeof record.commitHash === "string";

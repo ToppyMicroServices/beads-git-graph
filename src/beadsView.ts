@@ -14,7 +14,11 @@ import {
   mergeBeadItems,
   toBeadItem
 } from "./beadsData";
-import { type BeadsExecutionTarget, isBeadsRequestMessage } from "./beadsProtocol";
+import {
+  type BeadsExecutionSkip,
+  type BeadsExecutionTarget,
+  isBeadsRequestMessage
+} from "./beadsProtocol";
 import { flushBeadsWorkspace, syncBeadsWorkspace } from "./beadsSync";
 import {
   type BeadGroup,
@@ -60,6 +64,14 @@ interface GitWorktreeInfo {
 
 interface WorktreeMergeCheck {
   worktree: GitWorktreeInfo;
+  ok: boolean;
+  reasons: string[];
+}
+
+interface PullRequestMergeCheck {
+  worktree: GitWorktreeInfo;
+  number: number;
+  url: string;
   ok: boolean;
   reasons: string[];
 }
@@ -497,7 +509,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       }
 
       try {
-        await this.startParallelBeads(workspacePath, message.items);
+        await this.startParallelBeads(workspacePath, message.items, message.skipped ?? []);
       } catch (error) {
         const messageText =
           error instanceof Error ? error.message : "Unable to start parallel beads.";
@@ -579,17 +591,26 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     ssot: string;
     worktree: string;
   }) {
-    const worktree = await this.ensureAgentWorktree(
+    const agentWorktree = await this.ensureAgentWorktree(
       values.workspacePath,
       values.issueId,
       values.worktree
     );
+    const worktree = agentWorktree.path;
     const metadata = [
       `agent=${values.model}`,
       `model=${values.model}`,
       `ssot=${values.ssot}`,
-      `worktree=${worktree}`
-    ];
+      `worktree=${worktree}`,
+      agentWorktree.branch.trim() === "" ? "" : `branch=${agentWorktree.branch.trim()}`
+    ].filter((entry) => entry !== "");
+
+    const notes = [
+      `model=${values.model}`,
+      `ssot=${values.ssot}`,
+      `worktree=${worktree}`,
+      agentWorktree.branch.trim() === "" ? "" : `branch=${agentWorktree.branch.trim()}`
+    ].filter((entry) => entry !== "");
 
     await this.runBdCommand(["assign", values.issueId, values.model], values.workspacePath);
     await this.runBdCommand(
@@ -598,6 +619,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         values.issueId,
         "--status",
         "in_progress",
+        "--append-notes",
+        notes.join("\n"),
         ...metadata.flatMap((entry) => ["--set-metadata", entry])
       ],
       values.workspacePath
@@ -607,7 +630,11 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     return this.openAssignAgentSession({ ...values, worktree });
   }
 
-  private async startParallelBeads(workspacePath: string, items: BeadsExecutionTarget[]) {
+  private async startParallelBeads(
+    workspacePath: string,
+    items: BeadsExecutionTarget[],
+    skipped: BeadsExecutionSkip[] = []
+  ) {
     const candidates = items
       .map((item) => ({
         issueId: item.issueId.trim(),
@@ -619,7 +646,12 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       .filter((item) => item.issueId !== "");
 
     if (candidates.length === 0) {
-      vscode.window.showWarningMessage("No parallel beads were available to start.");
+      const skippedSummary = this.formatSkippedParallelTargets(skipped);
+      vscode.window.showWarningMessage(
+        skippedSummary === ""
+          ? "No parallel beads were available to start."
+          : `No parallel beads were available to start. Skipped ${skippedSummary}.`
+      );
       return;
     }
 
@@ -647,9 +679,30 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
 
     await this.refresh();
+    const skippedSummary = this.formatSkippedParallelTargets(skipped);
     vscode.window.showInformationMessage(
-      `Started ${uniqueCandidates.length} parallel bead(s). Opened ${openedCount} Copilot session(s).`
+      `Started ${uniqueCandidates.length} parallel bead(s). Opened ${openedCount} Copilot session(s).${skippedSummary === "" ? "" : ` Skipped ${skippedSummary}.`}`
     );
+  }
+
+  private formatSkippedParallelTargets(skipped: BeadsExecutionSkip[]) {
+    const uniqueSkipped = [
+      ...new Map(
+        skipped
+          .filter((item) => item.issueId.trim() !== "" && item.reason.trim() !== "")
+          .map((item) => [item.issueId.trim(), item])
+      ).values()
+    ];
+    if (uniqueSkipped.length === 0) {
+      return "";
+    }
+
+    const preview = uniqueSkipped
+      .slice(0, 4)
+      .map((item) => `${item.issueId.trim()} (${item.reason.trim()})`)
+      .join(", ");
+    const remaining = uniqueSkipped.length - 4;
+    return remaining > 0 ? `${preview}, +${remaining} more` : preview;
   }
 
   private async mergeParallelPullRequests(
@@ -665,12 +718,13 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
     await this.runGitCommand(["fetch", "origin"], workspacePath);
     const preflightChecks = await this.assertWorktreesReadyForMerge(worktrees);
+    const pullRequestChecks = await this.assertPullRequestsReadyForMerge(worktrees, workspacePath);
 
     const confirmation = await vscode.window.showWarningMessage(
       `Auto-merge PRs for ${issueId}${title ? `: ${title}` : ""}?`,
       {
         modal: true,
-        detail: `Preflight passed for ${preflightChecks.length} agent worktree(s):\n${this.formatWorktreeMergeChecks(preflightChecks)}`
+        detail: `Preflight passed for ${preflightChecks.length} agent worktree(s) and ${pullRequestChecks.length} PR(s):\n${this.formatWorktreeMergeChecks(preflightChecks)}\n${this.formatPullRequestMergeChecks(pullRequestChecks)}`
       },
       "Merge PRs"
     );
@@ -679,16 +733,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
 
     const mergedPrs: string[] = [];
-    for (const worktree of worktrees) {
-      if (worktree.branch.trim() === "") {
-        throw new Error(`Worktree ${worktree.path} is detached; cannot find a branch PR.`);
-      }
-
-      const pullRequest = await this.findOpenPullRequestForBranch(worktree.branch, workspacePath);
-      if (pullRequest === null) {
-        throw new Error(`No open pull request was found for branch ${worktree.branch}.`);
-      }
-
+    for (const pullRequest of pullRequestChecks) {
       await this.runExternalCommand(
         "gh",
         ["pr", "merge", String(pullRequest.number), "--auto", "--squash", "--delete-branch"],
@@ -924,7 +969,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       (worktree) => path.resolve(worktree.path) === worktreePath
     );
     if (knownWorktree) {
-      return knownWorktree.path;
+      return knownWorktree;
     }
 
     if (fs.existsSync(worktreePath)) {
@@ -942,7 +987,16 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       workspacePath
     );
 
-    return worktreePath;
+    const head = await this.resolveGitHead(worktreePath);
+    return { path: worktreePath, branch: branchName, head };
+  }
+
+  private async resolveGitHead(cwd: string) {
+    try {
+      return (await this.runGitCommand(["rev-parse", "HEAD"], cwd)).trim();
+    } catch {
+      return "";
+    }
   }
 
   private async gitRefExists(cwd: string, refName: string) {
@@ -1029,6 +1083,97 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     return checks;
   }
 
+  private async assertPullRequestsReadyForMerge(worktrees: GitWorktreeInfo[], cwd: string) {
+    const checks = await this.checkPullRequestsReadyForMerge(worktrees, cwd);
+    const blockedChecks = checks.filter((check) => !check.ok);
+    if (blockedChecks.length > 0) {
+      throw new Error(
+        `Cannot merge parallel PRs until PR checks are ready:\n${this.formatPullRequestMergeChecks(blockedChecks)}`
+      );
+    }
+
+    return checks;
+  }
+
+  private async checkPullRequestsReadyForMerge(worktrees: GitWorktreeInfo[], cwd: string) {
+    const checks: PullRequestMergeCheck[] = [];
+    for (const worktree of worktrees) {
+      const branch = worktree.branch.trim();
+      if (branch === "") {
+        checks.push({
+          worktree,
+          number: 0,
+          url: "",
+          ok: false,
+          reasons: ["detached HEAD; no branch PR can be resolved"]
+        });
+        continue;
+      }
+
+      const pullRequest = await this.findOpenPullRequestForBranch(branch, cwd);
+      if (pullRequest === null) {
+        checks.push({
+          worktree,
+          number: 0,
+          url: "",
+          ok: false,
+          reasons: [`no open pull request was found for branch ${branch}`]
+        });
+        continue;
+      }
+
+      const reasons = this.findBlockingPullRequestCheckReasons(pullRequest.statusCheckRollup);
+      checks.push({
+        worktree,
+        number: pullRequest.number,
+        url: pullRequest.url,
+        ok: reasons.length === 0,
+        reasons
+      });
+    }
+
+    return checks;
+  }
+
+  private findBlockingPullRequestCheckReasons(statusCheckRollup: unknown[]) {
+    if (statusCheckRollup.length === 0) {
+      return ["no status checks were reported by GitHub"];
+    }
+
+    const reasons: string[] = [];
+    for (const rawCheck of statusCheckRollup) {
+      if (typeof rawCheck !== "object" || rawCheck === null) {
+        continue;
+      }
+      const check = rawCheck as Record<string, unknown>;
+      const name = this.pickPullRequestCheckName(check);
+      const status = typeof check.status === "string" ? check.status.toUpperCase() : "";
+      const conclusion = typeof check.conclusion === "string" ? check.conclusion.toUpperCase() : "";
+      if (conclusion === "SUCCESS" || conclusion === "SKIPPED" || conclusion === "NEUTRAL") {
+        continue;
+      }
+      if (status !== "" && status !== "COMPLETED") {
+        reasons.push(`${name} is ${status.toLowerCase()}`);
+        continue;
+      }
+      reasons.push(
+        `${name} concluded ${conclusion === "" ? "without success" : conclusion.toLowerCase()}`
+      );
+    }
+
+    return reasons;
+  }
+
+  private pickPullRequestCheckName(check: Record<string, unknown>) {
+    for (const key of ["name", "workflowName", "context"]) {
+      const value = check[key];
+      if (typeof value === "string" && value.trim() !== "") {
+        return value.trim();
+      }
+    }
+    return "check";
+  }
+
   private formatWorktreeMergeChecks(checks: WorktreeMergeCheck[]) {
     return checks
       .map((check) => {
@@ -1041,12 +1186,22 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       .join("\n");
   }
 
+  private formatPullRequestMergeChecks(checks: PullRequestMergeCheck[]) {
+    return checks
+      .map((check) => {
+        const branch = check.worktree.branch.trim() || "detached";
+        const label = check.number > 0 ? `#${check.number} ${branch}` : branch;
+        return check.ok ? `- ${label}: checks passed` : `- ${label}: ${check.reasons.join("; ")}`;
+      })
+      .join("\n");
+  }
+
   private async findOpenPullRequestForBranch(branch: string, cwd: string) {
     let stdout = "";
     try {
       stdout = await this.runExternalCommand(
         "gh",
-        ["pr", "view", branch, "--json", "number,state,isDraft,url"],
+        ["pr", "view", branch, "--json", "number,state,isDraft,url,statusCheckRollup"],
         cwd
       );
     } catch {
@@ -1058,6 +1213,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       state?: unknown;
       isDraft?: unknown;
       url?: unknown;
+      statusCheckRollup?: unknown;
     };
     if (typeof parsed.number !== "number") {
       return null;
@@ -1068,7 +1224,11 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     if (parsed.isDraft === true) {
       throw new Error(`Pull request #${parsed.number} for ${branch} is still draft.`);
     }
-    return { number: parsed.number, url: typeof parsed.url === "string" ? parsed.url : "" };
+    return {
+      number: parsed.number,
+      url: typeof parsed.url === "string" ? parsed.url : "",
+      statusCheckRollup: Array.isArray(parsed.statusCheckRollup) ? parsed.statusCheckRollup : []
+    };
   }
 
   private async promptAndCreateBead(workspacePath: string) {

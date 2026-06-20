@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add AI multi-agent cockpit metadata for branch, PR, checks, and sync risk in Beads table, details, and graph views.
+- Report skipped active tasks with reasons when Start Parallel runs.
+
+### Changed
+
+- Record branch metadata when Start AI creates or reuses an agent worktree.
+- Block multi-agent PR merges when the branch PR is missing status checks or has pending/failing checks.
+
 <!-- daily-generated:start -->
 
 <!-- daily-generated:end -->
