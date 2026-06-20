@@ -50,12 +50,92 @@ function encodeJsonData(value: unknown) {
   return escapeHtml(encodeURIComponent(JSON.stringify(value)));
 }
 
+function getWorktreeLabel(item: BeadItem) {
+  if (item.worktree.trim() === "") {
+    return "";
+  }
+
+  return (
+    item.worktree
+      .split(/[\\/]/)
+      .filter((part) => part !== "")
+      .pop() ?? item.worktree
+  );
+}
+
+function getExecutionStateLabel(item: BeadItem, normalizedStatus: string, derivedMerge: boolean) {
+  if (derivedMerge) {
+    return normalizedStatus === "open" ? "Merge ready" : "Waiting PRs";
+  }
+  if (normalizedStatus === "in_progress") {
+    return "Running";
+  }
+  if (normalizedStatus === "closed") {
+    return "Done";
+  }
+  if (item.worktree.trim() !== "" || item.model.trim() !== "" || item.agent.trim() !== "") {
+    return "Assigned";
+  }
+  if (item.parallelizableSource === "ready") {
+    return "Ready";
+  }
+  return "";
+}
+
+function hasNoDependencyIntent(item: BeadItem) {
+  return item.labels
+    .split(/[, ]+/)
+    .map((label) => label.trim().toLowerCase())
+    .some((label) => ["no-deps", "no-dependencies", "independent"].includes(label));
+}
+
+function buildDependencyLintWarnings(items: BeadItem[]) {
+  const siblingCounts = new Map<string, number>();
+  for (const item of items) {
+    const parentId = item.parentId.trim();
+    if (parentId !== "") {
+      siblingCounts.set(parentId, (siblingCounts.get(parentId) ?? 0) + 1);
+    }
+  }
+
+  const warnings = new Map<string, string>();
+  for (const item of items) {
+    const status = normalizeBeadStatus(item.status);
+    if (
+      item.synthetic ||
+      status === "closed" ||
+      normalizeBeadType(item.type) === "epic" ||
+      item.dependencyIds.length > 0 ||
+      hasNoDependencyIntent(item)
+    ) {
+      continue;
+    }
+
+    if (item.parallelizableSource === "ready") {
+      warnings.set(item.id, "Ready with no blocked-by dependency.");
+      continue;
+    }
+
+    const parentId = item.parentId.trim();
+    if (
+      parentId !== "" &&
+      (siblingCounts.get(parentId) ?? 0) > 1 &&
+      (status === "open" || status === "in_progress")
+    ) {
+      warnings.set(item.id, "Sibling task has no dependency edge.");
+    }
+  }
+
+  return warnings;
+}
+
 function renderBeadsDependencyGraph(
   items: BeadItem[],
   workspacePath: string,
   agentAliases: ReadonlyMap<string, string>
 ) {
   const graph = buildBeadDependencyGraph(items);
+  const dependencyWarnings = buildDependencyLintWarnings(items);
   const maxLevel = Math.max(0, ...graph.nodes.map((node) => node.level));
   const nodesByLevel = new Map<number, typeof graph.nodes>();
   const blockersById = new Map<string, string[]>();
@@ -106,10 +186,15 @@ function renderBeadsDependencyGraph(
         const normalizedStatus = normalizeBeadStatus(item.status);
         const normalizedPriority = normalizeBeadPriority(item.priority);
         const normalizedType = normalizeBeadType(item.type);
+        const rawAgentLabel = getRawAgentLabel(item, normalizedStatus);
         const rawModelLabel = getRawModelLabel(item, normalizedStatus);
+        const ownerLabel = getDisplayLabel(rawAgentLabel, agentAliases);
         const modelLabel = getDisplayLabel(rawModelLabel, agentAliases);
+        const worktreeLabel = getWorktreeLabel(item);
         const ssotLabel = item.ssot.trim();
         const derivedMerge = isDerivedMergeTask(item);
+        const executionStateLabel = getExecutionStateLabel(item, normalizedStatus, derivedMerge);
+        const dependencyWarning = dependencyWarnings.get(item.id) ?? "";
         const blockers = (blockersById.get(item.id) ?? []).sort((a, b) => a.localeCompare(b));
         const blocks = (blocksById.get(item.id) ?? []).sort((a, b) => a.localeCompare(b));
         const dependencyLines = [
@@ -130,16 +215,47 @@ function renderBeadsDependencyGraph(
         const actionHtml = derivedMerge
           ? `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="Check agent worktrees, auto-merge their PRs, then sync Beads.">Merge PRs</button>`
           : `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(ssotLabel)}" data-assign-start-worktree="${escapeHtml(item.worktree.trim())}" title="${escapeHtml(assignTitle)}"${assignDisabled}>Start AI</button>`;
-        return `<div class="graphNode ${node.critical ? "criticalGraphNode" : ""}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" style="--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${node.critical ? '<span class="criticalBadge">Critical</span>' : ""}</div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${derivedMerge ? `<span class="executionBadge mergeBadge">Merge PR</span>` : ""}${modelLabel === "" ? "" : `<span class="executionBadge modelBadge">Model ${escapeHtml(modelLabel)}</span>`}${ssotLabel === "" ? "" : `<span class="executionBadge ssotBadge">SSOT</span>`}</div>${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions">${actionHtml}</div></div>`;
+        const graphBadges = [
+          executionStateLabel === ""
+            ? ""
+            : `<span class="executionBadge stateBadge">${escapeHtml(executionStateLabel)}</span>`,
+          derivedMerge ? `<span class="executionBadge mergeBadge">Merge PR</span>` : "",
+          ownerLabel === ""
+            ? ""
+            : `<span class="executionBadge ownerBadge">Owner ${escapeHtml(ownerLabel)}</span>`,
+          modelLabel === ""
+            ? ""
+            : `<span class="executionBadge modelBadge">Model ${escapeHtml(modelLabel)}</span>`,
+          worktreeLabel === ""
+            ? ""
+            : `<span class="executionBadge worktreeBadge">WT ${escapeHtml(worktreeLabel)}</span>`,
+          ssotLabel === "" ? "" : `<span class="executionBadge ssotBadge">SSOT</span>`,
+          dependencyWarning === ""
+            ? ""
+            : `<span class="executionBadge dependencyWarningBadge" title="${escapeHtml(dependencyWarning)}">Dep warn</span>`
+        ]
+          .filter((badge) => badge !== "")
+          .join("");
+        return `<div class="graphNode ${node.critical ? "criticalGraphNode" : ""}${dependencyWarning === "" ? "" : " dependencyWarningGraphNode"}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" style="--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${node.critical ? '<span class="criticalBadge">Critical</span>' : ""}</div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${graphBadges}</div>${dependencyWarning === "" ? "" : `<div class="graphWarning">${escapeHtml(dependencyWarning)}</div>`}${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions">${actionHtml}</div></div>`;
       })
       .join("");
   }).join("");
+  const dependencyWarningSummary =
+    dependencyWarnings.size > 0
+      ? `<span class="summaryPill dependencyWarningSummary">${dependencyWarnings.size} warnings</span>`
+      : "";
+  const dependencyWarningHtml =
+    dependencyWarnings.size > 0
+      ? `<div class="graphWarningBand">${Array.from(dependencyWarnings.entries())
+          .map(([id, message]) => `<span>${escapeHtml(id)}: ${escapeHtml(message)}</span>`)
+          .join("")}</div>`
+      : "";
   const criticalSummary =
     graph.criticalPathIds.length > 0
       ? `<span class="summaryPill criticalSummary" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}">${graph.criticalPathIds.length} critical</span>`
       : "";
 
-  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div class="workspaceName">Critical Path</div><div class="workspaceSummary"><span class="summaryPill">${graph.edges.length} deps</span>${criticalSummary}</div></div><div class="graphCanvas" style="--graph-width:${graphWidth}px;--graph-height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div>`;
+  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div class="workspaceName">Critical Path</div><div class="workspaceSummary"><span class="summaryPill">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}</div></div>${dependencyWarningHtml}<div class="graphCanvas" style="--graph-width:${graphWidth}px;--graph-height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div>`;
 }
 
 export function renderBeadsWebviewHtml(
@@ -232,6 +348,9 @@ export function renderBeadsWebviewHtml(
         ]
           .filter((pill) => pill !== "")
           .join("");
+        const dependencyWarnings = buildDependencyLintWarnings(
+          flatItems.map((entry) => entry.item)
+        );
         const itemRows = flatItems
           .map(({ item, parentId, epicId, depth, orderIndex, guideColumns, isLastSibling }) => {
             const normalizedStatus = normalizeBeadStatus(item.status);
@@ -255,32 +374,41 @@ export function renderBeadsWebviewHtml(
                       : 9;
             const prioritySortOrder = parseInt(normalizedPriority.substring(1), 10);
             const shortUpdated = beadShortDate(item.updatedAt);
-            const worktreeLabel =
-              item.worktree === ""
-                ? ""
-                : (item.worktree
-                    .split(/[\\/]/)
-                    .filter((part) => part !== "")
-                    .pop() ?? item.worktree);
+            const worktreeLabel = getWorktreeLabel(item);
             const rawAgentLabel = getRawAgentLabel(item, normalizedStatus);
             const rawModelLabel = getRawModelLabel(item, normalizedStatus);
             const rowAgentLabel = getDisplayLabel(rawAgentLabel, agentAliases);
             const rowModelLabel = getDisplayLabel(rawModelLabel, agentAliases);
             const rowAssigneeLabel = getDisplayLabel(getRawAssigneeLabel(item), agentAliases);
+            const executionStateLabel = getExecutionStateLabel(
+              item,
+              normalizedStatus,
+              isDerivedMergeTask(item)
+            );
+            const dependencyWarning = dependencyWarnings.get(item.id) ?? "";
             const executionBadges = [
+              executionStateLabel === ""
+                ? ""
+                : `<span class="executionBadge stateBadge">${escapeHtml(executionStateLabel)}</span>`,
               isDerivedMergeTask(item)
                 ? `<span class="executionBadge mergeBadge">Merge PR</span>`
                 : "",
               item.parallelizable
                 ? `<span class="executionBadge parallelBadge" title="${escapeHtml(item.parallelizableSource === "ready" ? "Ready and unblocked; can run alongside other ready tasks." : "Marked as parallelizable.")}">${escapeHtml(item.parallelizableSource === "ready" ? "Parallel ready" : "Parallel OK")}</span>`
                 : "",
+              rowAgentLabel === ""
+                ? ""
+                : `<span class="executionBadge ownerBadge">Owner ${escapeHtml(rowAgentLabel)}</span>`,
               rowModelLabel === ""
                 ? ""
                 : `<span class="executionBadge modelBadge">Model ${escapeHtml(rowModelLabel)}</span>`,
               item.ssot.trim() === "" ? "" : `<span class="executionBadge ssotBadge">SSOT</span>`,
               worktreeLabel === ""
                 ? ""
-                : `<span class="executionBadge worktreeBadge">WT ${escapeHtml(worktreeLabel)}</span>`
+                : `<span class="executionBadge worktreeBadge">WT ${escapeHtml(worktreeLabel)}</span>`,
+              dependencyWarning === ""
+                ? ""
+                : `<span class="executionBadge dependencyWarningBadge" title="${escapeHtml(dependencyWarning)}">Dep warn</span>`
             ]
               .filter((badge) => badge !== "")
               .join("");
@@ -308,6 +436,7 @@ export function renderBeadsWebviewHtml(
             const rowClasses = [
               "beadRow",
               childCount > 0 ? "hasChildren" : "",
+              dependencyWarning === "" ? "" : "dependencyWarningRow",
               item.parallelizable ? "parallelRow" : "",
               item.parallelizableSource === "ready"
                 ? "parallelReadyRow"
@@ -437,6 +566,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .beadRow.selected{background:rgba(59,130,246,.16);}
 .beadRow.selected td:first-child{box-shadow:inset 3px 0 0 var(--vscode-textLink-foreground,#3b82f6);}
 .beadRow.parallelReadyRow td{background:linear-gradient(90deg, rgba(34,197,94,.1), transparent 190px);}
+.beadRow.dependencyWarningRow td{background:linear-gradient(90deg, rgba(245,158,11,.13), transparent 210px);}
 .parallelCell{text-align:center;}
 .parallelMarker{display:inline-flex;align-items:center;justify-content:center;min-width:42px;min-height:19px;padding:1px 6px;border-radius:999px;border:1px solid rgba(34,197,94,.62);font-size:10px;font-weight:750;line-height:15px;color:var(--vscode-testing-iconPassed, #22c55e);background:rgba(34,197,94,.16);white-space:nowrap;}
 .explicitParallelMarker{border-color:rgba(59,130,246,.62);color:var(--vscode-textLink-foreground, #3b82f6);background:rgba(59,130,246,.14);}
@@ -457,11 +587,14 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .beadTitle{font-size:13px;font-weight:650;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .beadMeta{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:4px;}
 .executionBadge{display:inline-flex;align-items:center;max-width:100%;padding:1px 6px;border-radius:6px;border:1px solid rgba(128,128,128,.42);font-size:10px;font-weight:650;line-height:15px;color:var(--vscode-descriptionForeground);background:rgba(128,128,128,.1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.stateBadge{border-color:rgba(20,184,166,.55);color:var(--vscode-charts-cyan,#14b8a6);background:rgba(20,184,166,.13);}
+.ownerBadge{border-color:rgba(14,165,233,.55);color:var(--vscode-textLink-foreground,#0ea5e9);background:rgba(14,165,233,.12);}
 .parallelBadge{border-color:rgba(34,197,94,.65);color:var(--vscode-testing-iconPassed, #22c55e);background:rgba(34,197,94,.16);}
 .mergeBadge{border-color:rgba(249,115,22,.55);color:var(--vscode-charts-orange, #f97316);background:rgba(249,115,22,.14);}
 .modelBadge{border-color:rgba(59,130,246,.55);color:var(--vscode-textLink-foreground, #3b82f6);background:rgba(59,130,246,.12);}
 .ssotBadge{border-color:rgba(168,85,247,.5);color:var(--vscode-charts-purple,#a855f7);background:rgba(168,85,247,.12);}
 .worktreeBadge{border-color:rgba(234,179,8,.55);color:var(--vscode-charts-yellow, #d97706);background:rgba(234,179,8,.12);}
+.dependencyWarningBadge{border-color:rgba(245,158,11,.62);color:var(--vscode-editorWarning-foreground,#f59e0b);background:rgba(245,158,11,.15);}
 .statusCell{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .typeBadge,.statusBadge,.priorityBadge{display:inline-flex;align-items:center;justify-content:center;padding:1px 6px;border-radius:6px;font-size:10px;font-weight:650;white-space:nowrap;}
 .priorityBadge{min-width:34px;}
@@ -503,6 +636,9 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphPane{position:relative;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);overflow:auto;padding:10px;max-height:calc(100vh - 132px);min-height:360px;}
 .graphHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;position:sticky;top:0;left:0;z-index:4;background:var(--vscode-editor-background);padding-bottom:6px;}
 .criticalSummary{border-color:rgba(236,72,153,.5);color:var(--vscode-charts-pink,#ec4899);}
+.dependencyWarningSummary{border-color:rgba(245,158,11,.55);color:var(--vscode-editorWarning-foreground,#f59e0b);}
+.graphWarningBand{display:flex;flex-wrap:wrap;gap:4px;margin:-4px 0 10px;}
+.graphWarningBand span{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border-radius:6px;border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.12);color:var(--vscode-editorWarning-foreground,#f59e0b);font-size:10px;font-weight:650;}
 .graphCanvas{position:relative;width:max(100%, var(--graph-width, 960px));height:max(620px, var(--graph-height, 620px));background-image:linear-gradient(rgba(128,128,128,.11) 1px, transparent 1px),linear-gradient(90deg, rgba(128,128,128,.11) 1px, transparent 1px);background-size:48px 48px;}
 .dependencyOverlay{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none;overflow:visible;}
 .dependencyPath{fill:none;stroke:rgba(148,163,184,.8);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
@@ -514,10 +650,12 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphNodes{position:absolute;inset:0;z-index:2;}
 .graphNode{position:absolute;left:var(--graph-x);top:var(--graph-y);width:var(--graph-node-width,280px);border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));padding:8px;box-shadow:0 1px 3px rgba(0,0,0,.12);}
 .graphNode.criticalGraphNode{border-color:rgba(236,72,153,.62);box-shadow:inset 3px 0 0 var(--vscode-charts-pink,#ec4899), 0 1px 3px rgba(0,0,0,.12);}
+.graphNode.dependencyWarningGraphNode{border-color:rgba(245,158,11,.58);box-shadow:inset 3px 0 0 var(--vscode-editorWarning-foreground,#f59e0b), 0 1px 3px rgba(0,0,0,.12);}
 .graphNodeTop{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px;}
 .criticalBadge{display:inline-flex;align-items:center;min-height:17px;padding:1px 6px;border-radius:999px;border:1px solid rgba(236,72,153,.55);background:rgba(236,72,153,.14);color:var(--vscode-charts-pink,#ec4899);font-size:10px;font-weight:750;white-space:nowrap;}
 .graphNodeTitle{font-size:12px;font-weight:700;line-height:1.3;margin:2px 0 7px;overflow-wrap:anywhere;}
 .graphNodeBadges{display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
+.graphWarning{margin-top:7px;padding:5px 6px;border-radius:6px;border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.12);color:var(--vscode-editorWarning-foreground,#f59e0b);font-size:10px;font-weight:650;line-height:1.35;}
 .graphRelations{display:grid;gap:3px;margin-top:7px;padding-top:7px;border-top:1px solid var(--vscode-panel-border);}
 .graphRelation{display:grid;grid-template-columns:54px minmax(0,1fr);gap:5px;font-size:10px;color:var(--vscode-descriptionForeground);line-height:1.35;}
 .graphRelation span{font-weight:700;color:var(--vscode-foreground);}
