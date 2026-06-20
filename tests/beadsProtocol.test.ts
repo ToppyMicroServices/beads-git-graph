@@ -29,7 +29,8 @@ describe("isBeadsRequestMessage", () => {
       isBeadsRequestMessage({
         command: "startParallelBeads",
         workspacePath: "/tmp/demo",
-        items: [{ issueId: "neo-1", title: "Demo", worktree: "../repo-neo-1" }]
+        items: [{ issueId: "neo-1", title: "Demo", worktree: "../repo-neo-1" }],
+        skipped: [{ issueId: "neo-2", title: "Blocked", reason: "blocked" }]
       })
     ).toBe(true);
     expect(
@@ -62,6 +63,14 @@ describe("isBeadsRequestMessage", () => {
         command: "startParallelBeads",
         workspacePath: "/tmp/demo",
         items: [{ title: "missing id" }]
+      })
+    ).toBe(false);
+    expect(
+      isBeadsRequestMessage({
+        command: "startParallelBeads",
+        workspacePath: "/tmp/demo",
+        items: [],
+        skipped: [{ issueId: "neo-2" }]
       })
     ).toBe(false);
     expect(

@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   beadPickAgent,
+  beadPickBranch,
+  beadPickCheckStatus,
   beadPickDependencyIds,
   beadPickModel,
   beadPickParallelizable,
   beadPickParentId,
   beadPickProgress,
+  beadPickPullRequest,
   beadPickSsot,
+  beadPickSyncRisk,
   beadPickWorktree,
   beadsAsArray,
   beadShortDate,
@@ -84,6 +88,10 @@ describe("toBeadItem", () => {
       model: "",
       ssot: "",
       worktree: "",
+      branch: "",
+      pullRequest: "",
+      checkStatus: "",
+      syncRisk: "",
       commitHash: "abcdef1234567",
       synthetic: false,
       syntheticKind: ""
@@ -100,7 +108,11 @@ describe("toBeadItem", () => {
         agent: "agent-a",
         model: "gpt-5-codex",
         ssot: "AGENTS.md, .beads/issues.jsonl",
-        worktree: "../beads-git-graph-agent-a"
+        worktree: "../beads-git-graph-agent-a",
+        branch: "agent/neo-agent-task",
+        pullRequest: 162,
+        check_status: "success",
+        sync_risk: "low"
       })
     ).toMatchObject({
       parallelizable: true,
@@ -109,7 +121,11 @@ describe("toBeadItem", () => {
       agent: "agent-a",
       model: "gpt-5-codex",
       ssot: "AGENTS.md, .beads/issues.jsonl",
-      worktree: "../beads-git-graph-agent-a"
+      worktree: "../beads-git-graph-agent-a",
+      branch: "agent/neo-agent-task",
+      pullRequest: "162",
+      checkStatus: "success",
+      syncRisk: "low"
     });
 
     expect(
@@ -121,7 +137,11 @@ describe("toBeadItem", () => {
           "agent:agent-b",
           "model:gpt-5",
           "ssot:README.md",
-          "worktree:../beads-git-graph-agent-b"
+          "worktree:../beads-git-graph-agent-b",
+          "branch:agent/neo-agent-labels",
+          "pr:#163",
+          "checks:passed",
+          "sync-risk:stale"
         ]
       })
     ).toMatchObject({
@@ -131,7 +151,11 @@ describe("toBeadItem", () => {
       agent: "agent-b",
       model: "gpt-5",
       ssot: "README.md",
-      worktree: "../beads-git-graph-agent-b"
+      worktree: "../beads-git-graph-agent-b",
+      branch: "agent/neo-agent-labels",
+      pullRequest: "#163",
+      checkStatus: "passed",
+      syncRisk: "stale"
     });
   });
 
@@ -637,7 +661,7 @@ describe("bead normalization helpers", () => {
     ).toBe("");
   });
 
-  it("reads parallel, model, ssot, agent, and worktree hints from direct fields or labels", () => {
+  it("reads execution hints from direct fields, metadata, or labels", () => {
     expect(beadPickParallelizable({ parallel: "yes" })).toBe(true);
     expect(beadPickParallelizable({ labels: ["sequential", "parallel-ok"] })).toBe(false);
     expect(beadPickAgent({ labels: ["agent:agent-a"] })).toBe("agent-a");
@@ -646,6 +670,10 @@ describe("bead normalization helpers", () => {
     expect(beadPickSsot({ metadata: '{"ssot":"AGENTS.md"}' })).toBe("AGENTS.md");
     expect(beadPickSsot({ tags: ["context:README.md"] })).toBe("README.md");
     expect(beadPickWorktree({ tags: ["wt:../repo-agent-a"] })).toBe("../repo-agent-a");
+    expect(beadPickBranch({ metadata: { branch: "agent/neo-a" } })).toBe("agent/neo-a");
+    expect(beadPickPullRequest({ labels: ["pr:#164"] })).toBe("#164");
+    expect(beadPickCheckStatus({ tags: ["checks:success"] })).toBe("success");
+    expect(beadPickSyncRisk({ metadata: '{"syncRisk":"high"}' })).toBe("high");
   });
 
   it("extracts progress percentages from direct fields or notes", () => {

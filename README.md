@@ -14,7 +14,7 @@ No telemetry. Privacy-first. Security-first.
 - Adds a Beads view in the Activity Bar
 - Lets you switch between Git Graph and Beads from the toolbar
 - Lets you refresh, create, close, and sync Beads items inside VS Code
-- Shows optional parallel, AI model, SSOT/context, and worktree hints on Beads items
+- Shows optional parallel, AI model, SSOT/context, worktree, branch, PR, check, and sync-risk hints on Beads items
 - Shows a Beads critical path graph with dependency edges, Start AI, Start Parallel, and merge actions
 
 ## Use It
@@ -33,10 +33,13 @@ The Beads view surfaces optional execution hints from issue fields, metadata, or
 - `model: "gpt-5-codex"` or label `model:gpt-5-codex`
 - `ssot: "AGENTS.md, .beads/issues.jsonl"` or label `ssot:AGENTS.md`
 - `worktree: "../repo-agent-a"` or label `worktree:../repo-agent-a`
+- `branch: "agent/task-a"` or label `branch:agent/task-a`
+- `pr: 123`, `check_status: "success"`, or labels such as `pr:#123`, `checks:success`
+- `sync_risk: "stale"` or label `sync-risk:stale`
 
-When you use **Start AI**, the extension automatically picks the configured or default model, infers SSOT/context from workspace files such as `AGENTS.md`, `.beads/issues.jsonl`, `README.md`, and `docs`, creates or reuses a git worktree for the task, records model/SSOT/worktree metadata, marks the bead in progress, then opens a GitHub Copilot Background Agent chat session with the bead prompt prefilled.
+When you use **Start AI**, the extension automatically picks the configured or default model, infers SSOT/context from workspace files such as `AGENTS.md`, `.beads/issues.jsonl`, `README.md`, and `docs`, creates or reuses a git worktree for the task, records model/SSOT/worktree/branch metadata, marks the bead in progress, then opens a GitHub Copilot Background Agent chat session with the bead prompt prefilled.
 
-When multiple ready tasks can run in parallel, **Start Parallel** assigns and starts them in one action. Each task receives its own worktree so the Beads table and graph can show which worktree is expected to carry that agent's changes.
+When multiple ready tasks can run in parallel, **Start Parallel** assigns and starts them in one action. Each task receives its own worktree so the Beads table and graph can show which worktree is expected to carry that agent's changes. Active tasks that are skipped are reported with the reason.
 
 These hints are visual metadata. Beads ready/blocking behavior still comes from issue status and dependencies.
 
@@ -60,7 +63,7 @@ The extension reads SSOT/context from `ssot-usage.json`, `.beads/ssot-usage.json
 
 Only existing local paths are added; refs such as `bd:${issueId}` and URLs are kept as-is.
 
-For derived parallel merge tasks, **Merge PRs** checks the registered agent worktrees before asking GitHub CLI to auto-merge their branch PRs. It blocks if a worktree is not registered, does not contain `origin/main`, or has uncommitted changes.
+For derived parallel merge tasks, **Merge PRs** checks the registered agent worktrees and branch PR checks before asking GitHub CLI to auto-merge their branch PRs. It blocks if a worktree is not registered, does not contain `origin/main`, has uncommitted changes, has no open PR, or has missing, pending, or failing checks.
 
 You can run the same guard manually:
 
