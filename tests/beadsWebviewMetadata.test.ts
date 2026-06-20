@@ -42,7 +42,15 @@ describe("beads webview presentation metadata", () => {
 
   it("shows dependency graph controls and AI start actions", () => {
     expect(beadsWebview).toContain('id="graphView"');
+    expect(beadsWebview).toContain("Execution Map");
     expect(beadsWebview).toContain("Critical Path");
+    expect(beadsWebview).toContain("criticalPathBanner");
+    expect(beadsWebview).toContain("No dependency path yet");
+    expect(beadsWebview).toContain("graphLegend");
+    expect(beadsWebview).toContain("dependencyLegend");
+    expect(beadsWebview).toContain("criticalLegend");
+    expect(beadsWebview).toContain("parentLegend");
+    expect(beadsWebview).toContain("riskLegend");
     expect(beadsWebview).toContain("dependencyOverlay");
     expect(beadsWebview).toContain("criticalGraphNode");
     expect(beadsWebview).toContain("Start AI");
@@ -62,6 +70,12 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("ssotBadge");
     expect(beadsWebview).toContain("dependencyWarningBadge");
     expect(beadsWebview).toContain("dependencyWarningSummary");
+    expect(beadsWebview).toContain("mergeRiskWarningBadge");
+    expect(beadsWebview).toContain("mergeRiskSummary");
+    expect(beadsWebview).toContain("graphRiskBand");
+    expect(beadsWebview).toContain("graphMergeRisk");
+    expect(beadsWebview).toContain("graphParentRelation");
+    expect(beadsWebview).toContain("buildMergeRiskWarnings");
     expect(beadsWebview).toContain("buildDependencyLintWarnings");
     expect(beadsWebview).toContain("max-height:calc(100vh - 132px)");
     expect(beadsWebview).toContain("graphLevelGuide");

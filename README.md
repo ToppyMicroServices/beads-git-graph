@@ -15,7 +15,7 @@ No telemetry. Privacy-first. Security-first.
 - Lets you switch between Git Graph and Beads from the toolbar
 - Lets you refresh, create, close, and sync Beads items inside VS Code
 - Shows optional parallel, AI model, SSOT/context, worktree, branch, PR, check, and sync-risk hints on Beads items
-- Shows a Beads critical path graph with dependency edges, Start AI, Start Parallel, and merge actions
+- Shows a Beads execution map with Critical Path, dependency edges, parent context, merge/worktree risk, Start AI, Start Parallel, and merge actions
 
 ## Use It
 
