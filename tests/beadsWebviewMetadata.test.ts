@@ -56,8 +56,13 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("displayModel");
     expect(beadsWebview).toContain("displayAssignee");
     expect(beadsWebview).toContain("mergeBadge");
+    expect(beadsWebview).toContain("stateBadge");
+    expect(beadsWebview).toContain("ownerBadge");
     expect(beadsWebview).toContain("modelBadge");
     expect(beadsWebview).toContain("ssotBadge");
+    expect(beadsWebview).toContain("dependencyWarningBadge");
+    expect(beadsWebview).toContain("dependencyWarningSummary");
+    expect(beadsWebview).toContain("buildDependencyLintWarnings");
     expect(beadsWebview).toContain("max-height:calc(100vh - 132px)");
     expect(beadsWebview).toContain("graphLevelGuide");
     expect(beadsWebview).toContain("graphNodes");
@@ -87,6 +92,8 @@ describe("beads webview presentation metadata", () => {
       "worktree: normalizeOptionalDatasetValue(button.dataset.assignStartWorktree)"
     );
     expect(beadsMain).toContain("renderDependencyGraphOverlays");
+    expect(beadsMain).toContain('querySelectorAll<HTMLElement>(".graphPane")');
+    expect(beadsMain).toContain('pane.addEventListener("scroll"');
     expect(beadsMain).toContain('command: "assignStartBead"');
     expect(beadsMain).toContain('command: "startParallelBeads"');
     expect(beadsMain).toContain("detailsCell.colSpan = 6");
@@ -135,6 +142,9 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain('command: "mergeParallelPrs"');
     expect(beadsView).toContain("mergeParallelPullRequests");
     expect(beadsView).toContain("assertWorktreesReadyForMerge");
+    expect(beadsView).toContain("checkWorktreesReadyForMerge");
+    expect(beadsView).toContain("formatWorktreeMergeChecks");
+    expect(beadsView).toContain("Cannot merge parallel PRs until agent worktrees are synced");
     expect(beadsView).toContain("waitForPullRequestMerged");
     expect(beadsView).toContain("gh");
   });

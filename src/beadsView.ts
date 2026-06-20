@@ -58,6 +58,12 @@ interface GitWorktreeInfo {
   head: string;
 }
 
+interface WorktreeMergeCheck {
+  worktree: GitWorktreeInfo;
+  ok: boolean;
+  reasons: string[];
+}
+
 export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   public static readonly viewType = "beads-git-graph.beadsView";
 
@@ -657,21 +663,20 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       throw new Error("No dependency worktrees were found for this parallel merge task.");
     }
 
+    await this.runGitCommand(["fetch", "origin"], workspacePath);
+    const preflightChecks = await this.assertWorktreesReadyForMerge(worktrees);
+
     const confirmation = await vscode.window.showWarningMessage(
       `Auto-merge PRs for ${issueId}${title ? `: ${title}` : ""}?`,
       {
         modal: true,
-        detail:
-          "The extension will fetch origin, verify each agent worktree contains origin/main and has no uncommitted changes, then ask GitHub CLI to auto-merge the matching branch PRs."
+        detail: `Preflight passed for ${preflightChecks.length} agent worktree(s):\n${this.formatWorktreeMergeChecks(preflightChecks)}`
       },
       "Merge PRs"
     );
     if (confirmation !== "Merge PRs") {
       return;
     }
-
-    await this.runGitCommand(["fetch", "origin"], workspacePath);
-    await this.assertWorktreesReadyForMerge(worktrees);
 
     const mergedPrs: string[] = [];
     for (const worktree of worktrees) {
@@ -986,25 +991,54 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   private async assertWorktreesReadyForMerge(worktrees: GitWorktreeInfo[]) {
+    const checks = await this.checkWorktreesReadyForMerge(worktrees);
+    const blockedChecks = checks.filter((check) => !check.ok);
+    if (blockedChecks.length > 0) {
+      throw new Error(
+        `Cannot merge parallel PRs until agent worktrees are synced:\n${this.formatWorktreeMergeChecks(blockedChecks)}`
+      );
+    }
+
+    return checks;
+  }
+
+  private async checkWorktreesReadyForMerge(worktrees: GitWorktreeInfo[]) {
+    const checks: WorktreeMergeCheck[] = [];
     for (const worktree of worktrees) {
+      const reasons: string[] = [];
+      if (worktree.branch.trim() === "") {
+        reasons.push("detached HEAD; no branch PR can be resolved");
+      }
       try {
         await this.runGitCommand(
           ["merge-base", "--is-ancestor", "origin/main", "HEAD"],
           worktree.path
         );
       } catch {
-        throw new Error(
-          `Worktree ${worktree.path} does not contain origin/main; rebase or merge the latest base before PR merge.`
-        );
+        reasons.push("does not contain origin/main; rebase or merge the latest base");
       }
 
       const status = await this.runGitCommand(["status", "--porcelain"], worktree.path);
       if (status.trim() !== "") {
-        throw new Error(
-          `Worktree ${worktree.path} has uncommitted changes; commit or clean it before PR merge.`
-        );
+        reasons.push("has uncommitted changes; commit or clean it before PR merge");
       }
+
+      checks.push({ worktree, ok: reasons.length === 0, reasons });
     }
+
+    return checks;
+  }
+
+  private formatWorktreeMergeChecks(checks: WorktreeMergeCheck[]) {
+    return checks
+      .map((check) => {
+        const branch = check.worktree.branch.trim() || "detached";
+        const label = `${branch} (${check.worktree.path})`;
+        return check.ok
+          ? `- ${label}: clean and contains origin/main`
+          : `- ${label}: ${check.reasons.join("; ")}`;
+      })
+      .join("\n");
   }
 
   private async findOpenPullRequestForBranch(branch: string, cwd: string) {

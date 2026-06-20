@@ -823,6 +823,11 @@ window.addEventListener("resize", () => {
   renderHierarchyOverlays();
   renderDependencyGraphOverlays();
 });
+for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
+  pane.addEventListener("scroll", () => {
+    renderDependencyGraphOverlays();
+  });
+}
 queryElement<HTMLButtonElement>("#refresh").addEventListener("click", () => {
   vscode.postMessage({ command: "refresh" });
 });
