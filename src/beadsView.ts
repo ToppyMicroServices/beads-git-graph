@@ -55,6 +55,9 @@ const COPILOT_ASSIGN_COMMAND_CANDIDATES = [
   "workbench.action.chat.openSessionWithPrompt.copilotcli",
   "workbench.action.chat.openSessionWithPrompt.copilot-cloud-agent"
 ];
+const CHAT_FALLBACK_COMMAND_CANDIDATES = ["workbench.action.chat.open"];
+
+type AssignAgentOpenResult = "opened" | "copied-prompt" | "failed";
 
 interface GitWorktreeInfo {
   path: string;
@@ -561,7 +564,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const ssot = this.resolveAssignSsot(workspacePath, issueId, currentSsot);
     const worktree = this.resolveAssignWorktree(workspacePath, issueId, currentWorktree);
 
-    const openedChat = await this.assignAndStartBead({
+    const openResult = await this.assignAndStartBead({
       workspacePath,
       issueId,
       title,
@@ -571,15 +574,22 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     });
     await this.refresh();
 
-    if (openedChat) {
+    if (openResult === "opened") {
       vscode.window.showInformationMessage(
         `Started ${issueId} with ${model}. Opened Copilot agent session for ${path.basename(worktree)}.`
       );
       return;
     }
 
+    if (openResult === "copied-prompt") {
+      vscode.window.showInformationMessage(
+        `Started ${issueId} with ${model}. Copilot agent prompt copied to clipboard; paste it into Copilot chat.`
+      );
+      return;
+    }
+
     vscode.window.showWarningMessage(
-      `Started ${issueId} with ${model}, but could not open a Copilot agent session automatically.`
+      `Started ${issueId} with ${model}, but could not open Copilot chat or copy the agent prompt.`
     );
   }
 
@@ -657,6 +667,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
     const uniqueCandidates = [...new Map(candidates.map((item) => [item.issueId, item])).values()];
     let openedCount = 0;
+    let copiedPromptCount = 0;
     for (const candidate of uniqueCandidates) {
       const source = items.find((item) => item.issueId.trim() === candidate.issueId);
       candidate.ssot = this.resolveAssignSsot(workspacePath, candidate.issueId, source?.ssot);
@@ -665,7 +676,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         candidate.issueId,
         source?.worktree
       );
-      const opened = await this.assignAndStartBead({
+      const openResult = await this.assignAndStartBead({
         workspacePath,
         issueId: candidate.issueId,
         title: candidate.title,
@@ -673,15 +684,17 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         ssot: candidate.ssot,
         worktree: candidate.worktree
       });
-      if (opened) {
+      if (openResult === "opened") {
         openedCount += 1;
+      } else if (openResult === "copied-prompt") {
+        copiedPromptCount += 1;
       }
     }
 
     await this.refresh();
     const skippedSummary = this.formatSkippedParallelTargets(skipped);
     vscode.window.showInformationMessage(
-      `Started ${uniqueCandidates.length} parallel bead(s). Opened ${openedCount} Copilot session(s).${skippedSummary === "" ? "" : ` Skipped ${skippedSummary}.`}`
+      `Started ${uniqueCandidates.length} parallel bead(s). Opened ${openedCount} Copilot session(s). Copied ${copiedPromptCount} prompt(s).${skippedSummary === "" ? "" : ` Skipped ${skippedSummary}.`}`
     );
   }
 
@@ -784,7 +797,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     model: string;
     ssot: string;
     worktree: string | undefined;
-  }) {
+  }): Promise<AssignAgentOpenResult> {
     const commands = new Set(await vscode.commands.getCommands(true));
     const prompt = this.buildAssignAgentPrompt(values);
     const resource = vscode.Uri.file(values.worktree?.trim() || values.workspacePath);
@@ -799,13 +812,29 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           prompt,
           resource
         });
-        return true;
+        return "opened";
       } catch {
         continue;
       }
     }
 
-    return false;
+    try {
+      await vscode.env.clipboard.writeText(prompt);
+      for (const command of CHAT_FALLBACK_COMMAND_CANDIDATES) {
+        if (!commands.has(command)) {
+          continue;
+        }
+        try {
+          await vscode.commands.executeCommand(command);
+          break;
+        } catch {
+          continue;
+        }
+      }
+      return "copied-prompt";
+    } catch {
+      return "failed";
+    }
   }
 
   private resolveAssignModel(currentModel: string | undefined) {

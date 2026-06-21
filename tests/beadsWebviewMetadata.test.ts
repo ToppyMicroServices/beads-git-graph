@@ -134,6 +134,11 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("startParallelBeads");
     expect(beadsView).toContain("formatSkippedParallelTargets");
     expect(beadsView).toContain("workbench.action.chat.openSessionWithPrompt.copilotcli");
+    expect(beadsView).toContain("CHAT_FALLBACK_COMMAND_CANDIDATES");
+    expect(beadsView).toContain("workbench.action.chat.open");
+    expect(beadsView).toContain("vscode.env.clipboard.writeText(prompt)");
+    expect(beadsView).toContain("Copilot agent prompt copied to clipboard");
+    expect(beadsView).toContain("Copied $" + "{copiedPromptCount} prompt(s)");
     expect(beadsView).toContain("vscode.Uri.file(values.worktree?.trim() || values.workspacePath)");
     expect(beadsView).toContain("AGENTS.md");
     expect(beadsView).toContain(".beads/issues.jsonl");
