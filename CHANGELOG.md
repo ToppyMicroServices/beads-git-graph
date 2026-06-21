@@ -7,6 +7,7 @@
 - Add AI multi-agent cockpit metadata for branch, PR, checks, and sync risk in Beads table, details, and graph views.
 - Report skipped active tasks with reasons when Start Parallel runs.
 - Add a Graph execution map banner and legend for Critical Path, dependency, parent, and merge/worktree risk signals.
+- Copy the agent prompt to the clipboard and open Chat as a fallback when Copilot agent session commands are unavailable.
 
 ### Changed
 

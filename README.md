@@ -37,7 +37,7 @@ The Beads view surfaces optional execution hints from issue fields, metadata, or
 - `pr: 123`, `check_status: "success"`, or labels such as `pr:#123`, `checks:success`
 - `sync_risk: "stale"` or label `sync-risk:stale`
 
-When you use **Start AI**, the extension automatically picks the configured or default model, infers SSOT/context from workspace files such as `AGENTS.md`, `.beads/issues.jsonl`, `README.md`, and `docs`, creates or reuses a git worktree for the task, records model/SSOT/worktree/branch metadata, marks the bead in progress, then opens a GitHub Copilot Background Agent chat session with the bead prompt prefilled.
+When you use **Start AI**, the extension automatically picks the configured or default model, infers SSOT/context from workspace files such as `AGENTS.md`, `.beads/issues.jsonl`, `README.md`, and `docs`, creates or reuses a git worktree for the task, records model/SSOT/worktree/branch metadata, marks the bead in progress, then opens a GitHub Copilot Background Agent chat session with the bead prompt prefilled. If VS Code cannot open that session automatically, the prompt is copied to the clipboard and Chat is opened as a fallback.
 
 When multiple ready tasks can run in parallel, **Start Parallel** assigns and starts them in one action. Each task receives its own worktree so the Beads table and graph can show which worktree is expected to carry that agent's changes. Active tasks that are skipped are reported with the reason.
 
