@@ -81,6 +81,8 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("graphLevelGuide");
     expect(beadsWebview).toContain("graphNodes");
     expect(beadsWebview).toContain("data-graph-lane");
+    expect(beadsWebview).toContain("data-epic-id");
+    expect(beadsWebview).toContain("data-depth");
     expect(beadsWebview).toContain("--graph-x");
     expect(beadsWebview).toContain("--graph-height");
     expect(beadsWebview).toContain("dependencyArrowHead");
@@ -106,6 +108,9 @@ describe("beads webview presentation metadata", () => {
       "worktree: normalizeOptionalDatasetValue(button.dataset.assignStartWorktree)"
     );
     expect(beadsMain).toContain("renderDependencyGraphOverlays");
+    expect(beadsMain).toContain("visibleRowIds");
+    expect(beadsMain).toContain('section.querySelectorAll<BeadRow>("tbody .beadRow")');
+    expect(beadsMain).toContain("visibleRowIds.has(node.dataset.graphId");
     expect(beadsMain).toContain('querySelectorAll<HTMLElement>(".graphPane")');
     expect(beadsMain).toContain('pane.addEventListener("scroll"');
     expect(beadsMain).toContain('command: "assignStartBead"');
