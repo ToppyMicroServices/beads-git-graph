@@ -251,8 +251,10 @@ function renderBeadsDependencyGraph(
     Math.max(0, laneCount - 1) * GRAPH_LANE_GAP;
   const levelGuideHtml = Array.from({ length: levelCount }, (_, level) => {
     const x = GRAPH_PADDING_X + level * (GRAPH_NODE_WIDTH + GRAPH_LEVEL_GAP) + GRAPH_NODE_WIDTH / 2;
+    const label = level === 0 ? "Ready" : `L${level + 1}`;
+    const detail = level === 0 ? "No blockers" : "After deps";
 
-    return `<span class="graphLevelGuide" style="--graph-guide-x:${x}px"><span>L${level + 1}</span></span>`;
+    return `<span class="graphLevelGuide" style="--graph-guide-x:${x}px"><span class="graphLevelLabel"><strong>${label}</strong><small>${detail}</small></span></span>`;
   }).join("");
   const nodeHtml = Array.from({ length: levelCount }, (_, level) => {
     const nodes = nodesByLevel.get(level) ?? [];
@@ -355,9 +357,11 @@ function renderBeadsDependencyGraph(
       : "";
   const dependencyWarningHtml =
     dependencyWarnings.size > 0
-      ? `<div class="graphWarningBand">${Array.from(dependencyWarnings.entries())
+      ? `<details class="graphIssueDrawer dependencyIssueDrawer"><summary><span>Dependency warnings</span><strong>${dependencyWarnings.size}</strong></summary><div class="graphWarningBand">${Array.from(
+          dependencyWarnings.entries()
+        )
           .map(([id, message]) => `<span>${escapeHtml(id)}: ${escapeHtml(message)}</span>`)
-          .join("")}</div>`
+          .join("")}</div></details>`
       : "";
   const mergeRiskSummary =
     mergeRiskWarnings.size > 0
@@ -365,9 +369,11 @@ function renderBeadsDependencyGraph(
       : "";
   const mergeRiskHtml =
     mergeRiskWarnings.size > 0
-      ? `<div class="graphRiskBand">${Array.from(mergeRiskWarnings.entries())
+      ? `<details class="graphIssueDrawer mergeRiskIssueDrawer"><summary><span>Merge/worktree risk</span><strong>${mergeRiskWarnings.size}</strong></summary><div class="graphRiskBand">${Array.from(
+          mergeRiskWarnings.entries()
+        )
           .map(([id, message]) => `<span>${escapeHtml(id)}: ${escapeHtml(message)}</span>`)
-          .join("")}</div>`
+          .join("")}</div></details>`
       : "";
   const criticalSummary =
     graph.criticalPathIds.length > 0
@@ -375,12 +381,16 @@ function renderBeadsDependencyGraph(
       : "";
   const criticalPathHtml =
     graph.criticalPathIds.length > 0
-      ? `<div class="criticalPathBanner"><span>Critical Path</span><strong>${escapeHtml(graph.criticalPathIds.join(" -> "))}</strong></div>`
-      : `<div class="criticalPathBanner emptyCriticalPath"><span>Critical Path</span><strong>No dependency path yet</strong></div>`;
+      ? `<div class="graphPathStrip"><span>Critical Path</span><strong title="${escapeHtml(graph.criticalPathIds.join(" -> "))}">${escapeHtml(graph.criticalPathIds.join(" -> "))}</strong></div>`
+      : `<div class="graphPathStrip emptyCriticalPath"><span>Critical Path</span><strong>No dependency path yet</strong></div>`;
   const graphLegendHtml =
     '<div class="graphLegend"><span class="dependencyLegend">Dependency</span><span class="criticalLegend">Critical path</span><span class="parentLegend">Parent</span><span class="riskLegend">Merge/worktree risk</span></div>';
+  const graphIssuesHtml =
+    dependencyWarningHtml === "" && mergeRiskHtml === ""
+      ? ""
+      : `<div class="graphIssueStack">${dependencyWarningHtml}${mergeRiskHtml}</div>`;
 
-  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div class="workspaceName">Execution Map</div><div class="workspaceSummary"><span class="summaryPill">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}${mergeRiskSummary}</div></div>${criticalPathHtml}${graphLegendHtml}${dependencyWarningHtml}${mergeRiskHtml}<div class="graphCanvas" style="--graph-width:${graphWidth}px;--graph-height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div>`;
+  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div class="workspaceName">Execution Map</div><div class="workspaceSummary"><span class="summaryPill">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}${mergeRiskSummary}</div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader">${criticalPathHtml}${graphLegendHtml}</div><div class="graphCanvas" style="--graph-width:${graphWidth}px;--graph-height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div></div>`;
 }
 
 export function renderBeadsWebviewHtml(
@@ -799,17 +809,28 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .detailsGrid .key{opacity:.78;font-size:11px;}
 .detailsGrid div:nth-child(2n){min-width:0;overflow-wrap:anywhere;}
 .detailsDescription{margin-top:8px;padding-top:8px;border-top:1px solid var(--vscode-panel-border);white-space:pre-wrap;line-height:1.45;}
-.graphPane{position:relative;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);overflow:auto;padding:10px;max-height:calc(100vh - 132px);min-height:360px;}
-.graphHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;position:sticky;top:0;left:0;z-index:4;background:var(--vscode-editor-background);padding-bottom:6px;}
+.graphPane{position:relative;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);overflow:auto;padding:0;max-height:calc(100vh - 132px);min-height:360px;}
+.graphHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0;position:sticky;top:0;left:0;z-index:5;background:var(--vscode-editor-background);padding:10px 12px 8px;border-bottom:1px solid var(--vscode-panel-border);}
 .criticalSummary{border-color:rgba(236,72,153,.5);color:var(--vscode-charts-pink,#ec4899);}
 .dependencyWarningSummary{border-color:rgba(245,158,11,.55);color:var(--vscode-editorWarning-foreground,#f59e0b);}
 .mergeRiskSummary{border-color:rgba(239,68,68,.55);color:var(--vscode-errorForeground,#ef4444);}
-.criticalPathBanner{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;margin:-3px 0 8px;padding:7px 9px;border-radius:8px;border:1px solid rgba(236,72,153,.5);background:rgba(236,72,153,.1);}
-.criticalPathBanner span{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--vscode-charts-pink,#ec4899);letter-spacing:0;}
-.criticalPathBanner strong{font-size:11px;line-height:1.35;overflow-wrap:anywhere;}
-.emptyCriticalPath{border-color:var(--vscode-panel-border);background:rgba(128,128,128,.08);}
+.graphIssueStack{display:grid;gap:6px;padding:8px 12px 0;}
+.graphIssueDrawer{border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));}
+.graphIssueDrawer summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:28px;padding:4px 8px;cursor:pointer;list-style:none;font-size:11px;font-weight:750;color:var(--vscode-descriptionForeground);}
+.graphIssueDrawer summary::-webkit-details-marker{display:none;}
+.graphIssueDrawer summary::before{content:"";width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:5px solid currentColor;opacity:.8;}
+.graphIssueDrawer[open] summary::before{transform:rotate(90deg);}
+.graphIssueDrawer summary span{margin-right:auto;}
+.graphIssueDrawer summary strong{display:inline-flex;align-items:center;min-height:18px;padding:1px 7px;border-radius:999px;border:1px solid currentColor;font-size:10px;}
+.dependencyIssueDrawer summary{color:var(--vscode-editorWarning-foreground,#f59e0b);}
+.mergeRiskIssueDrawer summary{color:var(--vscode-errorForeground,#ef4444);}
+.graphMapFrame{margin:10px 12px 12px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));min-width:max-content;overflow:hidden;}
+.graphMapHeader{display:grid;grid-template-columns:minmax(280px,1fr) auto;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--vscode-panel-border);background:rgba(128,128,128,.06);}
+.graphPathStrip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;min-width:0;}
+.graphPathStrip span{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--vscode-charts-pink,#ec4899);letter-spacing:0;}
+.graphPathStrip strong{font-size:11px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .emptyCriticalPath span,.emptyCriticalPath strong{color:var(--vscode-descriptionForeground);}
-.graphLegend{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;}
+.graphLegend{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin:0;}
 .graphLegend span{display:inline-flex;align-items:center;gap:5px;min-height:18px;padding:1px 7px;border-radius:999px;border:1px solid var(--vscode-panel-border);font-size:10px;font-weight:700;color:var(--vscode-descriptionForeground);background:rgba(128,128,128,.08);}
 .graphLegend span::before{content:"";width:14px;height:0;border-top:2px solid currentColor;}
 .dependencyLegend{color:rgba(148,163,184,.95)!important;}
@@ -818,18 +839,20 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .parentLegend{color:var(--vscode-textLink-foreground,#3b82f6)!important;}
 .parentLegend::before{border-top-style:dashed!important;}
 .riskLegend{color:var(--vscode-errorForeground,#ef4444)!important;}
-.graphWarningBand{display:flex;flex-wrap:wrap;gap:4px;margin:-4px 0 10px;}
+.graphWarningBand{display:flex;flex-wrap:wrap;gap:4px;margin:0;padding:0 8px 8px;max-height:92px;overflow:auto;}
 .graphWarningBand span{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border-radius:6px;border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.12);color:var(--vscode-editorWarning-foreground,#f59e0b);font-size:10px;font-weight:650;}
-.graphRiskBand{display:flex;flex-wrap:wrap;gap:4px;margin:-4px 0 10px;}
+.graphRiskBand{display:flex;flex-wrap:wrap;gap:4px;margin:0;padding:0 8px 8px;max-height:92px;overflow:auto;}
 .graphRiskBand span{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border-radius:6px;border:1px solid rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:var(--vscode-errorForeground,#ef4444);font-size:10px;font-weight:650;}
-.graphCanvas{position:relative;width:max(100%, var(--graph-width, 960px));height:max(620px, var(--graph-height, 620px));background-image:linear-gradient(rgba(128,128,128,.11) 1px, transparent 1px),linear-gradient(90deg, rgba(128,128,128,.11) 1px, transparent 1px);background-size:48px 48px;}
+.graphCanvas{position:relative;width:max(100%, var(--graph-width, 960px));height:max(620px, var(--graph-height, 620px));background-color:var(--vscode-editor-background);background-image:linear-gradient(rgba(128,128,128,.1) 1px, transparent 1px),linear-gradient(90deg, rgba(128,128,128,.1) 1px, transparent 1px);background-size:48px 48px;}
 .dependencyOverlay{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none;overflow:visible;}
 .dependencyPath{fill:none;stroke:rgba(148,163,184,.8);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
 .dependencyPath.criticalDependencyPath{stroke:var(--vscode-charts-pink,#ec4899);stroke-width:2.8;}
 .dependencyArrowHead{fill:rgba(148,163,184,.88);}
 .criticalDependencyArrowHead{fill:var(--vscode-charts-pink,#ec4899);}
-.graphLevelGuide{position:absolute;top:18px;bottom:18px;left:var(--graph-guide-x);z-index:0;border-left:1px dashed rgba(128,128,128,.28);}
-.graphLevelGuide span{position:absolute;top:0;left:8px;font-size:10px;font-weight:700;color:var(--vscode-descriptionForeground);letter-spacing:0;}
+.graphLevelGuide{position:absolute;top:0;bottom:18px;left:var(--graph-guide-x);z-index:0;border-left:1px dashed rgba(128,128,128,.28);}
+.graphLevelLabel{position:absolute;top:10px;left:8px;display:grid;gap:1px;min-width:82px;color:var(--vscode-descriptionForeground);letter-spacing:0;}
+.graphLevelLabel strong{font-size:11px;font-weight:800;line-height:1.1;color:var(--vscode-foreground);}
+.graphLevelLabel small{font-size:10px;font-weight:650;line-height:1.15;color:var(--vscode-descriptionForeground);}
 .graphNodes{position:absolute;inset:0;z-index:2;}
 .graphNode{position:absolute;left:var(--graph-x);top:var(--graph-y);width:var(--graph-node-width,280px);border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));padding:8px;box-shadow:0 1px 3px rgba(0,0,0,.12);}
 .graphNode.criticalGraphNode{border-color:rgba(236,72,153,.62);box-shadow:inset 3px 0 0 var(--vscode-charts-pink,#ec4899), 0 1px 3px rgba(0,0,0,.12);}
@@ -876,6 +899,11 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
   .inlineDetailsRow td{display:block;padding:0 6px 8px;}
   .detailsGrid{grid-template-columns:82px minmax(0,1fr);}
   .graphPane{max-height:calc(100vh - 118px);min-height:320px;padding:8px;}
+  .graphHeader{position:relative;padding:8px;margin:-8px -8px 0;}
+  .graphIssueStack{padding:8px 0 0;}
+  .graphMapFrame{margin:8px 0 0;}
+  .graphMapHeader{grid-template-columns:1fr;align-items:start;}
+  .graphLegend{justify-content:flex-start;}
   .graphCanvas{height:max(560px, var(--graph-height, 560px));}
 }
 code{font-family:var(--vscode-editor-font-family);}

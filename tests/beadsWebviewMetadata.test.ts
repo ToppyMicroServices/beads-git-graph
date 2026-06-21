@@ -44,8 +44,12 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain('id="graphView"');
     expect(beadsWebview).toContain("Execution Map");
     expect(beadsWebview).toContain("Critical Path");
-    expect(beadsWebview).toContain("criticalPathBanner");
+    expect(beadsWebview).toContain("graphPathStrip");
+    expect(beadsWebview).toContain("graphMapFrame");
+    expect(beadsWebview).toContain("graphMapHeader");
     expect(beadsWebview).toContain("No dependency path yet");
+    expect(beadsWebview).toContain("graphIssueDrawer");
+    expect(beadsWebview).toContain("graphIssueStack");
     expect(beadsWebview).toContain("graphLegend");
     expect(beadsWebview).toContain("dependencyLegend");
     expect(beadsWebview).toContain("criticalLegend");
@@ -79,6 +83,9 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("buildDependencyLintWarnings");
     expect(beadsWebview).toContain("max-height:calc(100vh - 132px)");
     expect(beadsWebview).toContain("graphLevelGuide");
+    expect(beadsWebview).toContain("graphLevelLabel");
+    expect(beadsWebview).toContain("No blockers");
+    expect(beadsWebview).toContain("After deps");
     expect(beadsWebview).toContain("graphNodes");
     expect(beadsWebview).toContain("data-graph-lane");
     expect(beadsWebview).toContain("data-epic-id");
