@@ -711,9 +711,17 @@ function renderHierarchyOverlays() {
 }
 
 function refreshGraphNodeVisibility() {
-  for (const node of Array.from(document.querySelectorAll<HTMLElement>(".graphNode"))) {
-    const status = (node.dataset.status || "") as StatusFilter;
-    node.style.display = activeFilters.has(status) ? "" : "none";
+  for (const section of Array.from(document.querySelectorAll<BeadSection>("section"))) {
+    const visibleRowIds = new Set(
+      Array.from(section.querySelectorAll<BeadRow>("tbody .beadRow"))
+        .filter((row) => row.style.display !== "none")
+        .map((row) => row.dataset.id || "")
+        .filter((id) => id !== "")
+    );
+
+    for (const node of Array.from(section.querySelectorAll<HTMLElement>(".graphNode"))) {
+      node.style.display = visibleRowIds.has(node.dataset.graphId || "") ? "" : "none";
+    }
   }
 }
 
