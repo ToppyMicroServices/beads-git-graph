@@ -15,6 +15,10 @@
 
 <!-- daily-generated:start -->
 
+### Daily Snapshot
+
+- [`ea7028c`](https://github.com/ToppyMicroServices/beads-git-graph/commit/ea7028cb749bed0bc0c96af81d253dd4962bc581) feat: clarify graph critical path (#165)
+- [`2436101`](https://github.com/ToppyMicroServices/beads-git-graph/commit/2436101710ab43157a2db1be6ec2d9ab5fcc3840) feat: add multi-agent cockpit state (#163)
 <!-- daily-generated:end -->
 
 ## [0.3.2] - 2026-06-20
