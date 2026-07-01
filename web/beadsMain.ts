@@ -189,6 +189,24 @@ function closeContextMenu() {
   contextMenuWorkspacePath = "";
 }
 
+function postAssignStartBead(button: HTMLButtonElement) {
+  const issueId = button.dataset.assignStartId || "";
+  const workspacePath = button.dataset.assignStartWorkspace || "";
+  if (!bdAvailable || issueId === "" || workspacePath === "") {
+    return;
+  }
+  vscode.postMessage({
+    command: "assignStartBead",
+    issueId,
+    workspacePath,
+    title: button.dataset.assignStartTitle || "",
+    agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent),
+    model: normalizeOptionalDatasetValue(button.dataset.assignStartModel),
+    ssot: normalizeOptionalDatasetValue(button.dataset.assignStartSsot),
+    worktree: normalizeOptionalDatasetValue(button.dataset.assignStartWorktree)
+  });
+}
+
 function openContextMenu(row: BeadRow | null, workspacePath: string, event: MouseEvent) {
   contextMenuRow = row;
   contextMenuWorkspacePath = workspacePath;
@@ -945,6 +963,12 @@ document.addEventListener("click", (event) => {
   if (!(target instanceof Element)) {
     return;
   }
+  const assignStartButton = target.closest(".assignStartBead") as HTMLButtonElement | null;
+  if (assignStartButton !== null) {
+    event.preventDefault();
+    postAssignStartBead(assignStartButton);
+    return;
+  }
   if (!target.closest(".menu")) {
     filterMenu.classList.remove("open");
   }
@@ -1066,25 +1090,6 @@ for (const button of Array.from(
       workspacePath,
       items,
       skipped: skipped ?? []
-    });
-  });
-}
-for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".assignStartBead"))) {
-  button.addEventListener("click", () => {
-    const issueId = button.dataset.assignStartId || "";
-    const workspacePath = button.dataset.assignStartWorkspace || "";
-    if (!bdAvailable || issueId === "" || workspacePath === "") {
-      return;
-    }
-    vscode.postMessage({
-      command: "assignStartBead",
-      issueId,
-      workspacePath,
-      title: button.dataset.assignStartTitle || "",
-      agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent),
-      model: normalizeOptionalDatasetValue(button.dataset.assignStartModel),
-      ssot: normalizeOptionalDatasetValue(button.dataset.assignStartSsot),
-      worktree: normalizeOptionalDatasetValue(button.dataset.assignStartWorktree)
     });
   });
 }
