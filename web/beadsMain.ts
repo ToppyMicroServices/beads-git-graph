@@ -12,8 +12,11 @@ type StatusFilter = "open" | "in_progress" | "blocked" | "closed" | "other";
 type ViewMode = "table" | "graph";
 type BeadRow = HTMLTableRowElement & { dataset: DOMStringMap };
 type BeadSection = HTMLElement & { dataset: DOMStringMap };
+type GraphScrollState = { left: number; top: number };
 type BeadsWebviewState = {
   viewMode?: ViewMode;
+  graphZoom?: number;
+  graphScroll?: Record<string, GraphScrollState>;
   [key: string]: unknown;
 };
 
@@ -60,6 +63,9 @@ const STATUS_LABELS: Record<StatusFilter, string> = {
   other: "Other"
 };
 const ALL_FILTERS: StatusFilter[] = ["open", "in_progress", "blocked", "closed", "other"];
+const GRAPH_ZOOM_MIN = 0.6;
+const GRAPH_ZOOM_MAX = 1.8;
+const GRAPH_ZOOM_STEP = 0.1;
 const PRESET_FILTERS: Record<string, StatusFilter[]> = {
   default: ["open", "in_progress", "blocked"],
   open: ["open"],
@@ -76,6 +82,7 @@ let contextMenuRow: BeadRow | null = null;
 let contextMenuWorkspacePath = "";
 let sortState: { key: SortKey; desc: boolean } = { key: "updated", desc: true };
 let activeViewMode: ViewMode = normalizeViewMode(vscode.getState()?.viewMode);
+let graphZoom = normalizeGraphZoom(vscode.getState()?.graphZoom);
 let rowClickTimer: number | null = null;
 const collapsedIds = new Set<string>();
 const collapsedEpicIds = new Set<string>();
@@ -111,11 +118,20 @@ function normalizeViewMode(value: unknown): ViewMode {
   return value === "graph" ? "graph" : "table";
 }
 
-function saveViewMode(mode: ViewMode) {
+function normalizeGraphZoom(value: unknown) {
+  const numericValue = typeof value === "number" && Number.isFinite(value) ? value : 1;
+  return Math.min(GRAPH_ZOOM_MAX, Math.max(GRAPH_ZOOM_MIN, numericValue));
+}
+
+function saveWebviewState(patch: Partial<BeadsWebviewState>) {
   vscode.setState({
     ...vscode.getState(),
-    viewMode: mode
+    ...patch
   });
+}
+
+function saveViewMode(mode: ViewMode) {
+  saveWebviewState({ viewMode: mode });
 }
 
 function normalizeOptionalDatasetValue(value: string | undefined) {
@@ -487,6 +503,10 @@ function applyViewMode(mode: ViewMode) {
   graphViewButton.classList.toggle("active", mode === "graph");
   tableViewButton.setAttribute("aria-pressed", mode === "table" ? "true" : "false");
   graphViewButton.setAttribute("aria-pressed", mode === "graph" ? "true" : "false");
+  if (mode === "graph") {
+    applyGraphZoomToAll();
+    restoreGraphScroll();
+  }
   renderHierarchyOverlays();
   renderDependencyGraphOverlays();
 }
@@ -725,13 +745,135 @@ function refreshGraphNodeVisibility() {
   }
 }
 
+function getGraphScroller(pane: HTMLElement) {
+  return pane.querySelector<HTMLElement>(".graphScroller");
+}
+
+function getGraphCanvas(pane: HTMLElement) {
+  return pane.querySelector<HTMLElement>(".graphCanvas");
+}
+
+function getGraphContent(pane: HTMLElement) {
+  return pane.querySelector<HTMLElement>(".graphContent");
+}
+
+function getGraphWorkspaceKey(pane: HTMLElement) {
+  return pane.dataset.workspacePath || "default";
+}
+
+function getGraphBaseSize(canvas: HTMLElement) {
+  return {
+    width: Math.max(1, parseFloat(canvas.dataset.graphWidth || "960")),
+    height: Math.max(1, parseFloat(canvas.dataset.graphHeight || "620"))
+  };
+}
+
+function saveGraphZoom() {
+  saveWebviewState({ graphZoom });
+}
+
+function saveGraphScroll(pane: HTMLElement) {
+  const scroller = getGraphScroller(pane);
+  if (scroller === null) {
+    return;
+  }
+  const state = vscode.getState() ?? {};
+  const graphScroll = { ...state.graphScroll };
+  graphScroll[getGraphWorkspaceKey(pane)] = {
+    left: scroller.scrollLeft,
+    top: scroller.scrollTop
+  };
+  saveWebviewState({ graphScroll });
+}
+
+function updateGraphZoomLabels() {
+  const label = `${Math.round(graphZoom * 100)}%`;
+  for (const element of Array.from(
+    document.querySelectorAll<HTMLElement>("[data-graph-zoom-value]")
+  )) {
+    element.textContent = label;
+  }
+}
+
+function applyGraphZoomToPane(pane: HTMLElement) {
+  const scroller = getGraphScroller(pane);
+  const canvas = getGraphCanvas(pane);
+  const content = getGraphContent(pane);
+  if (scroller === null || canvas === null || content === null) {
+    return;
+  }
+
+  const base = getGraphBaseSize(canvas);
+  canvas.style.width = `${Math.max(scroller.clientWidth, base.width * graphZoom)}px`;
+  canvas.style.height = `${Math.max(scroller.clientHeight, base.height * graphZoom)}px`;
+  content.style.setProperty("--graph-zoom", graphZoom.toFixed(2));
+}
+
+function applyGraphZoomToAll() {
+  for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
+    applyGraphZoomToPane(pane);
+  }
+  updateGraphZoomLabels();
+}
+
+function restoreGraphScroll() {
+  const graphScroll = vscode.getState()?.graphScroll ?? {};
+  window.requestAnimationFrame(() => {
+    for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
+      const scroller = getGraphScroller(pane);
+      const saved = graphScroll[getGraphWorkspaceKey(pane)];
+      if (scroller === null || saved === undefined) {
+        continue;
+      }
+      scroller.scrollLeft = Math.max(0, saved.left);
+      scroller.scrollTop = Math.max(0, saved.top);
+    }
+    renderDependencyGraphOverlays();
+  });
+}
+
+function setGraphZoom(nextZoom: number) {
+  const previousZoom = graphZoom;
+  const nextNormalizedZoom = normalizeGraphZoom(nextZoom);
+  if (Math.abs(previousZoom - nextNormalizedZoom) < 0.001) {
+    return;
+  }
+
+  const centers = new Map<HTMLElement, { x: number; y: number }>();
+  for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
+    const scroller = getGraphScroller(pane);
+    if (scroller === null) {
+      continue;
+    }
+    centers.set(pane, {
+      x: (scroller.scrollLeft + scroller.clientWidth / 2) / previousZoom,
+      y: (scroller.scrollTop + scroller.clientHeight / 2) / previousZoom
+    });
+  }
+
+  graphZoom = nextNormalizedZoom;
+  applyGraphZoomToAll();
+  for (const [pane, center] of centers.entries()) {
+    const scroller = getGraphScroller(pane);
+    if (scroller === null) {
+      continue;
+    }
+    scroller.scrollLeft = Math.max(0, center.x * graphZoom - scroller.clientWidth / 2);
+    scroller.scrollTop = Math.max(0, center.y * graphZoom - scroller.clientHeight / 2);
+    saveGraphScroll(pane);
+  }
+  saveGraphZoom();
+  renderDependencyGraphOverlays();
+}
+
 function renderDependencyGraphOverlays() {
   for (const [paneIndex, pane] of Array.from(
     document.querySelectorAll<HTMLElement>(".graphPane")
   ).entries()) {
     const overlay = pane.querySelector<SVGElement>(".dependencyOverlay");
     const canvas = pane.querySelector<HTMLElement>(".graphCanvas");
-    if (overlay === null || canvas === null) {
+    const content = getGraphContent(pane);
+    if (overlay === null || canvas === null || content === null) {
       continue;
     }
     if (activeViewMode !== "graph" || pane.offsetParent === null) {
@@ -739,9 +881,11 @@ function renderDependencyGraphOverlays() {
       continue;
     }
 
-    const canvasRect = canvas.getBoundingClientRect();
-    const width = Math.max(1, Math.round(canvas.scrollWidth));
-    const height = Math.max(1, Math.round(canvas.scrollHeight));
+    applyGraphZoomToPane(pane);
+
+    const contentRect = content.getBoundingClientRect();
+    const width = Math.max(1, Math.round(content.offsetWidth));
+    const height = Math.max(1, Math.round(content.offsetHeight));
     overlay.setAttribute("viewBox", `0 0 ${width} ${height}`);
     overlay.style.width = `${width}px`;
     overlay.style.height = `${height}px`;
@@ -764,10 +908,10 @@ function renderDependencyGraphOverlays() {
 
       const fromRect = fromNode.getBoundingClientRect();
       const toRect = toNode.getBoundingClientRect();
-      const x1 = fromRect.right - canvasRect.left;
-      const y1 = fromRect.top - canvasRect.top + fromRect.height / 2;
-      const x2 = toRect.left - canvasRect.left;
-      const y2 = toRect.top - canvasRect.top + toRect.height / 2;
+      const x1 = (fromRect.right - contentRect.left) / graphZoom;
+      const y1 = (fromRect.top - contentRect.top + fromRect.height / 2) / graphZoom;
+      const x2 = (toRect.left - contentRect.left) / graphZoom;
+      const y2 = (toRect.top - contentRect.top + toRect.height / 2) / graphZoom;
       const gap = Math.max(28, Math.abs(x2 - x1) * 0.45);
       const d =
         x2 >= x1
@@ -849,12 +993,28 @@ closeBeadAction.addEventListener("click", () => {
   vscode.postMessage({ command: "closeBead", issueId, workspacePath, title: item.title || "" });
 });
 window.addEventListener("resize", () => {
+  applyGraphZoomToAll();
   renderHierarchyOverlays();
   renderDependencyGraphOverlays();
 });
 for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
-  pane.addEventListener("scroll", () => {
+  getGraphScroller(pane)?.addEventListener("scroll", () => {
+    saveGraphScroll(pane);
     renderDependencyGraphOverlays();
+  });
+}
+for (const button of Array.from(
+  document.querySelectorAll<HTMLButtonElement>("[data-graph-zoom-action]")
+)) {
+  button.addEventListener("click", () => {
+    const action = button.dataset.graphZoomAction || "";
+    if (action === "in") {
+      setGraphZoom(graphZoom + GRAPH_ZOOM_STEP);
+    } else if (action === "out") {
+      setGraphZoom(graphZoom - GRAPH_ZOOM_STEP);
+    } else if (action === "reset") {
+      setGraphZoom(1);
+    }
   });
 }
 queryElement<HTMLButtonElement>("#refresh").addEventListener("click", () => {
@@ -1026,6 +1186,8 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
 }
 
 renderFilterChips();
+applyGraphZoomToAll();
 applyViewMode(activeViewMode);
 applySort();
 applyFilters();
+restoreGraphScroll();

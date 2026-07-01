@@ -47,9 +47,16 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("graphPathStrip");
     expect(beadsWebview).toContain("graphMapFrame");
     expect(beadsWebview).toContain("graphMapHeader");
+    expect(beadsWebview).toContain("graphMapHeaderMain");
     expect(beadsWebview).toContain("No dependency path yet");
     expect(beadsWebview).toContain("graphIssueDrawer");
     expect(beadsWebview).toContain("graphIssueStack");
+    expect(beadsWebview).toContain("graphControls");
+    expect(beadsWebview).toContain("data-graph-zoom-action");
+    expect(beadsWebview).toContain("graphScroller");
+    expect(beadsWebview).toContain("graphContent");
+    expect(beadsWebview).toContain("data-graph-width");
+    expect(beadsWebview).toContain("data-graph-height");
     expect(beadsWebview).toContain("graphLegend");
     expect(beadsWebview).toContain("dependencyLegend");
     expect(beadsWebview).toContain("criticalLegend");
@@ -91,14 +98,20 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("data-epic-id");
     expect(beadsWebview).toContain("data-depth");
     expect(beadsWebview).toContain("--graph-x");
-    expect(beadsWebview).toContain("--graph-height");
     expect(beadsWebview).toContain("dependencyArrowHead");
     expect(beadsWebview).not.toContain("graphGrid");
     expect(beadsWebview).not.toContain("graphStage");
     expect(beadsMain).toContain("getState(): BeadsWebviewState | undefined");
     expect(beadsMain).toContain("setState(state: BeadsWebviewState): void");
     expect(beadsMain).toContain("normalizeViewMode(vscode.getState()?.viewMode)");
+    expect(beadsMain).toContain("normalizeGraphZoom(vscode.getState()?.graphZoom)");
     expect(beadsMain).toContain("saveViewMode(mode)");
+    expect(beadsMain).toContain("saveWebviewState");
+    expect(beadsMain).toContain("saveGraphScroll");
+    expect(beadsMain).toContain("restoreGraphScroll");
+    expect(beadsMain).toContain("setGraphZoom");
+    expect(beadsMain).toContain("GRAPH_ZOOM_MIN");
+    expect(beadsMain).toContain("GRAPH_ZOOM_MAX");
     expect(beadsMain).toContain("normalizeOptionalDatasetValue");
     expect(beadsMain).toContain("marker-end");
     expect(beadsMain).toContain("criticalDependencyArrow");
@@ -119,7 +132,10 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain('section.querySelectorAll<BeadRow>("tbody .beadRow")');
     expect(beadsMain).toContain("visibleRowIds.has(node.dataset.graphId");
     expect(beadsMain).toContain('querySelectorAll<HTMLElement>(".graphPane")');
-    expect(beadsMain).toContain('pane.addEventListener("scroll"');
+    expect(beadsMain).toContain('querySelector<HTMLElement>(".graphScroller")');
+    expect(beadsMain).toContain('getGraphScroller(pane)?.addEventListener("scroll"');
+    expect(beadsMain).toContain("content.style.setProperty");
+    expect(beadsMain).toContain("data-graph-zoom-action");
     expect(beadsMain).toContain('command: "assignStartBead"');
     expect(beadsMain).toContain('command: "startParallelBeads"');
     expect(beadsMain).toContain("detailsCell.colSpan = 6");
@@ -129,6 +145,9 @@ describe("beads webview presentation metadata", () => {
   });
 
   it("starts AI work with automatic model, SSOT, and worktree context", () => {
+    expect(beadsView).toContain("refreshDebounceMs");
+    expect(beadsView).toContain("refreshTimer");
+    expect(beadsView).toContain("scheduleRefresh");
     expect(beadsView).toContain("DEFAULT_ASSIGN_MODEL");
     expect(beadsView).toContain("resolveAssignModel");
     expect(beadsView).toContain("resolveAssignSsot");
