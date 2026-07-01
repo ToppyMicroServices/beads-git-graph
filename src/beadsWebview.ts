@@ -877,7 +877,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphRelation{display:grid;grid-template-columns:54px minmax(0,1fr);gap:5px;font-size:10px;color:var(--vscode-descriptionForeground);line-height:1.35;}
 .graphRelation span{font-weight:700;color:var(--vscode-foreground);}
 .graphParentRelation{border-left:2px dashed var(--vscode-textLink-foreground,#3b82f6);padding-left:5px;}
-.graphNodeActions{display:flex;justify-content:flex-end;margin-top:8px;}
+.graphNodeActions{position:relative;z-index:3;display:flex;justify-content:flex-end;margin-top:8px;}
 .assignStartBead,.mergeParallelPrs{height:24px;padding:0 8px;font-weight:650;}
 .mergeParallelPrs{border-color:rgba(249,115,22,.55);background:rgba(249,115,22,.16);color:var(--vscode-charts-orange,#f97316);}
 .assignStartBead:disabled{opacity:.45;cursor:default;}

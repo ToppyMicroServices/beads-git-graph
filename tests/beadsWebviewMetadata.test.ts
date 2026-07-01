@@ -113,6 +113,8 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("GRAPH_ZOOM_MIN");
     expect(beadsMain).toContain("GRAPH_ZOOM_MAX");
     expect(beadsMain).toContain("normalizeOptionalDatasetValue");
+    expect(beadsMain).toContain("postAssignStartBead");
+    expect(beadsMain).toContain('target.closest(".assignStartBead")');
     expect(beadsMain).toContain("marker-end");
     expect(beadsMain).toContain("criticalDependencyArrow");
     expect(beadsMain).toContain(
