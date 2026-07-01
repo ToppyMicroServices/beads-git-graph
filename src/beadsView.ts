@@ -81,9 +81,11 @@ interface PullRequestMergeCheck {
 
 export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   public static readonly viewType = "beads-git-graph.beadsView";
+  private static readonly refreshDebounceMs = 250;
 
   private webviewView: vscode.WebviewView | null = null;
   private panel: vscode.WebviewPanel | null = null;
+  private refreshTimer: NodeJS.Timeout | null = null;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly panelDisposables: vscode.Disposable[] = [];
   private readonly viewDisposables: vscode.Disposable[] = [];
@@ -144,6 +146,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   public dispose() {
+    if (this.refreshTimer !== null) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
     for (const workspacePath of this.branchWatchers.keys()) {
       this.stopWatchingBranch(workspacePath);
     }
@@ -172,8 +178,6 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     );
 
     void this.showPanel();
-
-    void this.refresh();
   }
 
   public showPanel(column?: vscode.ViewColumn) {
@@ -238,6 +242,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   public async refresh() {
+    if (this.refreshTimer !== null) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
     if (this.webviewView === null && this.panel === null) {
       return;
     }
@@ -253,7 +261,17 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   private handleBeadsFilesChanged() {
     void this.syncBranchWatchers();
-    void this.refresh();
+    this.scheduleRefresh();
+  }
+
+  private scheduleRefresh() {
+    if (this.refreshTimer !== null) {
+      clearTimeout(this.refreshTimer);
+    }
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null;
+      void this.refresh();
+    }, BeadsViewProvider.refreshDebounceMs);
   }
 
   private async loadBeads(): Promise<BeadLoadResult> {
