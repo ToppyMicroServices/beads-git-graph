@@ -172,12 +172,12 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       }),
       webviewView.onDidChangeVisibility(() => {
         if (webviewView.visible) {
-          this.showPanel();
+          void this.refresh();
         }
       })
     );
 
-    void this.showPanel();
+    void this.refresh();
   }
 
   public showPanel(column?: vscode.ViewColumn) {
