@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-07-02
+
+### Fixed
+
+- Stop the Beads sidebar from opening a separate Beads panel and restoring stale Graph state.
+- Prevent the Clear filter button from flashing during Beads view hydration.
+- Make the Graph pane vertically scrollable when nodes are taller than the estimated graph layout.
+
 ## [0.3.3] - 2026-07-01
 
 ### Added
@@ -329,7 +337,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.0...v0.3.1
