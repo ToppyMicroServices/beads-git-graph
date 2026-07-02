@@ -172,7 +172,8 @@ jobs:
         run: pnpm dlx ovsx -p "$OPEN_VSX_TOKEN" publish -i "${{ steps.locate_vsix.outputs.vsix_path }}" --skip-duplicate
 
       - name: Publish daily prerelease to VS Marketplace
-        if: env.HAS_UNRELEASED_COMMITS == 'true' && env.VS_MARKETPLACE_TOKEN != ''
+        # Keep VS Marketplace downloads on stable releases; re-enable only if pre-release becomes opt-in in the Marketplace UI.
+        if: false
         run: pnpm dlx @vscode/vsce publish --packagePath "${{ steps.locate_vsix.outputs.vsix_path }}" --skip-duplicate --pre-release -p "$VS_MARKETPLACE_TOKEN"
 
       - name: Upload VSIX artifact

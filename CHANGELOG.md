@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.4.20260702] - 2026-07-02
+
+### Changed
+
+- Promote the stable Marketplace release above the daily pre-release version so the normal download path resolves to the fixed Beads view build.
+- Stop publishing daily pre-releases to VS Marketplace to keep stable releases as the default Marketplace download.
+
 ## [0.3.4] - 2026-07-02
 
 ### Fixed
@@ -337,7 +344,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260702...HEAD
+[0.4.20260702]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.4...v0.4.20260702
 [0.3.4]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.1...v0.3.2
