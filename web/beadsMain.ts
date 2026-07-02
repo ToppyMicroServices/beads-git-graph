@@ -786,6 +786,19 @@ function getGraphBaseSize(canvas: HTMLElement) {
   };
 }
 
+function getGraphRequiredSize(pane: HTMLElement, base: { width: number; height: number }) {
+  let width = base.width;
+  let height = base.height;
+  for (const node of Array.from(pane.querySelectorAll<HTMLElement>(".graphNode"))) {
+    if (node.style.display === "none") {
+      continue;
+    }
+    width = Math.max(width, node.offsetLeft + node.offsetWidth + 40);
+    height = Math.max(height, node.offsetTop + node.offsetHeight + 40);
+  }
+  return { width, height };
+}
+
 function saveGraphZoom() {
   saveWebviewState({ graphZoom });
 }
@@ -821,7 +834,9 @@ function applyGraphZoomToPane(pane: HTMLElement) {
     return;
   }
 
-  const base = getGraphBaseSize(canvas);
+  const base = getGraphRequiredSize(pane, getGraphBaseSize(canvas));
+  content.style.width = `${base.width}px`;
+  content.style.height = `${base.height}px`;
   canvas.style.width = `${Math.max(scroller.clientWidth, base.width * graphZoom)}px`;
   canvas.style.height = `${Math.max(scroller.clientHeight, base.height * graphZoom)}px`;
   content.style.setProperty("--graph-zoom", graphZoom.toFixed(2));
