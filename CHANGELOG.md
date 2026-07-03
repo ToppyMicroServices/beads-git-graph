@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.4.20260703] - 2026-07-03
+
+### Fixed
+
+- Prevent closed or inactive Beads tasks from flashing during webview refresh before the default active filter is applied.
+- Apply the initial Beads filter before restoring the saved Graph view so filtered Graph nodes do not flash.
+
 ## [0.4.20260702] - 2026-07-02
 
 ### Changed
@@ -344,7 +351,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260702...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260703...HEAD
+[0.4.20260703]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260702...v0.4.20260703
 [0.4.20260702]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.4...v0.4.20260702
 [0.3.4]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.2...v0.3.3
