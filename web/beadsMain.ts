@@ -1206,8 +1206,8 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
 }
 
 renderFilterChips();
-applyGraphZoomToAll();
-applyViewMode(activeViewMode);
 applySort();
 applyFilters();
+applyGraphZoomToAll();
+applyViewMode(activeViewMode);
 restoreGraphScroll();
