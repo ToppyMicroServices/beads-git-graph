@@ -88,6 +88,10 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("graphParentRelation");
     expect(beadsWebview).toContain("buildMergeRiskWarnings");
     expect(beadsWebview).toContain("buildDependencyLintWarnings");
+    expect(beadsWebview).toContain("isDefaultVisibleStatus");
+    expect(beadsWebview).toContain('style="display:none"');
+    expect(beadsWebview).toContain("initialDisplay");
+    expect(beadsWebview).toContain("--graph-x");
     expect(beadsWebview).toContain("height:clamp(360px,calc(100vh - 132px),900px)");
     expect(beadsWebview).toContain("#clearFilters{display:none;}");
     expect(beadsMain).toContain("getGraphRequiredSize");
