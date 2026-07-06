@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.4.20260706] - 2026-07-06
+
+### Fixed
+
+- Keep the Beads Graph view from reloading when the underlying Beads data has not changed.
+- Reduce noisy Beads database file refresh triggers that reset Graph scroll state.
+- Compact the Graph layout so task nodes and dependency arrows fit better on screen.
+- Reduce critical path arrow and stroke size.
+
 ## [0.4.20260703] - 2026-07-03
 
 ### Fixed
@@ -351,7 +360,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260703...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260706...HEAD
+[0.4.20260706]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260703...v0.4.20260706
 [0.4.20260703]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260702...v0.4.20260703
 [0.4.20260702]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.4...v0.4.20260702
 [0.3.4]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.3.3...v0.3.4
