@@ -105,6 +105,10 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("data-depth");
     expect(beadsWebview).toContain("--graph-x");
     expect(beadsWebview).toContain("dependencyArrowHead");
+    expect(beadsWebview).toContain("const GRAPH_NODE_WIDTH = 252");
+    expect(beadsWebview).toContain("const GRAPH_LEVEL_GAP = 56");
+    expect(beadsWebview).toContain("const GRAPH_LANE_GAP = 30");
+    expect(beadsWebview).toContain("stroke-width:2;");
     expect(beadsWebview).not.toContain("graphGrid");
     expect(beadsWebview).not.toContain("graphStage");
     expect(beadsMain).toContain("getState(): BeadsWebviewState | undefined");
@@ -123,6 +127,8 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain('target.closest(".assignStartBead")');
     expect(beadsMain).toContain("marker-end");
     expect(beadsMain).toContain("criticalDependencyArrow");
+    expect(beadsMain).toContain('markerWidth="6.5"');
+    expect(beadsMain).toContain("Math.max(18, Math.abs(x2 - x1) * 0.34)");
     expect(beadsMain).toContain(
       "agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent)"
     );

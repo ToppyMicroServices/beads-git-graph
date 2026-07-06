@@ -16,12 +16,12 @@ import { type BeadLoadResult } from "./beadsViewTypes";
 import { escapeHtml, getNonce } from "./utils";
 
 const BEADS_WEBVIEW_SCRIPT = "beadsWebview.min.js";
-const GRAPH_NODE_WIDTH = 280;
-const GRAPH_NODE_HEIGHT_ESTIMATE = 150;
-const GRAPH_LEVEL_GAP = 96;
-const GRAPH_LANE_GAP = 54;
-const GRAPH_PADDING_X = 44;
-const GRAPH_PADDING_Y = 56;
+const GRAPH_NODE_WIDTH = 252;
+const GRAPH_NODE_HEIGHT_ESTIMATE = 140;
+const GRAPH_LEVEL_GAP = 56;
+const GRAPH_LANE_GAP = 30;
+const GRAPH_PADDING_X = 28;
+const GRAPH_PADDING_Y = 44;
 
 function getRawAssigneeLabel(item: BeadItem) {
   return item.assignee.trim() !== "" && item.assignee !== "-" ? item.assignee.trim() : "";
@@ -863,8 +863,8 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphCanvas{position:relative;min-width:100%;min-height:620px;background-color:var(--vscode-editor-background);background-image:linear-gradient(rgba(128,128,128,.1) 1px, transparent 1px),linear-gradient(90deg, rgba(128,128,128,.1) 1px, transparent 1px);background-size:48px 48px;}
 .graphContent{position:absolute;left:0;top:0;transform:scale(var(--graph-zoom,1));transform-origin:0 0;}
 .dependencyOverlay{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none;overflow:visible;}
-.dependencyPath{fill:none;stroke:rgba(148,163,184,.8);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
-.dependencyPath.criticalDependencyPath{stroke:var(--vscode-charts-pink,#ec4899);stroke-width:2.8;}
+.dependencyPath{fill:none;stroke:rgba(148,163,184,.8);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
+.dependencyPath.criticalDependencyPath{stroke:var(--vscode-charts-pink,#ec4899);stroke-width:2;}
 .dependencyArrowHead{fill:rgba(148,163,184,.88);}
 .criticalDependencyArrowHead{fill:var(--vscode-charts-pink,#ec4899);}
 .graphLevelGuide{position:absolute;top:0;bottom:18px;left:var(--graph-guide-x);z-index:0;border-left:1px dashed rgba(128,128,128,.28);}
