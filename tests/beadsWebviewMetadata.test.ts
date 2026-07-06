@@ -191,6 +191,18 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).not.toContain("Assign AI Model");
   });
 
+  it("avoids redundant Beads webview reloads", () => {
+    expect(beadsView).not.toContain('createFileSystemWatcher("**/.beads/beads.db*")');
+    expect(beadsView).toContain("webviewViewRenderSignature");
+    expect(beadsView).toContain("panelRenderSignature");
+    expect(beadsView).toContain("getRenderSignature");
+    expect(beadsView).toContain("refreshWebviewHtml");
+    expect(beadsView).toContain("this.webviewViewRenderSignature === signature");
+    expect(beadsView).toContain("this.panelRenderSignature === signature");
+    expect(beadsView).not.toContain("onDidChangeVisibility");
+    expect(beadsView).not.toContain("onDidChangeViewState");
+  });
+
   it("anonymizes email-like agent identities in display labels", () => {
     expect(beadsWebview).toContain("buildAgentAliasMap");
     expect(beadsWebview).toContain("anonymizeAgentIdentity");

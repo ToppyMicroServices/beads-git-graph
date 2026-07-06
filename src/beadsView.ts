@@ -85,6 +85,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   private webviewView: vscode.WebviewView | null = null;
   private panel: vscode.WebviewPanel | null = null;
+  private webviewViewRenderSignature = "";
+  private panelRenderSignature = "";
   private refreshTimer: NodeJS.Timeout | null = null;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly panelDisposables: vscode.Disposable[] = [];
@@ -113,7 +115,6 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       }
     );
     this.watchers = [
-      vscode.workspace.createFileSystemWatcher("**/.beads/beads.db*"),
       vscode.workspace.createFileSystemWatcher("**/.beads/config.yaml"),
       vscode.workspace.createFileSystemWatcher("**/.beads/metadata.json"),
       vscode.workspace.createFileSystemWatcher("**/.beads/*.json"),
@@ -157,6 +158,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     this.disposeScoped(this.panelDisposables);
     this.webviewView = null;
     this.panel = null;
+    this.webviewViewRenderSignature = "";
+    this.panelRenderSignature = "";
     while (this.disposables.length > 0) {
       this.disposables.pop()?.dispose();
     }
@@ -165,15 +168,11 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   public resolveWebviewView(webviewView: vscode.WebviewView) {
     this.disposeScoped(this.viewDisposables);
     this.webviewView = webviewView;
+    this.webviewViewRenderSignature = "";
     webviewView.webview.options = { enableScripts: true };
     this.viewDisposables.push(
       webviewView.webview.onDidReceiveMessage((message) => {
         void this.handleMessage(message);
-      }),
-      webviewView.onDidChangeVisibility(() => {
-        if (webviewView.visible) {
-          void this.refresh();
-        }
       })
     );
 
@@ -187,7 +186,6 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
     if (this.panel) {
       this.panel.reveal(targetColumn);
-      void this.refresh();
       return;
     }
 
@@ -213,12 +211,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       }),
       this.panel.onDidDispose(() => {
         this.panel = null;
+        this.panelRenderSignature = "";
         this.disposeScoped(this.panelDisposables);
-      }),
-      this.panel.onDidChangeViewState(() => {
-        if (this.panel?.visible) {
-          void this.refresh();
-        }
       })
     );
     void this.refresh();
@@ -251,12 +245,39 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
 
     const results = await this.loadBeads();
+    const signature = this.getRenderSignature(results);
     if (this.webviewView !== null) {
-      this.webviewView.webview.html = this.getHtml(this.webviewView.webview, results);
+      this.refreshWebviewHtml("view", this.webviewView.webview, results, signature);
     }
     if (this.panel !== null) {
-      this.panel.webview.html = this.getHtml(this.panel.webview, results);
+      this.refreshWebviewHtml("panel", this.panel.webview, results, signature);
     }
+  }
+
+  private getRenderSignature(result: BeadLoadResult) {
+    return JSON.stringify(result);
+  }
+
+  private refreshWebviewHtml(
+    target: "view" | "panel",
+    webview: vscode.Webview,
+    result: BeadLoadResult,
+    signature: string
+  ) {
+    if (target === "view") {
+      if (this.webviewViewRenderSignature === signature) {
+        return;
+      }
+      webview.html = this.getHtml(webview, result);
+      this.webviewViewRenderSignature = signature;
+      return;
+    }
+
+    if (this.panelRenderSignature === signature) {
+      return;
+    }
+    webview.html = this.getHtml(webview, result);
+    this.panelRenderSignature = signature;
   }
 
   private handleBeadsFilesChanged() {
