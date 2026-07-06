@@ -63,9 +63,10 @@ const STATUS_LABELS: Record<StatusFilter, string> = {
   other: "Other"
 };
 const ALL_FILTERS: StatusFilter[] = ["open", "in_progress", "blocked", "closed", "other"];
-const GRAPH_ZOOM_MIN = 0.6;
+const GRAPH_ZOOM_MIN = 0.05;
 const GRAPH_ZOOM_MAX = 1.8;
 const GRAPH_ZOOM_STEP = 0.1;
+const GRAPH_FIT_PADDING = 16;
 const PRESET_FILTERS: Record<string, StatusFilter[]> = {
   default: ["open", "in_progress", "blocked"],
   open: ["open"],
@@ -506,7 +507,11 @@ function refreshRowVisibility() {
   stats.title = `${rows.length} total beads`;
   refreshGraphNodeVisibility();
   renderHierarchyOverlays();
-  renderDependencyGraphOverlays();
+  if (activeViewMode === "graph") {
+    fitGraphToViewport();
+  } else {
+    renderDependencyGraphOverlays();
+  }
 }
 
 function applyFilters() {
@@ -522,8 +527,7 @@ function applyViewMode(mode: ViewMode) {
   tableViewButton.setAttribute("aria-pressed", mode === "table" ? "true" : "false");
   graphViewButton.setAttribute("aria-pressed", mode === "graph" ? "true" : "false");
   if (mode === "graph") {
-    applyGraphZoomToAll();
-    restoreGraphScroll();
+    fitGraphToViewport();
   }
   renderHierarchyOverlays();
   renderDependencyGraphOverlays();
@@ -849,20 +853,50 @@ function applyGraphZoomToAll() {
   updateGraphZoomLabels();
 }
 
-function restoreGraphScroll() {
-  const graphScroll = vscode.getState()?.graphScroll ?? {};
-  window.requestAnimationFrame(() => {
-    for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
-      const scroller = getGraphScroller(pane);
-      const saved = graphScroll[getGraphWorkspaceKey(pane)];
-      if (scroller === null || saved === undefined) {
-        continue;
-      }
-      scroller.scrollLeft = Math.max(0, saved.left);
-      scroller.scrollTop = Math.max(0, saved.top);
+function getGraphFitZoomForPane(pane: HTMLElement) {
+  const scroller = getGraphScroller(pane);
+  const canvas = getGraphCanvas(pane);
+  if (
+    scroller === null ||
+    canvas === null ||
+    scroller.clientWidth <= 0 ||
+    scroller.clientHeight <= 0
+  ) {
+    return 1;
+  }
+
+  const requiredSize = getGraphRequiredSize(pane, { width: 1, height: 1 });
+  const availableWidth = Math.max(1, scroller.clientWidth - GRAPH_FIT_PADDING * 2);
+  const availableHeight = Math.max(1, scroller.clientHeight - GRAPH_FIT_PADDING * 2);
+  const fitZoom = Math.min(
+    1,
+    availableWidth / requiredSize.width,
+    availableHeight / requiredSize.height
+  );
+  return normalizeGraphZoom(fitZoom);
+}
+
+function fitGraphToViewport() {
+  let nextZoom = 1;
+  for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
+    if (pane.offsetParent === null) {
+      continue;
     }
-    renderDependencyGraphOverlays();
-  });
+    nextZoom = Math.min(nextZoom, getGraphFitZoomForPane(pane));
+  }
+
+  graphZoom = nextZoom;
+  applyGraphZoomToAll();
+  for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
+    const scroller = getGraphScroller(pane);
+    if (scroller === null) {
+      continue;
+    }
+    scroller.scrollLeft = 0;
+    scroller.scrollTop = 0;
+    saveGraphScroll(pane);
+  }
+  saveGraphZoom();
 }
 
 function setGraphZoom(nextZoom: number) {
@@ -1032,7 +1066,11 @@ closeBeadAction.addEventListener("click", () => {
   vscode.postMessage({ command: "closeBead", issueId, workspacePath, title: item.title || "" });
 });
 window.addEventListener("resize", () => {
-  applyGraphZoomToAll();
+  if (activeViewMode === "graph") {
+    fitGraphToViewport();
+  } else {
+    applyGraphZoomToAll();
+  }
   renderHierarchyOverlays();
   renderDependencyGraphOverlays();
 });
@@ -1208,6 +1246,4 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
 renderFilterChips();
 applySort();
 applyFilters();
-applyGraphZoomToAll();
 applyViewMode(activeViewMode);
-restoreGraphScroll();

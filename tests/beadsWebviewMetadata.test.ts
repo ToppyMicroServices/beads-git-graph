@@ -118,10 +118,15 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("saveViewMode(mode)");
     expect(beadsMain).toContain("saveWebviewState");
     expect(beadsMain).toContain("saveGraphScroll");
-    expect(beadsMain).toContain("restoreGraphScroll");
     expect(beadsMain).toContain("setGraphZoom");
     expect(beadsMain).toContain("GRAPH_ZOOM_MIN");
+    expect(beadsMain).toContain("const GRAPH_ZOOM_MIN = 0.05");
     expect(beadsMain).toContain("GRAPH_ZOOM_MAX");
+    expect(beadsMain).toContain("GRAPH_FIT_PADDING");
+    expect(beadsMain).toContain("getGraphFitZoomForPane");
+    expect(beadsMain).toContain("fitGraphToViewport");
+    expect(beadsMain).toContain("availableWidth / requiredSize.width");
+    expect(beadsMain).toContain("availableHeight / requiredSize.height");
     expect(beadsMain).toContain("normalizeOptionalDatasetValue");
     expect(beadsMain).toContain("postAssignStartBead");
     expect(beadsMain).toContain('target.closest(".assignStartBead")');
