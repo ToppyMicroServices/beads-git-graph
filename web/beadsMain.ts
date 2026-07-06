@@ -930,7 +930,7 @@ function renderDependencyGraphOverlays() {
     );
     const markerId = `dependencyArrow-${paneIndex}`;
     const criticalMarkerId = `criticalDependencyArrow-${paneIndex}`;
-    const markerDefs = `<defs><marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="dependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${criticalMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto"><path class="criticalDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker></defs>`;
+    const markerDefs = `<defs><marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="dependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${criticalMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="criticalDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker></defs>`;
     let paths = "";
     for (const edge of Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge"))) {
       const fromNode = nodesById.get(edge.dataset.fromId || "");
@@ -945,7 +945,7 @@ function renderDependencyGraphOverlays() {
       const y1 = (fromRect.top - contentRect.top + fromRect.height / 2) / graphZoom;
       const x2 = (toRect.left - contentRect.left) / graphZoom;
       const y2 = (toRect.top - contentRect.top + toRect.height / 2) / graphZoom;
-      const gap = Math.max(28, Math.abs(x2 - x1) * 0.45);
+      const gap = Math.max(18, Math.abs(x2 - x1) * 0.34);
       const d =
         x2 >= x1
           ? `M${x1.toFixed(1)} ${y1.toFixed(1)} C${(x1 + gap).toFixed(1)} ${y1.toFixed(1)} ${(x2 - gap).toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`
