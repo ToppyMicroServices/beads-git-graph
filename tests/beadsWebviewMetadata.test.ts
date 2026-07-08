@@ -109,8 +109,13 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("const GRAPH_LEVEL_GAP = 56");
     expect(beadsWebview).toContain("const GRAPH_LANE_GAP = 30");
     expect(beadsWebview).toContain("stroke-width:2;");
+    expect(beadsWebview).toContain("Sort by updated");
+    expect(beadsWebview).not.toContain('data-sort-key="updated">▼');
     expect(beadsWebview).not.toContain("graphGrid");
     expect(beadsWebview).not.toContain("graphStage");
+    expect(beadsMain).toContain('type SortKey = "order" | "updated" | "type" | "priority"');
+    expect(beadsMain).toContain('key: "order", desc: false');
+    expect(beadsMain).toContain('key === "order"');
     expect(beadsMain).toContain("getState(): BeadsWebviewState | undefined");
     expect(beadsMain).toContain("setState(state: BeadsWebviewState): void");
     expect(beadsMain).toContain("normalizeViewMode(vscode.getState()?.viewMode)");

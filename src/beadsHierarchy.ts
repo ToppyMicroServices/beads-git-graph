@@ -32,7 +32,6 @@ export function flattenBeadHierarchy(items: BeadItem[]): BeadRenderItem[] {
   );
   const rowsById = new Map(hierarchy.map((entry) => [entry.item.id, entry]));
   const childrenByParent = new Map<string, BeadHierarchyOrderItem[]>();
-  const subtreeUpdatedCache = new Map<string, number>();
 
   for (const entry of hierarchy) {
     if (entry.parentId !== null && rowsById.has(entry.parentId)) {
@@ -42,37 +41,13 @@ export function flattenBeadHierarchy(items: BeadItem[]): BeadRenderItem[] {
     }
   }
 
-  const getSubtreeUpdatedTimestamp = (
-    entry: BeadHierarchyOrderItem,
-    visiting: Set<string>
-  ): number => {
-    const cached = subtreeUpdatedCache.get(entry.item.id);
-    if (cached !== undefined) {
-      return cached;
-    }
-
-    if (visiting.has(entry.item.id)) {
-      return beadUpdatedTimestamp(entry.item.updatedAt);
-    }
-
-    visiting.add(entry.item.id);
-
-    let latest = beadUpdatedTimestamp(entry.item.updatedAt);
-    for (const child of childrenByParent.get(entry.item.id) ?? []) {
-      latest = Math.max(latest, getSubtreeUpdatedTimestamp(child, visiting));
-    }
-
-    visiting.delete(entry.item.id);
-    subtreeUpdatedCache.set(entry.item.id, latest);
-    return latest;
-  };
-
   const compareEntries = (a: BeadHierarchyOrderItem, b: BeadHierarchyOrderItem) => {
-    const updatedDelta =
-      getSubtreeUpdatedTimestamp(b, new Set<string>()) -
-      getSubtreeUpdatedTimestamp(a, new Set<string>());
-    if (updatedDelta !== 0) {
-      return updatedDelta;
+    const idDelta = a.item.id.localeCompare(b.item.id, undefined, {
+      numeric: true,
+      sensitivity: "base"
+    });
+    if (idDelta !== 0) {
+      return idDelta;
     }
 
     return a.orderIndex - b.orderIndex;
