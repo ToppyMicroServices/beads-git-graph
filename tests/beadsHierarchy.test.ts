@@ -4,7 +4,7 @@ import { extractBeadItems } from "../src/beadsData";
 import { flattenBeadHierarchy } from "../src/beadsHierarchy";
 
 describe("flattenBeadHierarchy", () => {
-  it("orders roots by the most recent timestamp found in each subtree", () => {
+  it("orders roots by stable ids instead of moving them by updated timestamps", () => {
     const items = extractBeadItems([
       {
         id: "demo-root-a",
@@ -72,17 +72,17 @@ describe("flattenBeadHierarchy", () => {
     expect(byId.get("neo-git-graph-demo-epic.1")).toMatchObject({
       depth: 1,
       guideColumns: [],
-      isLastSibling: true
+      isLastSibling: false
     });
     expect(byId.get("neo-git-graph-demo-epic.1.1")).toMatchObject({
       depth: 2,
-      guideColumns: [false],
+      guideColumns: [true],
       isLastSibling: true
     });
     expect(byId.get("neo-git-graph-demo-epic.2")).toMatchObject({
       depth: 1,
       guideColumns: [],
-      isLastSibling: false
+      isLastSibling: true
     });
   });
 

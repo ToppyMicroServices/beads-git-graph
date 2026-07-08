@@ -7,7 +7,7 @@ declare function acquireVsCodeApi(): {
   setState(state: BeadsWebviewState): void;
 };
 
-type SortKey = "updated" | "type" | "priority";
+type SortKey = "order" | "updated" | "type" | "priority";
 type StatusFilter = "open" | "in_progress" | "blocked" | "closed" | "other";
 type ViewMode = "table" | "graph";
 type BeadRow = HTMLTableRowElement & { dataset: DOMStringMap };
@@ -81,7 +81,7 @@ let selectedRow: BeadRow | null = null;
 let expandedDetailsRow: HTMLTableRowElement | null = null;
 let contextMenuRow: BeadRow | null = null;
 let contextMenuWorkspacePath = "";
-let sortState: { key: SortKey; desc: boolean } = { key: "updated", desc: true };
+let sortState: { key: SortKey; desc: boolean } = { key: "order", desc: false };
 let activeViewMode: ViewMode = normalizeViewMode(vscode.getState()?.viewMode);
 let graphZoom = normalizeGraphZoom(vscode.getState()?.graphZoom);
 let rowClickTimer: number | null = null;
@@ -602,6 +602,9 @@ function toggleEpicSubprojects(row: BeadRow) {
 }
 
 function getSortValue(row: BeadRow, key: SortKey) {
+  if (key === "order") {
+    return parseInt(row.dataset.orderIndex || "0", 10);
+  }
   if (key === "type") {
     return parseInt(row.dataset.typeSort || "9", 10);
   }
