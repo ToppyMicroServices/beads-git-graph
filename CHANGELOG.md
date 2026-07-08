@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.4.20260710] - 2026-07-08
+
+### Fixed
+
+- Make the Beads Graph view readable when many tasks share one dependency level.
+- Allow wheel and trackpad zoom directly on the Beads Graph view.
+
 ## [0.4.20260709] - 2026-07-08
 
 ### Fixed
@@ -376,7 +383,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260709...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260710...HEAD
+[0.4.20260710]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260709...v0.4.20260710
 [0.4.20260709]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260708...v0.4.20260709
 [0.4.20260708]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260706...v0.4.20260708
 [0.4.20260706]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260703...v0.4.20260706
