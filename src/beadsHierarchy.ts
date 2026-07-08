@@ -71,6 +71,7 @@ export function flattenBeadHierarchy(items: BeadItem[]): BeadRenderItem[] {
     visited.add(entry.item.id);
     ordered.push({
       ...entry,
+      orderIndex: ordered.length,
       guideColumns,
       isLastSibling
     });

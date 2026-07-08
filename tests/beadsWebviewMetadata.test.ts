@@ -94,7 +94,8 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("initialDisplay");
     expect(beadsWebview).toContain("--graph-x");
     expect(beadsWebview).toContain("height:clamp(360px,calc(100vh - 132px),900px)");
-    expect(beadsWebview).toContain("scrollbar-gutter:stable");
+    expect(beadsWebview).toContain(".graphScroller{flex:1 1 auto;min-height:0;overflow:hidden;");
+    expect(beadsWebview).not.toContain("scrollbar-gutter:stable");
     expect(beadsWebview).toContain(
       ".graphCanvas{position:relative;min-width:100%;min-height:100%;overflow:hidden;"
     );
@@ -102,6 +103,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).not.toContain("min-height:560px");
     expect(beadsWebview).toContain("#clearFilters{display:none;}");
     expect(beadsMain).toContain("getGraphRequiredSize");
+    expect(beadsMain).toContain("getGraphViewportSize");
     expect(beadsWebview).toContain("graphLevelGuide");
     expect(beadsWebview).toContain("graphLevelLabel");
     expect(beadsWebview).toContain("No blockers");
@@ -139,6 +141,11 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("fitGraphToViewport");
     expect(beadsMain).toContain("availableWidth / requiredSize.width");
     expect(beadsMain).toContain("availableHeight / requiredSize.height");
+    const interpolationStart = String.fromCharCode(36) + "{";
+    expect(beadsMain).toContain(`canvas.style.width = \`${interpolationStart}viewport.width}px\``);
+    expect(beadsMain).toContain(
+      `canvas.style.height = \`${interpolationStart}viewport.height}px\``
+    );
     expect(beadsMain).toContain("zoomGraphFromWheel");
     expect(beadsMain).toContain('addEventListener("wheel"');
     expect(beadsMain).toContain("passive: false");

@@ -792,6 +792,14 @@ function getGraphBaseSize(canvas: HTMLElement) {
   };
 }
 
+function getGraphViewportSize(scroller: HTMLElement) {
+  const rect = scroller.getBoundingClientRect();
+  return {
+    width: Math.max(1, Math.floor(rect.width || scroller.clientWidth || 1)),
+    height: Math.max(1, Math.floor(rect.height || scroller.clientHeight || 1))
+  };
+}
+
 function getGraphRequiredSize(pane: HTMLElement, base: { width: number; height: number }) {
   let width = base.width;
   let height = base.height;
@@ -832,10 +840,11 @@ function applyGraphZoomToPane(pane: HTMLElement) {
   }
 
   const base = getGraphRequiredSize(pane, getGraphBaseSize(canvas));
+  const viewport = getGraphViewportSize(scroller);
   content.style.width = `${base.width}px`;
   content.style.height = `${base.height}px`;
-  canvas.style.width = `${Math.max(scroller.clientWidth, base.width * graphZoom)}px`;
-  canvas.style.height = `${Math.max(scroller.clientHeight, base.height * graphZoom)}px`;
+  canvas.style.width = `${viewport.width}px`;
+  canvas.style.height = `${viewport.height}px`;
   content.style.setProperty("--graph-zoom", graphZoom.toFixed(2));
 }
 
@@ -848,18 +857,18 @@ function applyGraphZoomToAll() {
 function getGraphFitZoomForPane(pane: HTMLElement) {
   const scroller = getGraphScroller(pane);
   const canvas = getGraphCanvas(pane);
-  if (
-    scroller === null ||
-    canvas === null ||
-    scroller.clientWidth <= 0 ||
-    scroller.clientHeight <= 0
-  ) {
+  if (scroller === null || canvas === null) {
+    return 1;
+  }
+
+  const viewport = getGraphViewportSize(scroller);
+  if (viewport.width <= 1 || viewport.height <= 1) {
     return 1;
   }
 
   const requiredSize = getGraphRequiredSize(pane, { width: 1, height: 1 });
-  const availableWidth = Math.max(1, scroller.clientWidth - GRAPH_FIT_PADDING * 2);
-  const availableHeight = Math.max(1, scroller.clientHeight - GRAPH_FIT_PADDING * 2);
+  const availableWidth = Math.max(1, viewport.width - GRAPH_FIT_PADDING * 2);
+  const availableHeight = Math.max(1, viewport.height - GRAPH_FIT_PADDING * 2);
   const fitZoom = Math.min(
     1,
     availableWidth / requiredSize.width,

@@ -31,6 +31,7 @@ describe("flattenBeadHierarchy", () => {
       "demo-root-a.1",
       "demo-root-b"
     ]);
+    expect(flattenBeadHierarchy(items).map((entry) => entry.orderIndex)).toEqual([0, 1, 2]);
   });
 
   it("produces guide column metadata for nested demo tasks", () => {
