@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.4.20260709] - 2026-07-08
+
+### Fixed
+
+- Stabilize the Beads table default order across task updates.
+- Fit the Beads Graph view without scrollbar-driven resize flicker.
+
 ## [0.4.20260708] - 2026-07-08
 
 ### Fixed
@@ -369,7 +376,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260708...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260709...HEAD
+[0.4.20260709]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260708...v0.4.20260709
 [0.4.20260708]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260706...v0.4.20260708
 [0.4.20260706]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260703...v0.4.20260706
 [0.4.20260703]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260702...v0.4.20260703
