@@ -13,10 +13,20 @@ type ViewMode = "table" | "graph";
 type BeadRow = HTMLTableRowElement & { dataset: DOMStringMap };
 type BeadSection = HTMLElement & { dataset: DOMStringMap };
 type GraphScrollState = { left: number; top: number };
+type GraphPanState = { x: number; y: number };
 type GraphZoomAnchor = { pane: HTMLElement; clientX: number; clientY: number };
+type GraphSelectionState = {
+  pane: HTMLElement;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+};
 type BeadsWebviewState = {
   viewMode?: ViewMode;
   graphZoom?: number;
+  graphPan?: GraphPanState;
   graphScroll?: Record<string, GraphScrollState>;
   [key: string]: unknown;
 };
@@ -67,6 +77,7 @@ const ALL_FILTERS: StatusFilter[] = ["open", "in_progress", "blocked", "closed",
 const GRAPH_ZOOM_MIN = 0.05;
 const GRAPH_ZOOM_MAX = 1.8;
 const GRAPH_FIT_PADDING = 16;
+const GRAPH_SELECTION_MIN_SIZE = 12;
 const PRESET_FILTERS: Record<string, StatusFilter[]> = {
   default: ["open", "in_progress", "blocked"],
   open: ["open"],
@@ -84,6 +95,8 @@ let contextMenuWorkspacePath = "";
 let sortState: { key: SortKey; desc: boolean } = { key: "order", desc: false };
 let activeViewMode: ViewMode = normalizeViewMode(vscode.getState()?.viewMode);
 let graphZoom = normalizeGraphZoom(vscode.getState()?.graphZoom);
+let graphPan = normalizeGraphPan(vscode.getState()?.graphPan);
+let graphSelection: GraphSelectionState | null = null;
 let rowClickTimer: number | null = null;
 const collapsedIds = new Set<string>();
 const collapsedEpicIds = new Set<string>();
@@ -122,6 +135,18 @@ function normalizeViewMode(value: unknown): ViewMode {
 function normalizeGraphZoom(value: unknown) {
   const numericValue = typeof value === "number" && Number.isFinite(value) ? value : 1;
   return Math.min(GRAPH_ZOOM_MAX, Math.max(GRAPH_ZOOM_MIN, numericValue));
+}
+
+function normalizeGraphPan(value: unknown): GraphPanState {
+  if (typeof value !== "object" || value === null) {
+    return { x: 0, y: 0 };
+  }
+
+  const candidate = value as { x?: unknown; y?: unknown };
+  return {
+    x: typeof candidate.x === "number" && Number.isFinite(candidate.x) ? candidate.x : 0,
+    y: typeof candidate.y === "number" && Number.isFinite(candidate.y) ? candidate.y : 0
+  };
 }
 
 function saveWebviewState(patch: Partial<BeadsWebviewState>) {
@@ -781,6 +806,10 @@ function getGraphContent(pane: HTMLElement) {
   return pane.querySelector<HTMLElement>(".graphContent");
 }
 
+function getGraphSelectionBox(pane: HTMLElement) {
+  return pane.querySelector<HTMLElement>(".graphZoomSelection");
+}
+
 function getGraphWorkspaceKey(pane: HTMLElement) {
   return pane.dataset.workspacePath || "default";
 }
@@ -814,7 +843,29 @@ function getGraphRequiredSize(pane: HTMLElement, base: { width: number; height: 
 }
 
 function saveGraphZoom() {
-  saveWebviewState({ graphZoom });
+  saveWebviewState({ graphZoom, graphPan });
+}
+
+function clampGraphPanForPane(pane: HTMLElement, pan: GraphPanState) {
+  const scroller = getGraphScroller(pane);
+  const canvas = getGraphCanvas(pane);
+  if (scroller === null || canvas === null) {
+    return pan;
+  }
+
+  const viewport = getGraphViewportSize(scroller);
+  const requiredSize = getGraphRequiredSize(pane, getGraphBaseSize(canvas));
+  const scaledWidth = requiredSize.width * graphZoom;
+  const scaledHeight = requiredSize.height * graphZoom;
+  const minX = Math.min(0, viewport.width - scaledWidth);
+  const minY = Math.min(0, viewport.height - scaledHeight);
+  const maxX = scaledWidth <= viewport.width ? (viewport.width - scaledWidth) / 2 : 0;
+  const maxY = scaledHeight <= viewport.height ? (viewport.height - scaledHeight) / 2 : 0;
+
+  return {
+    x: Math.min(maxX, Math.max(minX, pan.x)),
+    y: Math.min(maxY, Math.max(minY, pan.y))
+  };
 }
 
 function saveGraphScroll(pane: HTMLElement) {
@@ -846,6 +897,8 @@ function applyGraphZoomToPane(pane: HTMLElement) {
   canvas.style.width = `${viewport.width}px`;
   canvas.style.height = `${viewport.height}px`;
   content.style.setProperty("--graph-zoom", graphZoom.toFixed(2));
+  content.style.setProperty("--graph-pan-x", `${graphPan.x.toFixed(1)}px`);
+  content.style.setProperty("--graph-pan-y", `${graphPan.y.toFixed(1)}px`);
 }
 
 function applyGraphZoomToAll() {
@@ -887,6 +940,14 @@ function fitGraphToViewport() {
   }
 
   graphZoom = nextZoom;
+  graphPan = { x: 0, y: 0 };
+  for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
+    if (pane.offsetParent === null) {
+      continue;
+    }
+    graphPan = clampGraphPanForPane(pane, graphPan);
+    break;
+  }
   applyGraphZoomToAll();
   for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
     const scroller = getGraphScroller(pane);
@@ -907,48 +968,30 @@ function setGraphZoom(nextZoom: number, anchor?: GraphZoomAnchor) {
     return;
   }
 
-  const anchors = new Map<
-    HTMLElement,
-    { x: number; y: number; offsetX: number; offsetY: number }
-  >();
-  for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
-    const scroller = getGraphScroller(pane);
-    if (scroller === null) {
-      continue;
-    }
-    if (anchor !== undefined && anchor.pane === pane) {
-      const rect = scroller.getBoundingClientRect();
-      const offsetX = anchor.clientX - rect.left;
-      const offsetY = anchor.clientY - rect.top;
-      anchors.set(pane, {
-        x: (scroller.scrollLeft + offsetX) / previousZoom,
-        y: (scroller.scrollTop + offsetY) / previousZoom,
-        offsetX,
-        offsetY
-      });
-    } else {
-      const offsetX = scroller.clientWidth / 2;
-      const offsetY = scroller.clientHeight / 2;
-      anchors.set(pane, {
-        x: (scroller.scrollLeft + offsetX) / previousZoom,
-        y: (scroller.scrollTop + offsetY) / previousZoom,
-        offsetX,
-        offsetY
-      });
-    }
+  const targetPane =
+    anchor?.pane ??
+    Array.from(document.querySelectorAll<HTMLElement>(".graphPane")).find(
+      (pane) => pane.offsetParent !== null
+    );
+  const scroller = targetPane === undefined ? null : getGraphScroller(targetPane);
+  let nextPan = graphPan;
+  if (targetPane !== undefined && scroller !== null) {
+    const rect = scroller.getBoundingClientRect();
+    const offsetX = anchor === undefined ? rect.width / 2 : anchor.clientX - rect.left;
+    const offsetY = anchor === undefined ? rect.height / 2 : anchor.clientY - rect.top;
+    const contentX = (offsetX - graphPan.x) / previousZoom;
+    const contentY = (offsetY - graphPan.y) / previousZoom;
+    nextPan = {
+      x: offsetX - contentX * nextNormalizedZoom,
+      y: offsetY - contentY * nextNormalizedZoom
+    };
   }
 
   graphZoom = nextNormalizedZoom;
-  applyGraphZoomToAll();
-  for (const [pane, zoomAnchor] of anchors.entries()) {
-    const scroller = getGraphScroller(pane);
-    if (scroller === null) {
-      continue;
-    }
-    scroller.scrollLeft = Math.max(0, zoomAnchor.x * graphZoom - zoomAnchor.offsetX);
-    scroller.scrollTop = Math.max(0, zoomAnchor.y * graphZoom - zoomAnchor.offsetY);
-    saveGraphScroll(pane);
+  if (targetPane !== undefined) {
+    graphPan = clampGraphPanForPane(targetPane, nextPan);
   }
+  applyGraphZoomToAll();
   saveGraphZoom();
   renderDependencyGraphOverlays();
 }
@@ -961,6 +1004,155 @@ function zoomGraphFromWheel(pane: HTMLElement, event: WheelEvent) {
     clientX: event.clientX,
     clientY: event.clientY
   });
+}
+
+function isGraphInteractiveTarget(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    target.closest("button,a,input,select,textarea,[role='button']") !== null
+  );
+}
+
+function getGraphPointerPosition(pane: HTMLElement, event: PointerEvent) {
+  const scroller = getGraphScroller(pane);
+  if (scroller === null) {
+    return null;
+  }
+
+  const rect = scroller.getBoundingClientRect();
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
+  };
+}
+
+function updateGraphSelectionBox() {
+  if (graphSelection === null) {
+    return;
+  }
+
+  const selectionBox = getGraphSelectionBox(graphSelection.pane);
+  if (selectionBox === null) {
+    return;
+  }
+
+  const left = Math.min(graphSelection.startX, graphSelection.currentX);
+  const top = Math.min(graphSelection.startY, graphSelection.currentY);
+  const width = Math.abs(graphSelection.currentX - graphSelection.startX);
+  const height = Math.abs(graphSelection.currentY - graphSelection.startY);
+  selectionBox.hidden = false;
+  selectionBox.style.left = `${left}px`;
+  selectionBox.style.top = `${top}px`;
+  selectionBox.style.width = `${width}px`;
+  selectionBox.style.height = `${height}px`;
+}
+
+function clearGraphSelectionBox(pane: HTMLElement) {
+  const selectionBox = getGraphSelectionBox(pane);
+  if (selectionBox === null) {
+    return;
+  }
+
+  selectionBox.hidden = true;
+  selectionBox.removeAttribute("style");
+}
+
+function zoomGraphToSelection(selection: GraphSelectionState) {
+  const scroller = getGraphScroller(selection.pane);
+  if (scroller === null) {
+    return;
+  }
+
+  const width = Math.abs(selection.currentX - selection.startX);
+  const height = Math.abs(selection.currentY - selection.startY);
+  if (width < GRAPH_SELECTION_MIN_SIZE || height < GRAPH_SELECTION_MIN_SIZE) {
+    return;
+  }
+
+  const viewport = getGraphViewportSize(scroller);
+  const left = Math.min(selection.startX, selection.currentX);
+  const top = Math.min(selection.startY, selection.currentY);
+  const selectedX = (left - graphPan.x) / graphZoom;
+  const selectedY = (top - graphPan.y) / graphZoom;
+  const selectedWidth = width / graphZoom;
+  const selectedHeight = height / graphZoom;
+  const nextZoom = normalizeGraphZoom(
+    Math.min(
+      GRAPH_ZOOM_MAX,
+      (viewport.width - GRAPH_FIT_PADDING * 2) / selectedWidth,
+      (viewport.height - GRAPH_FIT_PADDING * 2) / selectedHeight
+    )
+  );
+
+  graphZoom = nextZoom;
+  graphPan = clampGraphPanForPane(selection.pane, {
+    x: GRAPH_FIT_PADDING - selectedX * graphZoom,
+    y: GRAPH_FIT_PADDING - selectedY * graphZoom
+  });
+  applyGraphZoomToAll();
+  saveGraphZoom();
+  renderDependencyGraphOverlays();
+}
+
+function beginGraphSelection(pane: HTMLElement, event: PointerEvent) {
+  if (event.button !== 0 || isGraphInteractiveTarget(event.target)) {
+    return;
+  }
+
+  const point = getGraphPointerPosition(pane, event);
+  const scroller = getGraphScroller(pane);
+  if (point === null || scroller === null) {
+    return;
+  }
+
+  event.preventDefault();
+  scroller.setPointerCapture(event.pointerId);
+  graphSelection = {
+    pane,
+    pointerId: event.pointerId,
+    startX: point.x,
+    startY: point.y,
+    currentX: point.x,
+    currentY: point.y
+  };
+  updateGraphSelectionBox();
+}
+
+function updateGraphSelection(pane: HTMLElement, event: PointerEvent) {
+  if (graphSelection === null || graphSelection.pane !== pane) {
+    return;
+  }
+
+  const point = getGraphPointerPosition(pane, event);
+  if (point === null) {
+    return;
+  }
+
+  event.preventDefault();
+  graphSelection.currentX = point.x;
+  graphSelection.currentY = point.y;
+  updateGraphSelectionBox();
+}
+
+function finishGraphSelection(pane: HTMLElement, event: PointerEvent) {
+  if (graphSelection === null || graphSelection.pane !== pane) {
+    return;
+  }
+
+  const point = getGraphPointerPosition(pane, event);
+  if (point !== null) {
+    graphSelection.currentX = point.x;
+    graphSelection.currentY = point.y;
+  }
+  const selection = graphSelection;
+  graphSelection = null;
+  event.preventDefault();
+  const scroller = getGraphScroller(pane);
+  if (scroller?.hasPointerCapture(selection.pointerId)) {
+    scroller.releasePointerCapture(selection.pointerId);
+  }
+  clearGraphSelectionBox(pane);
+  zoomGraphToSelection(selection);
 }
 
 function renderDependencyGraphOverlays() {
@@ -1109,6 +1301,18 @@ for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane
   });
   scroller?.addEventListener("wheel", (event) => zoomGraphFromWheel(pane, event), {
     passive: false
+  });
+  scroller?.addEventListener("pointerdown", (event) => beginGraphSelection(pane, event));
+  scroller?.addEventListener("pointermove", (event) => updateGraphSelection(pane, event));
+  scroller?.addEventListener("pointerup", (event) => finishGraphSelection(pane, event));
+  scroller?.addEventListener("pointercancel", (event) => finishGraphSelection(pane, event));
+  scroller?.addEventListener("dblclick", (event) => {
+    if (isGraphInteractiveTarget(event.target)) {
+      return;
+    }
+    event.preventDefault();
+    fitGraphToViewport();
+    renderDependencyGraphOverlays();
   });
 }
 queryElement<HTMLButtonElement>("#refresh").addEventListener("click", () => {

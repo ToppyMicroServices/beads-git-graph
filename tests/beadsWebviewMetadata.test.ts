@@ -94,11 +94,16 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("initialDisplay");
     expect(beadsWebview).toContain("--graph-x");
     expect(beadsWebview).toContain("height:clamp(360px,calc(100vh - 132px),900px)");
-    expect(beadsWebview).toContain(".graphScroller{flex:1 1 auto;min-height:0;overflow:hidden;");
+    expect(beadsWebview).toContain(
+      ".graphScroller{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;"
+    );
     expect(beadsWebview).not.toContain("scrollbar-gutter:stable");
     expect(beadsWebview).toContain(
       ".graphCanvas{position:relative;min-width:100%;min-height:100%;overflow:hidden;"
     );
+    expect(beadsWebview).toContain("graphZoomSelection");
+    expect(beadsWebview).toContain("cursor:crosshair");
+    expect(beadsWebview).toContain("translate(var(--graph-pan-x,0px),var(--graph-pan-y,0px))");
     expect(beadsWebview).not.toContain("min-height:620px");
     expect(beadsWebview).not.toContain("min-height:560px");
     expect(beadsWebview).toContain("#clearFilters{display:none;}");
@@ -132,10 +137,14 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("setState(state: BeadsWebviewState): void");
     expect(beadsMain).toContain("normalizeViewMode(vscode.getState()?.viewMode)");
     expect(beadsMain).toContain("normalizeGraphZoom(vscode.getState()?.graphZoom)");
+    expect(beadsMain).toContain("normalizeGraphPan(vscode.getState()?.graphPan)");
     expect(beadsMain).toContain("saveViewMode(mode)");
     expect(beadsMain).toContain("saveWebviewState");
     expect(beadsMain).toContain("saveGraphScroll");
     expect(beadsMain).toContain("setGraphZoom");
+    expect(beadsMain).toContain("beginGraphSelection");
+    expect(beadsMain).toContain("zoomGraphToSelection");
+    expect(beadsMain).toContain("GRAPH_SELECTION_MIN_SIZE");
     expect(beadsMain).toContain("GRAPH_ZOOM_MIN");
     expect(beadsMain).toContain("const GRAPH_ZOOM_MIN = 0.05");
     expect(beadsMain).toContain("GRAPH_ZOOM_MAX");
@@ -153,6 +162,8 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).not.toContain("event.ctrlKey");
     expect(beadsMain).not.toContain("event.metaKey");
     expect(beadsMain).toContain('addEventListener("wheel"');
+    expect(beadsMain).toContain('addEventListener("pointerdown"');
+    expect(beadsMain).toContain('addEventListener("dblclick"');
     expect(beadsMain).toContain("passive: false");
     expect(beadsMain).toContain("event.preventDefault()");
     expect(beadsMain).toContain("normalizeOptionalDatasetValue");
