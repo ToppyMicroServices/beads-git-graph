@@ -94,8 +94,9 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("initialDisplay");
     expect(beadsWebview).toContain("--graph-x");
     expect(beadsWebview).toContain("height:clamp(360px,calc(100vh - 132px),900px)");
+    expect(beadsWebview).toContain("scrollbar-gutter:stable");
     expect(beadsWebview).toContain(
-      ".graphCanvas{position:relative;min-width:100%;min-height:100%;"
+      ".graphCanvas{position:relative;min-width:100%;min-height:100%;overflow:hidden;"
     );
     expect(beadsWebview).not.toContain("min-height:620px");
     expect(beadsWebview).not.toContain("min-height:560px");
@@ -168,6 +169,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain('querySelectorAll<HTMLElement>(".graphPane")');
     expect(beadsMain).toContain('querySelector<HTMLElement>(".graphScroller")');
     expect(beadsMain).toContain('scroller?.addEventListener("scroll"');
+    expect(beadsMain).not.toContain("saveGraphScroll(pane);\n    renderDependencyGraphOverlays();");
     expect(beadsMain).toContain("content.style.setProperty");
     expect(beadsMain).not.toContain("data-graph-zoom-action");
     expect(beadsMain).toContain('command: "assignStartBead"');
