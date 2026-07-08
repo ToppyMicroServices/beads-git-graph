@@ -51,8 +51,9 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("No dependency path yet");
     expect(beadsWebview).toContain("graphIssueDrawer");
     expect(beadsWebview).toContain("graphIssueStack");
-    expect(beadsWebview).toContain("graphControls");
-    expect(beadsWebview).toContain("data-graph-zoom-action");
+    expect(beadsWebview).not.toContain("graphControls");
+    expect(beadsWebview).not.toContain("data-graph-zoom-action");
+    expect(beadsWebview).not.toContain("graphZoomReset");
     expect(beadsWebview).toContain("graphScroller");
     expect(beadsWebview).toContain("graphContent");
     expect(beadsWebview).toContain("data-graph-width");
@@ -93,6 +94,11 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("initialDisplay");
     expect(beadsWebview).toContain("--graph-x");
     expect(beadsWebview).toContain("height:clamp(360px,calc(100vh - 132px),900px)");
+    expect(beadsWebview).toContain(
+      ".graphCanvas{position:relative;min-width:100%;min-height:100%;"
+    );
+    expect(beadsWebview).not.toContain("min-height:620px");
+    expect(beadsWebview).not.toContain("min-height:560px");
     expect(beadsWebview).toContain("#clearFilters{display:none;}");
     expect(beadsMain).toContain("getGraphRequiredSize");
     expect(beadsWebview).toContain("graphLevelGuide");
@@ -132,6 +138,10 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("fitGraphToViewport");
     expect(beadsMain).toContain("availableWidth / requiredSize.width");
     expect(beadsMain).toContain("availableHeight / requiredSize.height");
+    expect(beadsMain).toContain("zoomGraphFromWheel");
+    expect(beadsMain).toContain('addEventListener("wheel"');
+    expect(beadsMain).toContain("passive: false");
+    expect(beadsMain).toContain("event.preventDefault()");
     expect(beadsMain).toContain("normalizeOptionalDatasetValue");
     expect(beadsMain).toContain("postAssignStartBead");
     expect(beadsMain).toContain('target.closest(".assignStartBead")');
@@ -157,9 +167,9 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("visibleRowIds.has(node.dataset.graphId");
     expect(beadsMain).toContain('querySelectorAll<HTMLElement>(".graphPane")');
     expect(beadsMain).toContain('querySelector<HTMLElement>(".graphScroller")');
-    expect(beadsMain).toContain('getGraphScroller(pane)?.addEventListener("scroll"');
+    expect(beadsMain).toContain('scroller?.addEventListener("scroll"');
     expect(beadsMain).toContain("content.style.setProperty");
-    expect(beadsMain).toContain("data-graph-zoom-action");
+    expect(beadsMain).not.toContain("data-graph-zoom-action");
     expect(beadsMain).toContain('command: "assignStartBead"');
     expect(beadsMain).toContain('command: "startParallelBeads"');
     expect(beadsMain).toContain("detailsCell.colSpan = 6");

@@ -390,14 +390,12 @@ function renderBeadsDependencyGraph(
       : `<div class="graphPathStrip emptyCriticalPath"><span>Critical Path</span><strong>No dependency path yet</strong></div>`;
   const graphLegendHtml =
     '<div class="graphLegend"><span class="dependencyLegend">Dependency</span><span class="criticalLegend">Critical path</span><span class="parentLegend">Parent</span><span class="riskLegend">Merge/worktree risk</span></div>';
-  const graphControlsHtml =
-    '<div class="graphControls" aria-label="Graph zoom controls"><button class="graphZoomButton" type="button" data-graph-zoom-action="out" title="Zoom out" aria-label="Zoom out">-</button><span class="graphZoomValue" data-graph-zoom-value>100%</span><button class="graphZoomButton" type="button" data-graph-zoom-action="in" title="Zoom in" aria-label="Zoom in">+</button><button class="graphZoomButton graphZoomReset" type="button" data-graph-zoom-action="reset" title="Reset zoom" aria-label="Reset zoom">1:1</button></div>';
   const graphIssuesHtml =
     dependencyWarningHtml === "" && mergeRiskHtml === ""
       ? ""
       : `<div class="graphIssueStack">${dependencyWarningHtml}${mergeRiskHtml}</div>`;
 
-  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div class="workspaceName">Execution Map</div><div class="workspaceSummary"><span class="summaryPill">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}${mergeRiskSummary}</div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div>${graphControlsHtml}</div><div class="graphScroller"><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div></div></div></div>`;
+  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div class="workspaceName">Execution Map</div><div class="workspaceSummary"><span class="summaryPill">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}${mergeRiskSummary}</div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div></div><div class="graphScroller"><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div></div></div></div>`;
 }
 
 export function renderBeadsWebviewHtml(
@@ -836,7 +834,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .dependencyIssueDrawer summary{color:var(--vscode-editorWarning-foreground,#f59e0b);}
 .mergeRiskIssueDrawer summary{color:var(--vscode-errorForeground,#ef4444);}
 .graphMapFrame{display:flex;flex:1 1 auto;flex-direction:column;min-height:0;margin:10px 12px 12px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));overflow:hidden;}
-.graphMapHeader{display:grid;grid-template-columns:minmax(280px,1fr) auto;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--vscode-panel-border);background:rgba(128,128,128,.06);}
+.graphMapHeader{display:grid;grid-template-columns:1fr;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--vscode-panel-border);background:rgba(128,128,128,.06);}
 .graphMapHeaderMain{display:grid;gap:6px;min-width:0;}
 .graphPathStrip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;min-width:0;}
 .graphPathStrip span{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--vscode-charts-pink,#ec4899);letter-spacing:0;}
@@ -851,16 +849,12 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .parentLegend{color:var(--vscode-textLink-foreground,#3b82f6)!important;}
 .parentLegend::before{border-top-style:dashed!important;}
 .riskLegend{color:var(--vscode-errorForeground,#ef4444)!important;}
-.graphControls{display:flex;align-items:center;gap:4px;white-space:nowrap;}
-.graphZoomButton{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:24px;padding:0 7px;border-radius:6px;font-size:12px;font-weight:800;line-height:1;}
-.graphZoomReset{font-size:10px;}
-.graphZoomValue{min-width:42px;text-align:center;font-size:11px;font-weight:750;color:var(--vscode-descriptionForeground);}
 .graphWarningBand{display:flex;flex-wrap:wrap;gap:4px;margin:0;padding:0 8px 8px;max-height:92px;overflow:auto;}
 .graphWarningBand span{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border-radius:6px;border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.12);color:var(--vscode-editorWarning-foreground,#f59e0b);font-size:10px;font-weight:650;}
 .graphRiskBand{display:flex;flex-wrap:wrap;gap:4px;margin:0;padding:0 8px 8px;max-height:92px;overflow:auto;}
 .graphRiskBand span{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border-radius:6px;border:1px solid rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:var(--vscode-errorForeground,#ef4444);font-size:10px;font-weight:650;}
 .graphScroller{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;background:var(--vscode-editor-background);}
-.graphCanvas{position:relative;min-width:100%;min-height:620px;background-color:var(--vscode-editor-background);background-image:linear-gradient(rgba(128,128,128,.1) 1px, transparent 1px),linear-gradient(90deg, rgba(128,128,128,.1) 1px, transparent 1px);background-size:48px 48px;}
+.graphCanvas{position:relative;min-width:100%;min-height:100%;background-color:var(--vscode-editor-background);background-image:linear-gradient(rgba(128,128,128,.1) 1px, transparent 1px),linear-gradient(90deg, rgba(128,128,128,.1) 1px, transparent 1px);background-size:48px 48px;}
 .graphContent{position:absolute;left:0;top:0;transform:scale(var(--graph-zoom,1));transform-origin:0 0;}
 .dependencyOverlay{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none;overflow:visible;}
 .dependencyPath{fill:none;stroke:rgba(148,163,184,.8);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
@@ -920,10 +914,9 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
   .graphHeader{position:relative;padding:8px;margin:-8px -8px 0;}
   .graphIssueStack{padding:8px 0 0;}
   .graphMapFrame{margin:8px 0 0;}
-  .graphMapHeader{grid-template-columns:1fr;align-items:start;}
-  .graphControls{justify-content:flex-start;}
+  .graphMapHeader{align-items:start;}
   .graphLegend{justify-content:flex-start;}
-  .graphCanvas{min-height:560px;}
+  .graphCanvas{min-height:100%;}
 }
 code{font-family:var(--vscode-editor-font-family);}
 </style>
