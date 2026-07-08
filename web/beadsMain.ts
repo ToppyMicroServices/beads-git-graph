@@ -954,10 +954,6 @@ function setGraphZoom(nextZoom: number, anchor?: GraphZoomAnchor) {
 }
 
 function zoomGraphFromWheel(pane: HTMLElement, event: WheelEvent) {
-  if (!event.ctrlKey && !event.metaKey) {
-    return;
-  }
-
   event.preventDefault();
   const zoomFactor = Math.exp(-event.deltaY * 0.002);
   setGraphZoom(graphZoom * zoomFactor, {

@@ -116,7 +116,10 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("dependencyArrowHead");
     expect(beadsWebview).toContain("const GRAPH_NODE_WIDTH = 252");
     expect(beadsWebview).toContain("const GRAPH_LEVEL_GAP = 56");
+    expect(beadsWebview).toContain("const GRAPH_LEVEL_COLUMN_GAP = 24");
     expect(beadsWebview).toContain("const GRAPH_LANE_GAP = 30");
+    expect(beadsWebview).toContain("const levelLayouts = Array.from");
+    expect(beadsWebview).toContain("Math.ceil(Math.sqrt");
     expect(beadsWebview).toContain("stroke-width:2;");
     expect(beadsWebview).toContain("Sort by updated");
     expect(beadsWebview).not.toContain('data-sort-key="updated">▼');
@@ -147,6 +150,8 @@ describe("beads webview presentation metadata", () => {
       `canvas.style.height = \`${interpolationStart}viewport.height}px\``
     );
     expect(beadsMain).toContain("zoomGraphFromWheel");
+    expect(beadsMain).not.toContain("event.ctrlKey");
+    expect(beadsMain).not.toContain("event.metaKey");
     expect(beadsMain).toContain('addEventListener("wheel"');
     expect(beadsMain).toContain("passive: false");
     expect(beadsMain).toContain("event.preventDefault()");

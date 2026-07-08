@@ -19,6 +19,7 @@ const BEADS_WEBVIEW_SCRIPT = "beadsWebview.min.js";
 const GRAPH_NODE_WIDTH = 252;
 const GRAPH_NODE_HEIGHT_ESTIMATE = 140;
 const GRAPH_LEVEL_GAP = 56;
+const GRAPH_LEVEL_COLUMN_GAP = 24;
 const GRAPH_LANE_GAP = 30;
 const GRAPH_PADDING_X = 28;
 const GRAPH_PADDING_Y = 44;
@@ -243,34 +244,47 @@ function renderBeadsDependencyGraph(
         `<span class="graphEdge" data-from-id="${escapeHtml(edge.fromId)}" data-to-id="${escapeHtml(edge.toId)}" data-critical="${edge.critical ? "1" : "0"}"></span>`
     )
     .join("");
-  const laneCount = Math.max(1, ...Array.from(nodesByLevel.values()).map((nodes) => nodes.length));
   const levelCount = maxLevel + 1;
-  const graphWidth =
-    GRAPH_PADDING_X * 2 +
-    levelCount * GRAPH_NODE_WIDTH +
-    Math.max(0, levelCount - 1) * GRAPH_LEVEL_GAP;
+  const levelLayouts = Array.from({ length: levelCount }, (_, level) => {
+    const nodes = nodesByLevel.get(level) ?? [];
+    const rowCount = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, nodes.length))));
+    const columnCount = Math.max(1, Math.ceil(Math.max(1, nodes.length) / rowCount));
+    const width =
+      columnCount * GRAPH_NODE_WIDTH + Math.max(0, columnCount - 1) * GRAPH_LEVEL_COLUMN_GAP;
+
+    return { nodes, rowCount, columnCount, width, x: 0 };
+  });
+  let nextLevelX = GRAPH_PADDING_X;
+  for (const layout of levelLayouts) {
+    layout.x = nextLevelX;
+    nextLevelX += layout.width + GRAPH_LEVEL_GAP;
+  }
+  const graphRowCount = Math.max(1, ...levelLayouts.map((layout) => layout.rowCount));
+  const graphWidth = nextLevelX - GRAPH_LEVEL_GAP + GRAPH_PADDING_X;
   const graphHeight =
     GRAPH_PADDING_Y * 2 +
-    laneCount * GRAPH_NODE_HEIGHT_ESTIMATE +
-    Math.max(0, laneCount - 1) * GRAPH_LANE_GAP;
+    graphRowCount * GRAPH_NODE_HEIGHT_ESTIMATE +
+    Math.max(0, graphRowCount - 1) * GRAPH_LANE_GAP;
   const levelGuideHtml = Array.from({ length: levelCount }, (_, level) => {
-    const x = GRAPH_PADDING_X + level * (GRAPH_NODE_WIDTH + GRAPH_LEVEL_GAP) + GRAPH_NODE_WIDTH / 2;
+    const layout = levelLayouts[level];
+    const x = layout.x + layout.width / 2;
     const label = level === 0 ? "Ready" : `L${level + 1}`;
     const detail = level === 0 ? "No blockers" : "After deps";
 
     return `<span class="graphLevelGuide" style="--graph-guide-x:${x}px"><span class="graphLevelLabel"><strong>${label}</strong><small>${detail}</small></span></span>`;
   }).join("");
   const nodeHtml = Array.from({ length: levelCount }, (_, level) => {
-    const nodes = nodesByLevel.get(level) ?? [];
-    const laneOffset =
-      ((laneCount - nodes.length) * (GRAPH_NODE_HEIGHT_ESTIMATE + GRAPH_LANE_GAP)) / 2;
+    const layout = levelLayouts[level];
+    const rowOffset =
+      ((graphRowCount - layout.rowCount) * (GRAPH_NODE_HEIGHT_ESTIMATE + GRAPH_LANE_GAP)) / 2;
 
-    return nodes
+    return layout.nodes
       .map((node, lane) => {
         const item = node.item;
-        const x = GRAPH_PADDING_X + level * (GRAPH_NODE_WIDTH + GRAPH_LEVEL_GAP);
-        const y =
-          GRAPH_PADDING_Y + laneOffset + lane * (GRAPH_NODE_HEIGHT_ESTIMATE + GRAPH_LANE_GAP);
+        const column = Math.floor(lane / layout.rowCount);
+        const row = lane % layout.rowCount;
+        const x = layout.x + column * (GRAPH_NODE_WIDTH + GRAPH_LEVEL_COLUMN_GAP);
+        const y = GRAPH_PADDING_Y + rowOffset + row * (GRAPH_NODE_HEIGHT_ESTIMATE + GRAPH_LANE_GAP);
         const normalizedStatus = normalizeBeadStatus(item.status);
         const normalizedPriority = normalizeBeadPriority(item.priority);
         const normalizedType = normalizeBeadType(item.type);
