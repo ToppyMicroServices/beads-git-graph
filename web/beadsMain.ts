@@ -13,6 +13,7 @@ type ViewMode = "table" | "graph";
 type BeadRow = HTMLTableRowElement & { dataset: DOMStringMap };
 type BeadSection = HTMLElement & { dataset: DOMStringMap };
 type GraphScrollState = { left: number; top: number };
+type GraphZoomAnchor = { pane: HTMLElement; clientX: number; clientY: number };
 type BeadsWebviewState = {
   viewMode?: ViewMode;
   graphZoom?: number;
@@ -65,7 +66,6 @@ const STATUS_LABELS: Record<StatusFilter, string> = {
 const ALL_FILTERS: StatusFilter[] = ["open", "in_progress", "blocked", "closed", "other"];
 const GRAPH_ZOOM_MIN = 0.05;
 const GRAPH_ZOOM_MAX = 1.8;
-const GRAPH_ZOOM_STEP = 0.1;
 const GRAPH_FIT_PADDING = 16;
 const PRESET_FILTERS: Record<string, StatusFilter[]> = {
   default: ["open", "in_progress", "blocked"],
@@ -824,15 +824,6 @@ function saveGraphScroll(pane: HTMLElement) {
   saveWebviewState({ graphScroll });
 }
 
-function updateGraphZoomLabels() {
-  const label = `${Math.round(graphZoom * 100)}%`;
-  for (const element of Array.from(
-    document.querySelectorAll<HTMLElement>("[data-graph-zoom-value]")
-  )) {
-    element.textContent = label;
-  }
-}
-
 function applyGraphZoomToPane(pane: HTMLElement) {
   const scroller = getGraphScroller(pane);
   const canvas = getGraphCanvas(pane);
@@ -853,7 +844,6 @@ function applyGraphZoomToAll() {
   for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
     applyGraphZoomToPane(pane);
   }
-  updateGraphZoomLabels();
 }
 
 function getGraphFitZoomForPane(pane: HTMLElement) {
@@ -900,40 +890,74 @@ function fitGraphToViewport() {
     saveGraphScroll(pane);
   }
   saveGraphZoom();
+  renderDependencyGraphOverlays();
 }
 
-function setGraphZoom(nextZoom: number) {
+function setGraphZoom(nextZoom: number, anchor?: GraphZoomAnchor) {
   const previousZoom = graphZoom;
   const nextNormalizedZoom = normalizeGraphZoom(nextZoom);
   if (Math.abs(previousZoom - nextNormalizedZoom) < 0.001) {
     return;
   }
 
-  const centers = new Map<HTMLElement, { x: number; y: number }>();
+  const anchors = new Map<
+    HTMLElement,
+    { x: number; y: number; offsetX: number; offsetY: number }
+  >();
   for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
     const scroller = getGraphScroller(pane);
     if (scroller === null) {
       continue;
     }
-    centers.set(pane, {
-      x: (scroller.scrollLeft + scroller.clientWidth / 2) / previousZoom,
-      y: (scroller.scrollTop + scroller.clientHeight / 2) / previousZoom
-    });
+    if (anchor !== undefined && anchor.pane === pane) {
+      const rect = scroller.getBoundingClientRect();
+      const offsetX = anchor.clientX - rect.left;
+      const offsetY = anchor.clientY - rect.top;
+      anchors.set(pane, {
+        x: (scroller.scrollLeft + offsetX) / previousZoom,
+        y: (scroller.scrollTop + offsetY) / previousZoom,
+        offsetX,
+        offsetY
+      });
+    } else {
+      const offsetX = scroller.clientWidth / 2;
+      const offsetY = scroller.clientHeight / 2;
+      anchors.set(pane, {
+        x: (scroller.scrollLeft + offsetX) / previousZoom,
+        y: (scroller.scrollTop + offsetY) / previousZoom,
+        offsetX,
+        offsetY
+      });
+    }
   }
 
   graphZoom = nextNormalizedZoom;
   applyGraphZoomToAll();
-  for (const [pane, center] of centers.entries()) {
+  for (const [pane, zoomAnchor] of anchors.entries()) {
     const scroller = getGraphScroller(pane);
     if (scroller === null) {
       continue;
     }
-    scroller.scrollLeft = Math.max(0, center.x * graphZoom - scroller.clientWidth / 2);
-    scroller.scrollTop = Math.max(0, center.y * graphZoom - scroller.clientHeight / 2);
+    scroller.scrollLeft = Math.max(0, zoomAnchor.x * graphZoom - zoomAnchor.offsetX);
+    scroller.scrollTop = Math.max(0, zoomAnchor.y * graphZoom - zoomAnchor.offsetY);
     saveGraphScroll(pane);
   }
   saveGraphZoom();
   renderDependencyGraphOverlays();
+}
+
+function zoomGraphFromWheel(pane: HTMLElement, event: WheelEvent) {
+  if (!event.ctrlKey && !event.metaKey) {
+    return;
+  }
+
+  event.preventDefault();
+  const zoomFactor = Math.exp(-event.deltaY * 0.002);
+  setGraphZoom(graphZoom * zoomFactor, {
+    pane,
+    clientX: event.clientX,
+    clientY: event.clientY
+  });
 }
 
 function renderDependencyGraphOverlays() {
@@ -1078,23 +1102,13 @@ window.addEventListener("resize", () => {
   renderDependencyGraphOverlays();
 });
 for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
-  getGraphScroller(pane)?.addEventListener("scroll", () => {
+  const scroller = getGraphScroller(pane);
+  scroller?.addEventListener("scroll", () => {
     saveGraphScroll(pane);
     renderDependencyGraphOverlays();
   });
-}
-for (const button of Array.from(
-  document.querySelectorAll<HTMLButtonElement>("[data-graph-zoom-action]")
-)) {
-  button.addEventListener("click", () => {
-    const action = button.dataset.graphZoomAction || "";
-    if (action === "in") {
-      setGraphZoom(graphZoom + GRAPH_ZOOM_STEP);
-    } else if (action === "out") {
-      setGraphZoom(graphZoom - GRAPH_ZOOM_STEP);
-    } else if (action === "reset") {
-      setGraphZoom(1);
-    }
+  scroller?.addEventListener("wheel", (event) => zoomGraphFromWheel(pane, event), {
+    passive: false
   });
 }
 queryElement<HTMLButtonElement>("#refresh").addEventListener("click", () => {
