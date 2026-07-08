@@ -509,9 +509,8 @@ function refreshRowVisibility() {
   renderHierarchyOverlays();
   if (activeViewMode === "graph") {
     fitGraphToViewport();
-  } else {
-    renderDependencyGraphOverlays();
   }
+  renderDependencyGraphOverlays();
 }
 
 function applyFilters() {
@@ -890,7 +889,6 @@ function fitGraphToViewport() {
     saveGraphScroll(pane);
   }
   saveGraphZoom();
-  renderDependencyGraphOverlays();
 }
 
 function setGraphZoom(nextZoom: number, anchor?: GraphZoomAnchor) {
@@ -974,8 +972,6 @@ function renderDependencyGraphOverlays() {
       overlay.innerHTML = "";
       continue;
     }
-
-    applyGraphZoomToPane(pane);
 
     const contentRect = content.getBoundingClientRect();
     const width = Math.max(1, Math.round(content.offsetWidth));
@@ -1105,7 +1101,6 @@ for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane
   const scroller = getGraphScroller(pane);
   scroller?.addEventListener("scroll", () => {
     saveGraphScroll(pane);
-    renderDependencyGraphOverlays();
   });
   scroller?.addEventListener("wheel", (event) => zoomGraphFromWheel(pane, event), {
     passive: false
