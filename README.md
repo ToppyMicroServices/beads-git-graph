@@ -3,7 +3,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](./LICENSE)
 [![Version 0.4.20260710](https://img.shields.io/badge/version-0.4.20260710-0366d6?style=flat-square)](./CHANGELOG.md)
 
-Git graph and Beads issue tools in one VS Code extension.
+A local-first project manager for agent work, with Git graph and Beads issue tools in one VS Code extension.
 
 No telemetry. Privacy-first. Security-first.
 
@@ -16,6 +16,7 @@ No telemetry. Privacy-first. Security-first.
 - Lets you refresh, create, close, and sync Beads items inside VS Code
 - Shows optional parallel, AI model, SSOT/context, worktree, branch, PR, check, and sync-risk hints on Beads items
 - Shows a Beads execution map with Critical Path, dependency edges, parent context, merge/worktree risk, Start AI, Start Parallel, and merge actions
+- Adds a Manage view that groups recorded work into Needs attention, Review, Running, Queue, and Done
 
 ## Use It
 
@@ -24,6 +25,18 @@ No telemetry. Privacy-first. Security-first.
 3. Use the toolbar to refresh, sync, or switch views.
 
 If your workspace has a `.beads` directory, the extension detects it automatically. Set `beads-git-graph.bdPath` if `bd` is not on `PATH`.
+
+## Manage Agent Work
+
+Open **Manage** in the Beads view to see the Agent Work Queue. It derives each lane from Beads status and recorded worktree, PR, check, and sync-risk metadata:
+
+- **Needs attention**: explicitly blocked work, known failing checks, dangerous sync risk, or an unrecognized status
+- **Review**: a pull request is recorded and no supported failure signal is present
+- **Running**: Beads reports the task as in progress
+- **Queue**: open work, with confirmed readiness distinguished from readiness not yet confirmed by `bd ready`
+- **Done**: Beads reports the task as closed
+
+The Manage view does not claim live agent monitoring. “Running” reflects recorded Beads status, and unavailable evidence remains unconfirmed. In Manage, **Start AI** is enabled only when `bd ready` confirms readiness. Use **Details**, **Start AI**, and **Merge PRs** to continue through the existing workflow.
 
 ## Multi-Agent Hints
 

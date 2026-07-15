@@ -4,7 +4,12 @@ import {
   computeVisibleGraphState,
   graphEdgeKey
 } from "./beadsGraphModel";
-import { isCollapsedByEpic, shouldShowBeadRow } from "./beadsRowVisibility";
+import {
+  DEFAULT_ACTIVE_STATUSES,
+  getDetailsReadinessLabel,
+  isCollapsedByEpic,
+  shouldShowBeadRow
+} from "./beadsRowVisibility";
 
 declare function acquireVsCodeApi(): {
   postMessage(message: BeadsRequestMessage): void;
@@ -14,7 +19,7 @@ declare function acquireVsCodeApi(): {
 
 type SortKey = "order" | "updated" | "type" | "priority";
 type StatusFilter = "open" | "in_progress" | "blocked" | "closed" | "other";
-type ViewMode = "table" | "graph";
+type ViewMode = "table" | "graph" | "control";
 type BeadRow = HTMLTableRowElement & { dataset: DOMStringMap };
 type BeadSection = HTMLElement & { dataset: DOMStringMap };
 type GraphScrollState = { left: number; top: number };
@@ -50,6 +55,7 @@ interface BeadRowItem {
   title: string;
   type: string;
   status: string;
+  normalizedStatus: StatusFilter;
   progress: number | null;
   priority: string;
   updatedAt: string;
@@ -62,6 +68,7 @@ interface BeadRowItem {
   parentId: string;
   epicId: string;
   dependencyIds: string[];
+  readyByBd: boolean;
   parallelizable: boolean;
   parallelizableSource: "explicit" | "ready" | "";
   agent: string;
@@ -100,7 +107,7 @@ const GRAPH_PADDING_X = 28;
 const GRAPH_PADDING_Y = 44;
 const GRAPH_KEYBOARD_PAN_STEP = 40;
 const PRESET_FILTERS: Record<string, StatusFilter[]> = {
-  default: ["open", "in_progress", "blocked"],
+  default: [...DEFAULT_ACTIVE_STATUSES],
   open: ["open"],
   wip: ["in_progress"],
   blocked: ["blocked"],
@@ -133,10 +140,11 @@ const stats = queryElement<HTMLDivElement>("#stats");
 const syncBeadsButton = queryElement<HTMLButtonElement>("#syncBeads");
 const tableViewButton = queryElement<HTMLButtonElement>("#tableView");
 const graphViewButton = queryElement<HTMLButtonElement>("#graphView");
+const controlViewButton = queryElement<HTMLButtonElement>("#controlView");
 const bdAvailable = document.body.dataset.bdAvailable === "1";
 const hasSyncWarnings = document.body.dataset.hasSyncWarnings === "1";
 
-if (hasSyncWarnings) {
+if (hasSyncWarnings && bdAvailable) {
   syncBeadsButton.title = "Sync Beads (differences detected)";
   syncBeadsButton.setAttribute("aria-label", "Sync Beads, differences detected");
 }
@@ -150,7 +158,7 @@ function queryElement<T extends Element>(selector: string) {
 }
 
 function normalizeViewMode(value: unknown): ViewMode {
-  return value === "graph" ? "graph" : "table";
+  return value === "graph" || value === "control" ? value : "table";
 }
 
 function normalizeGraphZoom(value: unknown) {
@@ -310,7 +318,8 @@ function openContextMenu(
   contextMenuWorkspacePath = workspacePath;
   const item = row ? decodeRowItem(row) : null;
   createBeadAction.disabled = !bdAvailable || contextMenuWorkspacePath === "";
-  closeBeadAction.disabled = item === null || (row?.dataset.status ?? "") === "closed";
+  closeBeadAction.disabled =
+    !bdAvailable || item === null || (row?.dataset.status ?? "") === "closed";
   rowContextMenu.classList.add("open");
   const menuRect = rowContextMenu.getBoundingClientRect();
   const viewportMargin = 4;
@@ -430,11 +439,14 @@ function renderDetailsMarkup(item: BeadRowItem) {
       ? `<button class="commitLink" data-commit="${escapeHtml(item.commitHash)}">${escapeHtml(item.commitHash.substring(0, 8))}</button>`
       : "-";
   const progress =
-    item.status === "in_progress" && item.progress !== null ? `${String(item.progress)}%` : "-";
+    item.normalizedStatus === "in_progress" && item.progress !== null
+      ? `${String(item.progress)}%`
+      : "-";
   const parent = item.parentId !== "" ? item.parentId : "-";
   const epic = item.epicId !== "" && item.epicId !== item.id ? item.epicId : "-";
   const dependencyIds = item.dependencyIds ?? [];
   const dependencies = dependencyIds.length > 0 ? dependencyIds.join(", ") : "-";
+  const readiness = getDetailsReadinessLabel(item);
   const parallel =
     item.parallelizableSource === "ready"
       ? "Yes (ready)"
@@ -466,6 +478,7 @@ function renderDetailsMarkup(item: BeadRowItem) {
     item.parallelizable
       ? `<span class="detailPill">${escapeHtml(item.parallelizableSource === "ready" ? "Parallel ready" : "Parallel OK")}</span>`
       : "",
+    item.readyByBd ? '<span class="detailPill">Ready confirmed</span>' : "",
     model !== "-" ? `<span class="detailPill">Model ${escapeHtml(model)}</span>` : "",
     ssot !== "-" ? `<span class="detailPill">SSOT ${escapeHtml(ssot)}</span>` : "",
     item.worktree !== "" ? `<span class="detailPill">WT ${escapeHtml(item.worktree)}</span>` : "",
@@ -487,6 +500,7 @@ function renderDetailsMarkup(item: BeadRowItem) {
     `<div class="key">Progress</div><div>${escapeHtml(progress)}</div>` +
     `<div class="key">Priority</div><div>${escapeHtml(item.priority || "-")}</div>` +
     `<div class="key">Assignee</div><div>${escapeHtml(assignee)}</div>` +
+    `<div class="key">Readiness</div><div>${escapeHtml(readiness)}</div>` +
     `<div class="key">Parallel</div><div>${escapeHtml(parallel)}</div>` +
     `<div class="key">Agent</div><div>${escapeHtml(agent)}</div>` +
     `<div class="key">AI Model</div><div>${escapeHtml(model)}</div>` +
@@ -650,6 +664,7 @@ function refreshRowVisibility() {
       : `${visibleCount} / ${matchingCount} matching beads shown`;
   stats.title = `${rows.length} total beads`;
   refreshGraphNodeVisibility();
+  refreshAgentWorkQueueVisibility();
   renderHierarchyOverlays();
   if (activeViewMode === "graph") {
     refreshGraphPresentation();
@@ -668,8 +683,10 @@ function applyViewMode(mode: ViewMode) {
   document.body.dataset.viewMode = mode;
   tableViewButton.classList.toggle("active", mode === "table");
   graphViewButton.classList.toggle("active", mode === "graph");
+  controlViewButton.classList.toggle("active", mode === "control");
   tableViewButton.setAttribute("aria-pressed", mode === "table" ? "true" : "false");
   graphViewButton.setAttribute("aria-pressed", mode === "graph" ? "true" : "false");
+  controlViewButton.setAttribute("aria-pressed", mode === "control" ? "true" : "false");
   if (mode === "graph") {
     refreshGraphPresentation();
     fitGraphToViewport();
@@ -911,6 +928,35 @@ function refreshGraphNodeVisibility() {
 
     for (const node of Array.from(section.querySelectorAll<HTMLElement>(".graphNode"))) {
       node.style.display = visibleRowIds.has(node.dataset.graphId || "") ? "" : "none";
+    }
+  }
+}
+
+function refreshAgentWorkQueueVisibility() {
+  for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".agentWorkQueue"))) {
+    for (const lane of Array.from(pane.querySelectorAll<HTMLElement>(".agentWorkLane"))) {
+      let visibleCount = 0;
+      for (const card of Array.from(lane.querySelectorAll<HTMLElement>(".agentWorkCard"))) {
+        const status = (card.dataset.status || "other") as StatusFilter;
+        const visible = activeFilters.has(status);
+        card.hidden = !visible;
+        if (visible) {
+          visibleCount += 1;
+        }
+      }
+      const count = lane.querySelector<HTMLElement>(".agentWorkLaneCount");
+      if (count !== null) {
+        count.textContent = String(visibleCount);
+      }
+      const empty = lane.querySelector<HTMLElement>(".agentWorkLaneEmpty");
+      if (empty !== null) {
+        empty.hidden = visibleCount !== 0;
+      }
+      const laneName = lane.dataset.workLane || "";
+      const summary = pane.querySelector<HTMLElement>(`[data-work-summary="${laneName}"]`);
+      if (summary !== null) {
+        summary.textContent = String(visibleCount);
+      }
     }
   }
 }
@@ -1664,6 +1710,9 @@ tableViewButton.addEventListener("click", () => {
 graphViewButton.addEventListener("click", () => {
   applyViewMode("graph");
 });
+controlViewButton.addEventListener("click", () => {
+  applyViewMode("control");
+});
 clearFilters.addEventListener("click", () => {
   applyPreset("default");
 });
@@ -1731,7 +1780,7 @@ createBeadAction.addEventListener("click", () => {
   vscode.postMessage({ command: "createBead", workspacePath });
 });
 closeBeadAction.addEventListener("click", () => {
-  if (contextMenuRow === null) {
+  if (!bdAvailable || contextMenuRow === null) {
     return;
   }
 
@@ -1796,6 +1845,9 @@ queryElement<HTMLButtonElement>("#refresh").addEventListener("click", () => {
   vscode.postMessage({ command: "refresh" });
 });
 syncBeadsButton.addEventListener("click", () => {
+  if (!bdAvailable) {
+    return;
+  }
   vscode.postMessage({ command: "syncAllBeads" });
 });
 queryElement<HTMLButtonElement>("#openGitGraph").addEventListener("click", () => {
@@ -1806,7 +1858,7 @@ for (const button of Array.from(
 )) {
   button.addEventListener("click", () => {
     const workspacePath = button.dataset.syncWorkspace || "";
-    if (workspacePath === "") {
+    if (!bdAvailable || workspacePath === "") {
       return;
     }
     vscode.postMessage({ command: "syncBeads", workspacePath });

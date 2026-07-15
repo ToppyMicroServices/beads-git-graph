@@ -14,6 +14,7 @@ export interface BeadItem {
   createdAt: string;
   parentId: string;
   dependencyIds: string[];
+  readyByBd: boolean;
   parallelizable: boolean;
   parallelizableSource: "explicit" | "ready" | "";
   parallelizableSuppressed: boolean;
@@ -514,6 +515,7 @@ export function toBeadItem(item: unknown): BeadItem | null {
     updatedAt: beadPickString(record, ["updated_at", "updatedAt", "updated", "modified_at"], "-"),
     parentId: beadPickParentId(record),
     dependencyIds: beadPickDependencyIds(record, id),
+    readyByBd: false,
     parallelizable: parallelizablePreference === "yes",
     parallelizableSource: parallelizablePreference === "yes" ? "explicit" : "",
     parallelizableSuppressed: parallelizablePreference === "no",
@@ -655,6 +657,7 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
       ...item,
       parentId: item.parentId.trim() !== "" ? item.parentId : fallback.parentId,
       dependencyIds,
+      readyByBd: item.readyByBd || fallback.readyByBd,
       parallelizable,
       parallelizableSource,
       parallelizableSuppressed:
@@ -686,30 +689,34 @@ export function inferReadyParallelizableItems(
   items: BeadItem[],
   readyItemIds: ReadonlySet<string>
 ) {
-  const eligibleReadyIds = new Set(
-    items
+  const itemsWithReadiness = items.map((item) => {
+    const status = normalizeBeadStatus(item.status);
+    const readyByBd =
+      readyItemIds.has(item.id) &&
+      normalizeBeadType(item.type) !== "epic" &&
+      (status === "open" || status === "in_progress");
+    return item.parallelizableSource === "ready"
+      ? { ...item, readyByBd, parallelizable: false, parallelizableSource: "" as const }
+      : { ...item, readyByBd };
+  });
+
+  const readyParallelCandidateIds = new Set(
+    itemsWithReadiness
       .filter((item) => {
-        if (item.parallelizable || item.parallelizableSuppressed) {
+        if (item.parallelizableSuppressed || !item.readyByBd) {
           return false;
         }
-        if (!readyItemIds.has(item.id)) {
-          return false;
-        }
-        if (normalizeBeadType(item.type) === "epic") {
-          return false;
-        }
-        const status = normalizeBeadStatus(item.status);
-        return status === "open" || status === "in_progress";
+        return normalizeBeadType(item.type) !== "epic";
       })
       .map((item) => item.id)
   );
 
-  if (eligibleReadyIds.size < 2) {
-    return items;
+  if (readyParallelCandidateIds.size < 2) {
+    return itemsWithReadiness;
   }
 
-  return items.map((item) =>
-    eligibleReadyIds.has(item.id)
+  return itemsWithReadiness.map((item) =>
+    readyParallelCandidateIds.has(item.id) && !item.parallelizable
       ? { ...item, parallelizable: true, parallelizableSource: "ready" as const }
       : item
   );
@@ -784,6 +791,7 @@ export function deriveParallelMergeItems(items: BeadItem[]) {
       createdAt: latestItem?.createdAt ?? "-",
       parentId: group.anchorId,
       dependencyIds,
+      readyByBd: false,
       parallelizable: false,
       parallelizableSource: "",
       parallelizableSuppressed: false,

@@ -1684,7 +1684,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   private async loadReadyItemIds(cwd: string, warnings: BeadWarning[]) {
     try {
-      const stdout = await this.runBdCommand(["ready", "--json"], cwd);
+      const stdout = await this.runBdCommand(["ready", "--json", "--limit", "0"], cwd);
       const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
       return new Set(extractBeadItems(parsed).map((item) => item.id));
     } catch (error) {

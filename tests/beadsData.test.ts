@@ -81,6 +81,7 @@ describe("toBeadItem", () => {
       updatedAt: "2026-03-07T01:00:00Z",
       parentId: "",
       dependencyIds: [],
+      readyByBd: false,
       parallelizable: false,
       parallelizableSource: "",
       parallelizableSuppressed: false,
@@ -576,20 +577,98 @@ describe("buildBeadHierarchy", () => {
     const byId = new Map(inferred.map((item) => [item.id, item]));
 
     expect(byId.get("neo-ready-a")).toMatchObject({
+      readyByBd: true,
       parallelizable: true,
       parallelizableSource: "ready"
     });
     expect(byId.get("neo-ready-b")).toMatchObject({
+      readyByBd: true,
       parallelizable: true,
       parallelizableSource: "ready"
     });
     expect(byId.get("neo-blocked")).toMatchObject({
+      readyByBd: false,
       parallelizable: false,
       parallelizableSource: ""
     });
     expect(byId.get("neo-serial")).toMatchObject({
+      readyByBd: true,
       parallelizable: false,
       parallelizableSuppressed: true
+    });
+  });
+
+  it("records bd readiness independently from parallel inference", () => {
+    const items = extractBeadItems([
+      { id: "neo-single", title: "Single ready", status: "open" },
+      { id: "neo-explicit", title: "Explicit but blocked by deps", parallelizable: true },
+      { id: "neo-serial", title: "Ready but serial", labels: ["no-parallel"] }
+    ]);
+
+    const inferred = inferReadyParallelizableItems(items, new Set(["neo-single", "neo-serial"]));
+    const byId = new Map(inferred.map((item) => [item.id, item]));
+
+    expect(byId.get("neo-single")).toMatchObject({
+      readyByBd: true,
+      parallelizable: false,
+      parallelizableSource: ""
+    });
+    expect(byId.get("neo-explicit")).toMatchObject({
+      readyByBd: false,
+      parallelizable: true,
+      parallelizableSource: "explicit"
+    });
+    expect(byId.get("neo-serial")).toMatchObject({
+      readyByBd: true,
+      parallelizable: false,
+      parallelizableSuppressed: true
+    });
+  });
+
+  it("clears derived readiness and parallel flags when bd ready changes", () => {
+    const items = extractBeadItems([
+      { id: "neo-a", title: "Ready A", status: "open" },
+      { id: "neo-b", title: "Ready B", status: "open" }
+    ]);
+    const initiallyReady = inferReadyParallelizableItems(items, new Set(["neo-a", "neo-b"]));
+    const refreshed = inferReadyParallelizableItems(initiallyReady, new Set());
+
+    expect(refreshed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "neo-a",
+          readyByBd: false,
+          parallelizable: false,
+          parallelizableSource: ""
+        }),
+        expect.objectContaining({
+          id: "neo-b",
+          readyByBd: false,
+          parallelizable: false,
+          parallelizableSource: ""
+        })
+      ])
+    );
+  });
+
+  it("preserves readiness for workspaces with more than one hundred ready tasks", () => {
+    const items = extractBeadItems(
+      Array.from({ length: 101 }, (_, index) => ({
+        id: `neo-${index + 1}`,
+        title: `Ready ${index + 1}`,
+        status: "open"
+      }))
+    );
+    const readyIds = new Set(items.map((item) => item.id));
+
+    const inferred = inferReadyParallelizableItems(items, readyIds);
+
+    expect(inferred).toHaveLength(101);
+    expect(inferred.every((item) => item.readyByBd)).toBe(true);
+    expect(inferred.find((item) => item.id === "neo-101")).toMatchObject({
+      readyByBd: true,
+      parallelizable: true,
+      parallelizableSource: "ready"
     });
   });
 

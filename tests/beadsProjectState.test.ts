@@ -1,0 +1,184 @@
+import { describe, expect, it } from "vitest";
+
+import { type BeadItem } from "../src/beadsData";
+import {
+  AGENT_WORK_LANES,
+  buildAgentWorkQueue,
+  deriveAgentWorkItem
+} from "../src/beadsProjectState";
+
+function makeBead(overrides: Partial<BeadItem> = {}): BeadItem {
+  return {
+    id: "neo-1",
+    title: "Example task",
+    type: "task",
+    status: "open",
+    progress: null,
+    priority: "P2",
+    updatedAt: "2026-07-15T00:00:00Z",
+    commitHash: "",
+    description: "-",
+    notes: "-",
+    assignee: "-",
+    labels: "-",
+    createdAt: "2026-07-15T00:00:00Z",
+    parentId: "",
+    dependencyIds: [],
+    readyByBd: false,
+    parallelizable: false,
+    parallelizableSource: "",
+    parallelizableSuppressed: false,
+    agent: "",
+    model: "",
+    ssot: "",
+    worktree: "",
+    branch: "",
+    pullRequest: "",
+    checkStatus: "",
+    syncRisk: "",
+    synthetic: false,
+    syntheticKind: "",
+    ...overrides
+  };
+}
+
+describe("deriveAgentWorkItem", () => {
+  it("puts closed work in done before considering risk metadata", () => {
+    const derived = deriveAgentWorkItem(
+      makeBead({ status: "closed", checkStatus: "failed", syncRisk: "dirty" })
+    );
+
+    expect(derived).toMatchObject({
+      lane: "done",
+      readiness: "not-applicable",
+      reason: "Status is closed"
+    });
+    expect(derived.reasons.map((reason) => reason.code)).toEqual(["closed"]);
+  });
+
+  it("collects confirmed attention evidence without duplicating the item", () => {
+    const item = makeBead({
+      status: "blocked",
+      checkStatus: "timed-out",
+      syncRisk: "dirty"
+    });
+    const derived = deriveAgentWorkItem(item);
+
+    expect(derived.item).toBe(item);
+    expect(derived.lane).toBe("attention");
+    expect(derived.reasons.map((reason) => reason.code)).toEqual([
+      "blocked",
+      "sync-risk",
+      "checks-failing"
+    ]);
+    expect(derived.reason).toContain('Sync risk is reported as "dirty"');
+    expect(derived.reason).toContain('Checks are reported as "timed-out"');
+  });
+
+  it("routes unrecognized bead statuses to attention", () => {
+    expect(deriveAgentWorkItem(makeBead({ status: "waiting" }))).toMatchObject({
+      lane: "attention",
+      reason: 'Status "waiting" is not recognized'
+    });
+  });
+
+  it("puts recorded pull requests in review before in-progress work", () => {
+    expect(
+      deriveAgentWorkItem(
+        makeBead({ status: "in_progress", pullRequest: "#42", checkStatus: "success" })
+      )
+    ).toMatchObject({
+      lane: "review",
+      readiness: "not-applicable",
+      reason: 'Pull request "#42" is recorded'
+    });
+  });
+
+  it("describes in-progress state without claiming live agent activity", () => {
+    expect(deriveAgentWorkItem(makeBead({ status: "in_progress" }))).toMatchObject({
+      lane: "running",
+      reason: "Status is in progress; live agent activity is not confirmed"
+    });
+  });
+
+  it("distinguishes bd readiness from parallel preference", () => {
+    const confirmed = deriveAgentWorkItem(makeBead({ readyByBd: true }));
+    const confirmedSerial = deriveAgentWorkItem(
+      makeBead({ id: "neo-serial", readyByBd: true, parallelizableSuppressed: true })
+    );
+    const explicit = deriveAgentWorkItem(
+      makeBead({ id: "neo-2", parallelizable: true, parallelizableSource: "explicit" })
+    );
+    const openOnly = deriveAgentWorkItem(makeBead({ id: "neo-3" }));
+
+    expect(confirmed).toMatchObject({
+      lane: "queue",
+      readiness: "confirmed",
+      reason: "Readiness is reported by bd ready"
+    });
+    expect(confirmedSerial).toMatchObject({
+      lane: "queue",
+      readiness: "confirmed",
+      reason: "Readiness is reported by bd ready"
+    });
+    expect(explicit).toMatchObject({
+      lane: "queue",
+      readiness: "not-confirmed",
+      reason: "Marked parallelizable, but readiness is not confirmed by bd ready"
+    });
+    expect(openOnly).toMatchObject({
+      lane: "queue",
+      readiness: "not-confirmed",
+      reason: "Status is open; readiness is not confirmed by bd ready"
+    });
+  });
+
+  it("describes a derived merge gate without claiming bd readiness", () => {
+    expect(
+      deriveAgentWorkItem(
+        makeBead({
+          id: "merge:epic-1",
+          synthetic: true,
+          syntheticKind: "parallel-pr-merge",
+          checkStatus: "ready",
+          dependencyIds: ["task-1", "task-2"]
+        })
+      )
+    ).toMatchObject({
+      lane: "queue",
+      readiness: "not-applicable",
+      reason: "Parallel tasks are closed; merge preflight is required",
+      reasons: [{ code: "merge-preflight" }]
+    });
+  });
+
+  it("does not treat unknown check or sync values as confirmed failures", () => {
+    expect(
+      deriveAgentWorkItem(makeBead({ checkStatus: "pending", syncRisk: "medium" }))
+    ).toMatchObject({ lane: "queue" });
+  });
+});
+
+describe("buildAgentWorkQueue", () => {
+  it("groups every item in stable lane order and reports counts", () => {
+    const queue = buildAgentWorkQueue([
+      makeBead({ id: "attention", status: "blocked" }),
+      makeBead({ id: "review", pullRequest: "17" }),
+      makeBead({ id: "running", status: "in progress" }),
+      makeBead({ id: "queued" }),
+      makeBead({ id: "done", status: "resolved" }),
+      makeBead({ id: "queued-second" })
+    ]);
+
+    expect(AGENT_WORK_LANES).toEqual(["attention", "review", "running", "queue", "done"]);
+    expect(queue.counts).toEqual({
+      attention: 1,
+      review: 1,
+      running: 1,
+      queue: 2,
+      done: 1
+    });
+    expect(queue.total).toBe(6);
+    expect(queue.lanes.queue.map((entry) => entry.item.id)).toEqual(["queued", "queued-second"]);
+  });
+});

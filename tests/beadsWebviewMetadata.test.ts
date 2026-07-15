@@ -16,6 +16,27 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("grid-template-areas");
   });
 
+  it("shows an agent work queue with explicit evidence limits", () => {
+    expect(beadsWebview).toContain('id="controlView"');
+    expect(beadsWebview).toContain("Agent Work Queue");
+    expect(beadsWebview).toContain("Needs attention");
+    expect(beadsWebview).toContain("Readiness unknown");
+    expect(beadsWebview).toContain("does not confirm live agent activity");
+    expect(beadsWebview).toContain("agentWorkOverview");
+    expect(beadsWebview).toContain("agentWorkLane");
+    expect(beadsWebview).toContain("agentWorkCard");
+    expect(beadsWebview).toContain("buildAgentWorkQueue");
+    expect(beadsMain).toContain('type ViewMode = "table" | "graph" | "control"');
+    expect(beadsMain).toContain("controlViewButton");
+    expect(beadsMain).toContain("refreshAgentWorkQueueVisibility");
+    expect(beadsMain).toContain('applyViewMode("control")');
+    expect(beadsMain).toContain("!bdAvailable || item === null");
+    expect(beadsMain).toContain('syncBeadsButton.addEventListener("click"');
+    expect(beadsMain).toContain("if (!bdAvailable)");
+    expect(beadsMain).toContain("getDetailsReadinessLabel(item)");
+    expect(beadsView).toContain('["ready", "--json", "--limit", "0"]');
+  });
+
   it("keeps subproject collapse explicit and double-click driven", () => {
     expect(beadsWebview).toContain("data-child-count");
     expect(beadsWebview).toContain("collapseToggle");
@@ -69,7 +90,8 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("Start AI");
     expect(beadsWebview).toContain("Start Parallel");
     expect(beadsWebview).toContain("data-start-parallel-items");
-    expect(beadsWebview).toContain('item.parallelizable && !item.synthetic && status === "open"');
+    expect(beadsWebview).toContain("item.readyByBd &&");
+    expect(beadsWebview).toContain("!item.parallelizableSuppressed &&");
     expect(beadsWebview).toContain("data-assign-start-model");
     expect(beadsWebview).toContain("data-assign-start-ssot");
     expect(beadsWebview).toContain("data-assign-start-worktree");

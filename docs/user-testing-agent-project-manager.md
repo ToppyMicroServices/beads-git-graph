@@ -1,0 +1,327 @@
+# Agent Project Manager User Testing
+
+This checklist tests the extension from the perspective of a user planning, assigning, and
+supervising local agent work. It separates current behavior from roadmap-only behavior so a future
+acceptance target is not reported as an implemented feature.
+
+## Test labels
+
+- **Current**: expected from the current implementation.
+- **Source-preview completed**: exercised with compiled webview source and synthetic fixtures; this
+  is not evidence from an Extension Host or installed VSIX.
+- **Pending packaged verification**: implemented behavior whose Extension Host/VSIX user test has
+  not been run.
+- **Future-only**: acceptance target for a roadmap item; failure is expected until that item lands.
+
+## Safe setup
+
+1. Use disposable Git repositories. Do not use a production workspace or real agent worktree.
+2. For read-only display tests, create `.beads/issues.jsonl` fixtures with synthetic task data.
+3. For actions that invoke `bd`, use a compatible disposable Beads workspace or a fake `bd`
+   executable that records its arguments. Do not migrate an accepted database only to run a test.
+4. For merge tests, use fake `gh` output or a disposable remote. Never target a real pull request.
+5. Build the extension before Extension Host testing:
+
+   ```bash
+   pnpm run compile
+   ```
+
+For every manual scenario, record the extension version and commit, fixture name, pass/fail result,
+and any unexpected behavior. Capture screenshots for visible state and command logs for mutations.
+
+## Cheap automated checks
+
+Run the focused current-behavior suite:
+
+```bash
+pnpm exec vitest run tests/beadsData.test.ts tests/beadsGraphModel.test.ts tests/beadsProjectState.test.ts tests/beadsWebviewMetadata.test.ts tests/beadsMissionControlWebview.test.ts tests/beadsProtocol.test.ts tests/beadsRowVisibility.test.ts tests/worktreeSyncGuard.test.ts
+```
+
+Then run the complete quality gate:
+
+```bash
+pnpm run typecheck
+pnpm run lint
+pnpm run format
+pnpm test
+pnpm run compile
+```
+
+### AUTO-01 — Plan dependencies and Critical Path — Current
+
+- **Given:** Tasks `A -> B -> C` and `A -> D`.
+- **When:** The Beads dependency graph is built.
+- **Then:** The Critical Path is `A -> B -> C`; `B` and `D` share a dependency level; every task
+  appears once.
+- **Evidence:** Vitest result and, on failure, the received node, edge, and path values.
+
+### AUTO-02 — Filtered plan stays truthful — Current
+
+- **Given:** A dependency path containing a closed task plus another visible ready task.
+- **When:** Closed tasks are filtered out.
+- **Then:** Edges, dependency count, levels, and Critical Path use visible tasks only.
+- **Evidence:** `beadsGraphModel.test.ts` result with the received visible graph state.
+
+### AUTO-03 — Readiness and safe parallel candidates — Current
+
+- **Given:** Two ready open tasks, one single ready task, one ready task marked `no-parallel`, and one
+  explicit-parallel task outside `bd ready`.
+- **When:** Parallel candidates are inferred.
+- **Then:** Positive `bd ready` evidence is retained independently of parallel preference. Start
+  Parallel contains only a cohort of at least two ready, non-serial tasks; explicit-parallel alone
+  is not readiness evidence.
+- **Evidence:** `beadsData.test.ts` and `beadsMissionControlWebview.test.ts` results plus decoded
+  target IDs. A 101-task fixture and command assertion cover the CLI's default 100-item limit.
+
+### AUTO-04 — Progress is not invented — Current
+
+- **Given:** Numeric progress, percentage text, progress in notes, an invalid value, and no value.
+- **When:** Beads data is normalized.
+- **Then:** Valid values from 0 through 100 are retained; invalid or absent values remain unknown.
+- **Evidence:** Table-driven test output containing input and normalized value.
+
+### AUTO-05 — Untrusted webview messages are rejected — Current
+
+- **Given:** Missing workspace paths, non-string task IDs, malformed parallel targets, and unknown
+  commands.
+- **When:** The request validator receives each message.
+- **Then:** It rejects the message before any state-changing handler can run.
+- **Evidence:** `beadsProtocol.test.ts` result and the rejected payload name, without secrets.
+
+### AUTO-06 — Merge blockers stop the operation — Current
+
+- **Given:** A detached, dirty, or stale worktree, or a PR with missing, pending, or failing checks.
+- **When:** Merge preflight evaluates the fixture.
+- **Then:** The result is blocking and includes the observed reason. No merge command is planned.
+- **Evidence:** Worktree/PR preflight result and recorded fake `gh` calls.
+
+### AUTO-07 — Multi-workspace rendering isolation — Current contract, test TODO
+
+- **Given:** Two workspaces containing the same task ID but different titles and states.
+- **When:** `renderBeadsWebviewHtml` renders both groups.
+- **Then:** Workspace labels, detail IDs, action payloads, and graph state keys remain distinct.
+- **Evidence:** Render-test result and relevant sanitized HTML attributes.
+
+### AUTO-08 — Agent Work Queue state projection — Current
+
+- **Given:** Attention, review, running, confirmed-ready, readiness-unknown, done, and synthetic merge
+  tasks.
+- **When:** `buildAgentWorkQueue` projects the fixture.
+- **Then:** Every task appears in one lane; precedence and counts are stable; missing evidence is not
+  reported as success or failure.
+- **Evidence:** `beadsProjectState.test.ts` output with the received lane, readiness, and reason.
+
+### AUTO-09 — Agent Work Queue static rendering — Current
+
+- **Given:** The AUTO-08 mixed fixture, including untrusted text and per-workspace action metadata.
+- **When:** `renderBeadsWebviewHtml` renders the fixture.
+- **Then:** Manage, lane counts, explicit attention reasons, the recorded-state caveat, escaped text,
+  and correct action payloads are present.
+- **Evidence:** `beadsMissionControlWebview.test.ts` and `beadsWebviewMetadata.test.ts` results.
+
+### AUTO-10 — Queue action hardening — Current, completed focused result
+
+- **Given:** Single confirmed-ready, serial confirmed-ready, explicit-parallel but unready,
+  readiness-unknown, unrecognized-status, synthetic merge, and missing-`bd` fixtures.
+- **When:** The state model and webview render each fixture under the default filter.
+- **Then:** Start AI is enabled only for confirmed readiness; other lanes render no Start AI action
+  and unknown readiness renders it disabled; unrecognized status remains visible in attention under
+  the default `other` filter; synthetic merge says `Readiness N/A` with its preflight reason; and
+  Manage/Graph Start AI, Manage/Graph Merge PRs, Start Parallel, and Sync are disabled when `bd` is
+  unavailable. Details reports readiness only for open non-synthetic work and shows `N/A` otherwise.
+  The webview handlers retain their `bdAvailable` guards.
+- **Evidence:** Passing focused assertions in `beadsProjectState.test.ts`,
+  `beadsRowVisibility.test.ts`, and `beadsMissionControlWebview.test.ts`, naming each fixture and
+  received control state.
+
+### AUTO-11 — Partial parallel-start result — Future-only
+
+- **Given:** Three startable tasks where the second launch fails.
+- **When:** Start Parallel runs.
+- **Then:** The result explicitly lists started, failed, skipped, and not-attempted tasks; it does not
+  report complete success.
+- **Evidence:** Per-task result object and fake `bd`/session-launch call order.
+
+## Completed source-preview check
+
+The following check used the compiled current webview script, synthetic fixture data, and a local
+browser page. It verifies user-visible source behavior, but it does not exercise VS Code APIs, a real
+`bd` process, worktree creation, Extension Host lifecycle, or VSIX packaging.
+
+### PREVIEW-01 — Manage, Details, Start AI, and narrow layout — Source-preview completed
+
+- **Given:** A mixed fixture with blocked attention, unrecognized status, PR review, recorded running
+  progress, two confirmed-ready tasks, explicit-parallel but unready work, synthetic merge, and done
+  tasks.
+- **When:** Open the preview, select **Manage**, inspect the lanes, open blocked-task **Details**,
+  return to **Manage**, inspect both Start AI states and synthetic merge, invoke **Start Parallel**,
+  select the **All** filter, invoke **Start AI** on a confirmed-ready task, and resize to 640 px.
+- **Then observed:** Manage and its expected lanes rendered; Details selected the matching task; the
+  unrecognized-status task remained visible under the default filter; confirmed-ready Start AI
+  emitted the expected task/workspace message while explicit-parallel unready Start AI stayed
+  disabled; Start Parallel contained only the two confirmed-ready task IDs and reported the unready
+  explicit task as skipped; the synthetic merge card showed `Readiness N/A` and its dedicated
+  preflight reason; **All** restored the Done task; and the 640 px view remained usable with no
+  horizontal `scrollWidth` overflow.
+- **Evidence level:** compiled-source browser preview only. PM-004D/MAN-10 remains pending.
+
+## Extension Host and manual checks
+
+Use a freshly built extension in an Extension Development Host with disposable fixtures. Reset the
+fixture between state-changing scenarios.
+
+### MAN-01 — Understand the current plan — Current
+
+- **Setup:** Load an epic with a three-step dependency chain, one side task, one blocked task, and
+  two parallel-ready tasks.
+- **Steps:** Open the Beads view, compare Table and Execution Map, and toggle the closed filter.
+- **Expected:** Hierarchy, status, blocked/parallel summaries, dependencies, and Critical Path agree.
+  Filtering removes hidden tasks from graph-derived counts and paths.
+- **Evidence:** Before/after screenshots and the fixture task list.
+
+### MAN-02 — Inspect and navigate without a mouse — Current
+
+- **Setup:** Use the MAN-01 fixture at normal width and a narrow panel width.
+- **Steps:** Navigate with Tab and Enter; open a row menu with Shift+F10; operate the graph with
+  arrows, `+`, `-`, and `0`.
+- **Expected:** Details and actions are reachable, focus remains visible, the context menu stays in
+  the viewport, and graph gestures do not trap page scrolling.
+- **Evidence:** Screen recording or screenshots showing focus and the narrow layout.
+
+### MAN-03 — Start one agent with a safe fallback — Current
+
+- **Setup:** Use one open task whose readiness is explicitly confirmed in a disposable Git
+  repository. Add a second open task whose readiness is unavailable. Make Copilot launch commands
+  unavailable, but leave clipboard access available.
+- **Steps:** Select **Start AI**.
+- **Expected:** Start AI is enabled only on the confirmed-ready task. Starting it creates or reuses a
+  task worktree; Beads records `in_progress`, model, SSOT, worktree, and branch metadata; a complete
+  task prompt is copied; the UI does not claim that a live session opened. The readiness-unknown task
+  exposes no enabled Start AI action.
+- **Evidence:** Screenshot of the notification, fake `bd` argument log, `git worktree list`, and
+  clipboard text with sensitive paths redacted, plus the disabled/absent unknown-readiness control.
+
+### MAN-04 — Reject an unsafe worktree collision — Current
+
+- **Setup:** Place an existing unregistered directory at the proposed task worktree path.
+- **Steps:** Select **Start AI**.
+- **Expected:** The extension reports that the path is not a registered worktree and stops before
+  assigning or updating the Bead.
+- **Evidence:** Error screenshot, fake `bd` log showing no assign/update call, and unchanged Git
+  status.
+
+### MAN-05 — Start ready work in parallel — Current
+
+- **Setup:** Provide two ready open tasks, one blocked task, one in-progress task, and one explicitly
+  serial task.
+- **Steps:** Select **Start Parallel**.
+- **Expected:** Only the two ready open tasks start in separate worktrees. The completion message
+  reports skipped active tasks with reasons.
+- **Evidence:** Notification screenshot, worktree list, and per-task fake `bd` log.
+
+### MAN-06 — Refresh progress and blocked state — Current
+
+- **Setup:** Display one open task and one task with explicit progress metadata.
+- **Steps:** Change the fixture through `open -> in_progress 40% -> blocked -> closed`, refreshing
+  after each change.
+- **Expected:** Table, summaries, details, and graph show the same current state. The extension does
+  not infer progress that is absent from Beads data.
+- **Evidence:** One screenshot per state and the corresponding fixture revision.
+
+### MAN-07 — Keep workspaces isolated — Current
+
+- **Setup:** Open a multi-root workspace with repo A and repo B. Give both a task with the same ID.
+- **Steps:** Open details in A, change A's graph zoom, and invoke an A action using a fake `bd`.
+- **Expected:** The action path and task data come from A; B remains unchanged; each graph preserves
+  its own transform.
+- **Evidence:** Side-by-side screenshot, fake command log with working directory, and fixture diffs.
+
+### MAN-08 — Block unsafe PR merge — Current
+
+- **Setup:** Test dirty worktree, missing `origin/main`, detached HEAD, missing PR, draft PR, and
+  pending/failing check fixtures separately.
+- **Steps:** Select **Merge PRs** for each fixture.
+- **Expected:** Each failing preflight stops before the confirmation dialog and before `gh pr merge`.
+  A fully passing fixture shows the observed preflight details and still requires explicit approval.
+- **Evidence:** Error or confirmation screenshot and fake `gh` call log.
+
+### MAN-09 — Handle a missing Beads CLI safely — Current
+
+- **Setup:** Remove `bd` from the disposable Extension Host's configured path while retaining a
+  legacy read-only fixture that the view can render.
+- **Steps:** Open and refresh the Beads view; attempt only the action exposed by the UI.
+- **Expected:** The missing-executable state is shown. Every `bd`-dependent action is absent or
+  disabled with the unavailable reason and emits no action message. Refresh and Git Graph remain
+  usable.
+- **Evidence:** UI screenshot, executable call log, and captured webview messages showing no action
+  payload.
+
+### MAN-10 — Use Agent Work Queue in an Extension Host — Current, pending packaged verification
+
+- **Setup:** Package the current extension and install/open it in an Extension Development Host with
+  a disposable mixed-status fixture: blocked attention, failing check, unrecognized status, PR
+  review, recorded running progress, confirmed-ready, readiness-unknown, synthetic merge, and done.
+- **Steps:** Select **Manage**; compare counts with the fixture; open every attention **Details** item
+  by mouse and keyboard; start the confirmed-ready task; confirm the readiness-unknown task cannot be
+  started; inspect synthetic merge; make `bd` unavailable and refresh; repeat at 640 px width.
+- **Expected:** Counts match visible cards; blocked/failing/unrecognized reasons are explicit;
+  unknown status stays visible under the default filter; Details selects the correct workspace/task;
+  only confirmed readiness enables Start AI; synthetic merge says `Readiness N/A`; all
+  `bd`-dependent actions disable when `bd` is unavailable; keyboard focus and cards remain usable at
+  640 px. Running is described as recorded state, not verified live activity.
+- **Evidence:** Packaged version/commit, fixture, before/after screenshots, keyboard recording,
+  captured webview messages, fake `bd` log, and pass/fail per expected statement.
+- **Status:** Pending. The completed browser preview is not a substitute for this test.
+
+## Roadmap-only user acceptance
+
+These tests describe intended behavior and must not be used as evidence that the feature exists.
+
+### FUT-01 — Draft, preview, and cancel a plan — Future-only
+
+- **Setup:** Prepare valid, incomplete, missing-dependency, self-dependent, and cyclic plan drafts.
+- **Steps:** Validate and preview each draft; edit one dependency; cancel without approving.
+- **Expected:** Specific validation errors appear, the preview graph updates, and Cancel performs no
+  Beads write.
+- **Evidence:** Preview/error screenshots and an empty fake `bd` mutation log.
+
+### FUT-02 — Import an approved plan with partial failure — Future-only
+
+- **Setup:** Use a compatible disposable Beads workspace and fail the third planned mutation.
+- **Steps:** Review the exact mutation preview and approve it.
+- **Expected:** Created IDs, failed mutation, and unexecuted work are listed without claiming rollback
+  or success. Unsupported Beads environments keep import disabled.
+- **Evidence:** Approval screenshot, ordered command log, and final Beads state.
+
+### FUT-03 — Evidence freshness and intervention — Future-only
+
+- **Setup:** Provide fresh, stale, unavailable, and explicitly failing Git/PR/check evidence.
+- **Steps:** Refresh evidence and inspect the attention queue.
+- **Expected:** Source and checked-at time are visible; stale and unknown are distinct from failure;
+  resolution removes an item only after refreshed evidence confirms it.
+- **Evidence:** Before/after screenshots and sanitized evidence records.
+
+### FUT-04 — Verify and close under human control — Future-only
+
+- **Setup:** Prepare complete, partially evidenced, and failing tasks with acceptance criteria.
+- **Steps:** Open completion evidence, cancel once, then approve an eligible task.
+- **Expected:** Commits, changed files, tests/checks, and unknowns are visible; Cancel makes no
+  mutation; closing always requires explicit user approval.
+- **Evidence:** Evidence-view screenshots, fake `bd close` log, and final status.
+
+### FUT-05 — Gate writes on Beads capability and schema compatibility — Future-only
+
+- **Setup:** Provide compatible, missing-command, unsupported-command, and schema-mismatch fake
+  Beads environments without accepting a migration.
+- **Steps:** Run the planned read-only capability probe and inspect every mutation control.
+- **Expected:** Only the observed compatible environment enables mutations. Unsupported and
+  schema-mismatch states show their exact reason and do not initialize, migrate, or emit a mutation.
+- **Evidence:** Capability result, disabled-control screenshots, and an executable call log with no
+  mutation or migration command.
+
+## Result summary
+
+Report automated and manual results separately. A source-level or Vitest pass does not count as an
+Extension Host pass. Do not describe live agent monitoring as verified until evidence collection and
+freshness scenarios pass, and do not describe plan import as verified until capability detection,
+preview, approval, and partial-failure tests pass.
