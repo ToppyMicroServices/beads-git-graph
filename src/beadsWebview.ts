@@ -52,6 +52,10 @@ function encodeJsonData(value: unknown) {
   return escapeHtml(encodeURIComponent(JSON.stringify(value)));
 }
 
+function getBeadDetailsId(workspacePath: string, issueId: string) {
+  return `bead-details-${encodeURIComponent(`${workspacePath}:${issueId}`).replace(/%/g, "_")}`;
+}
+
 function isDefaultVisibleStatus(status: string) {
   return status === "open" || status === "in_progress" || status === "blocked";
 }
@@ -271,7 +275,7 @@ function renderBeadsDependencyGraph(
     const label = level === 0 ? "Ready" : `L${level + 1}`;
     const detail = level === 0 ? "No blockers" : "After deps";
 
-    return `<span class="graphLevelGuide" style="--graph-guide-x:${x}px"><span class="graphLevelLabel"><strong>${label}</strong><small>${detail}</small></span></span>`;
+    return `<span class="graphLevelGuide" data-graph-level="${level}" style="--graph-guide-x:${x}px"><span class="graphLevelLabel"><strong>${label}</strong><small>${detail}</small></span></span>`;
   }).join("");
   const nodeHtml = Array.from({ length: levelCount }, (_, level) => {
     const layout = levelLayouts[level];
@@ -310,13 +314,13 @@ function renderBeadsDependencyGraph(
         const depth = hierarchyEntry?.depth ?? 0;
         const dependencyLines = [
           parentId !== "" && itemsById.has(parentId)
-            ? `<div class="graphRelation graphParentRelation"><span>Parent</span>${escapeHtml(parentId)}</div>`
+            ? `<div class="graphRelation graphParentRelation" data-related-ids="${encodeJsonData([parentId])}"><span>Parent</span><strong class="graphRelationValue">${escapeHtml(parentId)}</strong></div>`
             : "",
           blockers.length > 0
-            ? `<div class="graphRelation"><span>Depends</span>${escapeHtml(blockers.join(", "))}</div>`
+            ? `<div class="graphRelation" data-related-ids="${encodeJsonData(blockers)}"><span>Depends</span><strong class="graphRelationValue">${escapeHtml(blockers.join(", "))}</strong></div>`
             : "",
           blocks.length > 0
-            ? `<div class="graphRelation"><span>Blocks</span>${escapeHtml(blocks.join(", "))}</div>`
+            ? `<div class="graphRelation" data-related-ids="${encodeJsonData(blocks)}"><span>Blocks</span><strong class="graphRelationValue">${escapeHtml(blocks.join(", "))}</strong></div>`
             : ""
         ]
           .filter((line) => line !== "")
@@ -366,7 +370,7 @@ function renderBeadsDependencyGraph(
         ]
           .filter((badge) => badge !== "")
           .join("");
-        return `<div class="graphNode ${node.critical ? "criticalGraphNode" : ""}${dependencyWarning === "" ? "" : " dependencyWarningGraphNode"}${mergeRiskWarning === "" ? "" : " mergeRiskGraphNode"}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" data-parent-id="${escapeHtml(parentId)}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" style="${initialDisplay}--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${node.critical ? '<span class="criticalBadge">Critical path</span>' : ""}</div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${graphBadges}</div>${dependencyWarning === "" ? "" : `<div class="graphWarning">${escapeHtml(dependencyWarning)}</div>`}${mergeRiskWarning === "" ? "" : `<div class="graphWarning graphMergeRisk">${escapeHtml(mergeRiskWarning)}</div>`}${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions">${actionHtml}</div></div>`;
+        return `<div class="graphNode ${node.critical ? "criticalGraphNode" : ""}${dependencyWarning === "" ? "" : " dependencyWarningGraphNode"}${mergeRiskWarning === "" ? "" : " mergeRiskGraphNode"}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" data-parent-id="${escapeHtml(parentId)}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" style="${initialDisplay}--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span><span class="criticalBadge"${node.critical ? "" : " hidden"}>Critical path</span></div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${graphBadges}</div>${dependencyWarning === "" ? "" : `<div class="graphWarning">${escapeHtml(dependencyWarning)}</div>`}${mergeRiskWarning === "" ? "" : `<div class="graphWarning graphMergeRisk">${escapeHtml(mergeRiskWarning)}</div>`}${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="graphDetailsBead" type="button" data-graph-details-id="${escapeHtml(item.id)}" data-graph-details-workspace="${escapeHtml(workspacePath)}">Details</button>${actionHtml}</div></div>`;
       })
       .join("");
   }).join("");
@@ -379,7 +383,10 @@ function renderBeadsDependencyGraph(
       ? `<details class="graphIssueDrawer dependencyIssueDrawer"><summary><span>Dependency warnings</span><strong>${dependencyWarnings.size}</strong></summary><div class="graphWarningBand">${Array.from(
           dependencyWarnings.entries()
         )
-          .map(([id, message]) => `<span>${escapeHtml(id)}: ${escapeHtml(message)}</span>`)
+          .map(
+            ([id, message]) =>
+              `<span data-warning-id="${escapeHtml(id)}">${escapeHtml(id)}: ${escapeHtml(message)}</span>`
+          )
           .join("")}</div></details>`
       : "";
   const mergeRiskSummary =
@@ -391,17 +398,14 @@ function renderBeadsDependencyGraph(
       ? `<details class="graphIssueDrawer mergeRiskIssueDrawer"><summary><span>Merge/worktree risk</span><strong>${mergeRiskWarnings.size}</strong></summary><div class="graphRiskBand">${Array.from(
           mergeRiskWarnings.entries()
         )
-          .map(([id, message]) => `<span>${escapeHtml(id)}: ${escapeHtml(message)}</span>`)
+          .map(
+            ([id, message]) =>
+              `<span data-risk-id="${escapeHtml(id)}">${escapeHtml(id)}: ${escapeHtml(message)}</span>`
+          )
           .join("")}</div></details>`
       : "";
-  const criticalSummary =
-    graph.criticalPathIds.length > 0
-      ? `<span class="summaryPill criticalSummary" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}">${graph.criticalPathIds.length} critical</span>`
-      : "";
-  const criticalPathHtml =
-    graph.criticalPathIds.length > 0
-      ? `<div class="graphPathStrip"><span>Critical Path</span><strong title="${escapeHtml(graph.criticalPathIds.join(" -> "))}">${escapeHtml(graph.criticalPathIds.join(" -> "))}</strong></div>`
-      : `<div class="graphPathStrip emptyCriticalPath"><span>Critical Path</span><strong>No dependency path yet</strong></div>`;
+  const criticalSummary = `<span class="summaryPill criticalSummary" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}"${graph.criticalPathIds.length > 0 ? "" : " hidden"}>${graph.criticalPathIds.length} critical</span>`;
+  const criticalPathHtml = `<div class="graphPathStrip${graph.criticalPathIds.length > 0 ? "" : " emptyCriticalPath"}"><span>Critical Path</span><strong class="graphPathValue" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}">${graph.criticalPathIds.length > 0 ? escapeHtml(graph.criticalPathIds.join(" -> ")) : "No dependency path yet"}</strong></div>`;
   const graphLegendHtml =
     '<div class="graphLegend"><span class="dependencyLegend">Dependency</span><span class="criticalLegend">Critical path</span><span class="parentLegend">Parent</span><span class="riskLegend">Merge/worktree risk</span></div>';
   const graphIssuesHtml =
@@ -409,7 +413,7 @@ function renderBeadsDependencyGraph(
       ? ""
       : `<div class="graphIssueStack">${dependencyWarningHtml}${mergeRiskHtml}</div>`;
 
-  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div class="workspaceName">Execution Map</div><div class="workspaceSummary"><span class="summaryPill">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}${mergeRiskSummary}</div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div></div><div class="graphScroller"><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
+  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">Click, then wheel to zoom · Drag a box to zoom · Shift+drag to pan · Double-click to fit</div></div><div class="graphHeaderActions"><div class="workspaceSummary"><span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="fit">Fit</button></div></div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Click to activate wheel zoom. Drag to zoom, Shift drag to pan, arrow keys to pan, and press zero to fit."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
 }
 
 export function renderBeadsWebviewHtml(
@@ -628,6 +632,7 @@ export function renderBeadsWebviewHtml(
             };
             const treeWidth = depth > 0 ? depth * 18 : 0;
             const childCount = childCountByParent.get(item.id) ?? 0;
+            const detailsId = getBeadDetailsId(group.workspacePath, item.id);
             const initialRowStyle = isDefaultVisibleStatus(normalizedStatus)
               ? ""
               : ' style="display:none"';
@@ -648,7 +653,7 @@ export function renderBeadsWebviewHtml(
               childCount > 0
                 ? `<button class="collapseToggle" type="button" aria-expanded="true" title="Toggle subprojects"><span class="collapseIcon" aria-hidden="true">▾</span></button>`
                 : '<span class="collapseSpacer" aria-hidden="true"></span>';
-            return `<tr class="${rowClasses}"${initialRowStyle} data-id="${escapeHtml(item.id)}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-parent-id="${escapeHtml(parentId ?? "")}" data-epic-id="${escapeHtml(epicId ?? "")}" data-bead-type="${escapeHtml(normalizedType)}" data-depth="${depth}" data-child-count="${childCount}" data-order-index="${orderIndex}" data-guide-columns="${guideColumns.map((value) => (value ? "1" : "0")).join("")}" data-last-sibling="${isLastSibling ? "1" : "0"}" data-status="${escapeHtml(normalizedStatus)}" data-parallelizable="${item.parallelizable ? "1" : "0"}" data-parallel-source="${escapeHtml(item.parallelizableSource)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(serializedItem)))}" data-updated-ts="${updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td class="parallelCell">${parallelCell}</td><td><div class="titleCell" style="--tree-width:${treeWidth}px">${hierarchyToggle}<div class="titleContent"><div class="beadId">${escapeHtml(item.id)}</div><div class="beadTitle">${escapeHtml(item.title)}</div>${executionBadges === "" ? "" : `<div class="beadMeta">${executionBadges}</div>`}</div></div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
+            return `<tr class="${rowClasses}"${initialRowStyle} data-id="${escapeHtml(item.id)}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-details-id="${escapeHtml(detailsId)}" data-parent-id="${escapeHtml(parentId ?? "")}" data-epic-id="${escapeHtml(epicId ?? "")}" data-bead-type="${escapeHtml(normalizedType)}" data-depth="${depth}" data-child-count="${childCount}" data-order-index="${orderIndex}" data-guide-columns="${guideColumns.map((value) => (value ? "1" : "0")).join("")}" data-last-sibling="${isLastSibling ? "1" : "0"}" data-status="${escapeHtml(normalizedStatus)}" data-parallelizable="${item.parallelizable ? "1" : "0"}" data-parallel-source="${escapeHtml(item.parallelizableSource)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(serializedItem)))}" data-updated-ts="${updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td class="parallelCell">${parallelCell}</td><td><div class="titleCell" style="--tree-width:${treeWidth}px">${hierarchyToggle}<div class="titleContent"><div class="beadId">${escapeHtml(item.id)}</div><button class="beadTitle beadDetailsButton" type="button" aria-expanded="false" aria-controls="${escapeHtml(detailsId)}">${escapeHtml(item.title)}</button>${executionBadges === "" ? "" : `<div class="beadMeta">${executionBadges}</div>`}</div></div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
           })
           .join("");
         const graphHtml = renderBeadsDependencyGraph(flatItems, group.workspacePath, agentAliases);
@@ -693,6 +698,7 @@ export function renderBeadsWebviewHtml(
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:6px;background:var(--vscode-editor-background);font-size:13px;}
+[hidden]{display:none!important;}
 .toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px;margin-bottom:6px;padding:6px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));box-shadow:0 1px 4px rgba(0,0,0,.12);}
 .toolbarMain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;}
 .toolbarActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:0 0 auto;}
@@ -721,6 +727,7 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);paddin
 .contextMenu button:disabled{opacity:.45;cursor:default;}
 button{border:1px solid var(--vscode-button-border,transparent);background:var(--vscode-button-background);color:var(--vscode-button-foreground);padding:4px 8px;cursor:pointer;border-radius:6px;font-size:11px;}
 button:hover{background:var(--vscode-button-hoverBackground);}
+button:focus-visible,select:focus-visible,.graphScroller:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:2px;}
 #clearFilters{display:none;}
 .actionBtn{display:inline-flex;align-items:center;justify-content:center;height:24px;padding:0 10px;border-radius:6px;background:rgba(128,128,128,.1);border:1px solid rgba(128,128,128,.5);gap:6px;transition:border-color .18s ease, background-color .18s ease, box-shadow .18s ease;}
 .actionBtn:hover{background:rgba(128,128,128,.2);}
@@ -780,6 +787,8 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .hierarchyGuideNodeShadow{fill:rgba(0,0,0,.22);vector-effect:non-scaling-stroke;opacity:.4;}
 .hierarchyGuideNode{fill:var(--vscode-textLink-foreground, #4da3ff);vector-effect:non-scaling-stroke;opacity:1;}
 .beadTitle{font-size:13px;font-weight:650;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.beadDetailsButton{display:block;width:100%;padding:0;border:none;border-radius:2px;background:transparent;color:inherit;text-align:left;font:inherit;}
+.beadDetailsButton:hover{background:transparent;text-decoration:underline;}
 .beadMeta{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:4px;}
 .executionBadge{display:inline-flex;align-items:center;max-width:100%;padding:1px 6px;border-radius:6px;border:1px solid rgba(128,128,128,.42);font-size:10px;font-weight:650;line-height:15px;color:var(--vscode-descriptionForeground);background:rgba(128,128,128,.1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .stateBadge{border-color:rgba(20,184,166,.55);color:var(--vscode-charts-cyan,#14b8a6);background:rgba(20,184,166,.13);}
@@ -834,6 +843,12 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .detailsDescription{margin-top:8px;padding-top:8px;border-top:1px solid var(--vscode-panel-border);white-space:pre-wrap;line-height:1.45;}
 .graphPane{position:relative;display:flex;flex-direction:column;height:clamp(360px,calc(100vh - 132px),900px);border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);overflow:hidden;padding:0;}
 .graphHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0;position:sticky;top:0;left:0;z-index:5;background:var(--vscode-editor-background);padding:10px 12px 8px;border-bottom:1px solid var(--vscode-panel-border);}
+.graphHeaderActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
+.graphGestureHint{margin-top:2px;color:var(--vscode-descriptionForeground);font-size:10px;line-height:1.3;}
+.graphControls{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--vscode-panel-border);border-radius:6px;padding:2px;background:rgba(128,128,128,.08);}
+.graphControls button{min-width:24px;height:22px;padding:0 6px;background:transparent;color:var(--vscode-foreground);}
+.graphControls button:hover{background:rgba(128,128,128,.18);}
+.graphZoomValue{min-width:38px;text-align:center;color:var(--vscode-descriptionForeground);font-size:10px;font-variant-numeric:tabular-nums;}
 .criticalSummary{border-color:rgba(236,72,153,.5);color:var(--vscode-charts-pink,#ec4899);}
 .dependencyWarningSummary{border-color:rgba(245,158,11,.55);color:var(--vscode-editorWarning-foreground,#f59e0b);}
 .mergeRiskSummary{border-color:rgba(239,68,68,.55);color:var(--vscode-errorForeground,#ef4444);}
@@ -867,7 +882,8 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphWarningBand span{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border-radius:6px;border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.12);color:var(--vscode-editorWarning-foreground,#f59e0b);font-size:10px;font-weight:650;}
 .graphRiskBand{display:flex;flex-wrap:wrap;gap:4px;margin:0;padding:0 8px 8px;max-height:92px;overflow:auto;}
 .graphRiskBand span{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border-radius:6px;border:1px solid rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:var(--vscode-errorForeground,#ef4444);font-size:10px;font-weight:650;}
-.graphScroller{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;overscroll-behavior:contain;background:var(--vscode-editor-background);cursor:crosshair;user-select:none;}
+.graphScroller{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;background:var(--vscode-editor-background);cursor:crosshair;user-select:none;}
+.graphScroller.isPanning{cursor:grabbing;}
 .graphCanvas{position:relative;min-width:100%;min-height:100%;overflow:hidden;background-color:var(--vscode-editor-background);background-image:linear-gradient(rgba(128,128,128,.1) 1px, transparent 1px),linear-gradient(90deg, rgba(128,128,128,.1) 1px, transparent 1px);background-size:48px 48px;}
 .graphContent{position:absolute;left:0;top:0;transform:translate(var(--graph-pan-x,0px),var(--graph-pan-y,0px)) scale(var(--graph-zoom,1));transform-origin:0 0;}
 .graphZoomSelection{position:absolute;z-index:6;border:1px solid var(--vscode-focusBorder,#3b82f6);background:rgba(59,130,246,.16);box-shadow:0 0 0 1px rgba(59,130,246,.18) inset;pointer-events:none;}
@@ -881,12 +897,13 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphLevelLabel strong{font-size:11px;font-weight:800;line-height:1.1;color:var(--vscode-foreground);}
 .graphLevelLabel small{font-size:10px;font-weight:650;line-height:1.15;color:var(--vscode-descriptionForeground);}
 .graphNodes{position:absolute;inset:0;z-index:2;}
-.graphNode{position:absolute;left:var(--graph-x);top:var(--graph-y);width:var(--graph-node-width,280px);border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));padding:8px;box-shadow:0 1px 3px rgba(0,0,0,.12);}
+.graphNode{box-sizing:border-box;position:absolute;left:var(--graph-x);top:var(--graph-y);width:var(--graph-node-width,280px);border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));padding:8px;box-shadow:0 1px 3px rgba(0,0,0,.12);}
 .graphNode.criticalGraphNode{border-color:rgba(236,72,153,.62);box-shadow:inset 3px 0 0 var(--vscode-charts-pink,#ec4899), 0 1px 3px rgba(0,0,0,.12);}
 .graphNode.dependencyWarningGraphNode{border-color:rgba(245,158,11,.58);box-shadow:inset 3px 0 0 var(--vscode-editorWarning-foreground,#f59e0b), 0 1px 3px rgba(0,0,0,.12);}
 .graphNode.mergeRiskGraphNode{border-color:rgba(239,68,68,.58);box-shadow:inset 3px 0 0 var(--vscode-errorForeground,#ef4444), 0 1px 3px rgba(0,0,0,.12);}
 .graphNodeTop{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px;}
 .criticalBadge{display:inline-flex;align-items:center;min-height:17px;padding:1px 6px;border-radius:999px;border:1px solid rgba(236,72,153,.55);background:rgba(236,72,153,.14);color:var(--vscode-charts-pink,#ec4899);font-size:10px;font-weight:750;white-space:nowrap;}
+.criticalBadge[hidden]{display:none;}
 .graphNodeTitle{font-size:12px;font-weight:700;line-height:1.3;margin:2px 0 7px;overflow-wrap:anywhere;}
 .graphNodeBadges{display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
 .graphWarning{margin-top:7px;padding:5px 6px;border-radius:6px;border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.12);color:var(--vscode-editorWarning-foreground,#f59e0b);font-size:10px;font-weight:650;line-height:1.35;}
@@ -894,8 +911,10 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphRelations{display:grid;gap:3px;margin-top:7px;padding-top:7px;border-top:1px solid var(--vscode-panel-border);}
 .graphRelation{display:grid;grid-template-columns:54px minmax(0,1fr);gap:5px;font-size:10px;color:var(--vscode-descriptionForeground);line-height:1.35;}
 .graphRelation span{font-weight:700;color:var(--vscode-foreground);}
+.graphRelationValue{font:inherit;font-weight:400;overflow-wrap:anywhere;}
 .graphParentRelation{border-left:2px dashed var(--vscode-textLink-foreground,#3b82f6);padding-left:5px;}
-.graphNodeActions{position:relative;z-index:3;display:flex;justify-content:flex-end;margin-top:8px;}
+.graphNodeActions{position:relative;z-index:3;display:flex;justify-content:flex-end;gap:6px;margin-top:8px;}
+.graphDetailsBead{height:24px;padding:0 8px;background:transparent;color:var(--vscode-foreground);border-color:var(--vscode-panel-border);}
 .assignStartBead,.mergeParallelPrs{height:24px;padding:0 8px;font-weight:650;}
 .mergeParallelPrs{border-color:rgba(249,115,22,.55);background:rgba(249,115,22,.16);color:var(--vscode-charts-orange,#f97316);}
 .assignStartBead:disabled{opacity:.45;cursor:default;}
@@ -927,6 +946,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
   .detailsGrid{grid-template-columns:82px minmax(0,1fr);}
   .graphPane{height:clamp(320px,calc(100vh - 118px),820px);padding:8px;}
   .graphHeader{position:relative;padding:8px;margin:-8px -8px 0;}
+  .graphHeaderActions{justify-content:flex-start;}
   .graphIssueStack{padding:8px 0 0;}
   .graphMapFrame{margin:8px 0 0;}
   .graphMapHeader{align-items:start;}
@@ -979,7 +999,7 @@ code{font-family:var(--vscode-editor-font-family);}
   </div>
 </div>
 <div class="toolbarStatsRow"><div class="stats" id="stats"></div></div>
-<div id="rowContextMenu" class="contextMenu"><button id="createBeadAction" type="button">Create</button><button id="closeBeadAction" type="button">Close</button></div>
+<div id="rowContextMenu" class="contextMenu" role="menu"><button id="createBeadAction" type="button" role="menuitem">Create</button><button id="closeBeadAction" type="button" role="menuitem">Close</button></div>
 ${bodyHtml}
 ${warningHtml}
 ${errorHtml}
