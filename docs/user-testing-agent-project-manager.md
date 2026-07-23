@@ -9,6 +9,8 @@ acceptance target is not reported as an implemented feature.
 - **Current**: expected from the current implementation.
 - **Source-preview completed**: exercised with compiled webview source and synthetic fixtures; this
   is not evidence from an Extension Host or installed VSIX.
+- **Packaged partially verified**: exercised in an installed VSIX, but not every named scenario or
+  state-changing approval path has passed.
 - **Pending packaged verification**: implemented behavior whose Extension Host/VSIX user test has
   not been run.
 - **Future-only**: acceptance target for a roadmap item; failure is expected until that item lands.
@@ -34,7 +36,7 @@ and any unexpected behavior. Capture screenshots for visible state and command l
 Run the focused current-behavior suite:
 
 ```bash
-pnpm exec vitest run tests/beadsData.test.ts tests/beadsGraphModel.test.ts tests/beadsProjectState.test.ts tests/beadsWebviewMetadata.test.ts tests/beadsMissionControlWebview.test.ts tests/beadsProtocol.test.ts tests/beadsRowVisibility.test.ts tests/worktreeSyncGuard.test.ts
+pnpm exec vitest run tests/beadsData.test.ts tests/beadsGraphModel.test.ts tests/beadsProjectState.test.ts tests/beadsWebviewMetadata.test.ts tests/beadsMissionControlWebview.test.ts tests/beadsProtocol.test.ts tests/beadsRowVisibility.test.ts tests/worktreeSyncGuard.test.ts tests/planDraft.test.ts tests/planGraph.test.ts tests/planPreview.test.ts tests/planDraftController.test.ts tests/planImport.test.ts tests/beadsWriteCapability.test.ts
 ```
 
 Then run the complete quality gate:
@@ -142,6 +144,40 @@ pnpm run compile
   report complete success.
 - **Evidence:** Per-task result object and fake `bd`/session-launch call order.
 
+### AUTO-12 — Validate and preview a Plan Draft — Current
+
+- **Given:** Valid, duplicate-ID, missing-dependency, self-dependent, cyclic, and HTML-containing
+  drafts.
+- **When:** The draft is parsed, validated, projected, and rendered.
+- **Then:** Specific path/task errors are returned; valid dependencies, Critical Path, parallel
+  groups, acceptance criteria, and escaped text are shown without a Beads write.
+- **Evidence:** `planDraft.test.ts`, `planGraph.test.ts`, and `planPreview.test.ts`.
+
+### AUTO-13 — Keep Preview and Cancel read-only — Current
+
+- **Given:** A locally edited valid draft and a message recorder.
+- **When:** Preview is selected and then Cancel is selected.
+- **Then:** Preview updates local output; Cancel clears it; no import message or mutation is
+  recorded.
+- **Evidence:** `planDraftController.test.ts` and the packaged interaction result below.
+
+### AUTO-14 — Gate and report Plan Import — Current
+
+- **Given:** Compatible, missing-executable, unsupported-command, schema-mismatch, and
+  operation-three-failure fixtures.
+- **When:** Capability is probed or an approved mutation list is executed.
+- **Then:** Only compatible capability enables import. Partial execution lists completed, failed,
+  and unexecuted operations without claiming rollback.
+- **Evidence:** `beadsWriteCapability.test.ts`, `planImport.test.ts`, and
+  `planIntegrationMetadata.test.ts`.
+
+### AUTO-15 — Report unsupported sync truthfully — Current
+
+- **Given:** An installed `bd` that returns unknown command for `sync`.
+- **When:** workspace sync is requested.
+- **Then:** The result is unsupported and the UI does not report successful synchronization.
+- **Evidence:** `beadsSync.test.ts`.
+
 ## Completed source-preview check
 
 The following check used the compiled current webview script, synthetic fixture data, and a local
@@ -164,6 +200,25 @@ browser page. It verifies user-visible source behavior, but it does not exercise
   preflight reason; **All** restored the Done task; and the 640 px view remained usable with no
   horizontal `scrollWidth` overflow.
 - **Evidence level:** compiled-source browser preview only. PM-004D/MAN-10 remains pending.
+
+## Packaged VSIX result — 2026-07-23
+
+- **Artifact:** `beads-git-graph-0.4.20260710.vsix`, SHA-256
+  `d73d18fcb297787590887afa14aa29229f4b3e4c9e36b61757e95097eece1736`.
+- **Install/activation:** the artifact installed as
+  `ToppyMicroServices.beads-git-graph@0.4.20260710` in an isolated extension directory and opened
+  the Beads webview in an isolated VS Code profile.
+- **Plan observation:** in an empty workspace, **Load example** rendered two tasks, one dependency,
+  `task-a -> task-b` as Critical Path, and five ordered mutations. Import remained disabled because
+  no initialized Beads workspace existed.
+- **Interaction observation:** **Cancel** cleared the draft and preview. Four Tab presses from
+  **Plan** reached the draft editor. At 640 CSS px, document and body scroll widths remained 640 px.
+- **Mutation evidence:** separately, the production import executor created two tasks and their
+  dependency in a compatible disposable Beads database. The current repository database was not
+  migrated, initialized, bootstrapped, synchronized, or written.
+- **Boundary:** this passes packaged activation and the named Plan preview/Cancel/keyboard/narrow
+  checks. It does not pass the complete MAN-10 Manage workflow or the packaged Plan approval,
+  success-result, and partial-failure UI.
 
 ## Extension Host and manual checks
 
@@ -271,27 +326,49 @@ fixture between state-changing scenarios.
   640 px. Running is described as recorded state, not verified live activity.
 - **Evidence:** Packaged version/commit, fixture, before/after screenshots, keyboard recording,
   captured webview messages, fake `bd` log, and pass/fail per expected statement.
-- **Status:** Pending. The completed browser preview is not a substitute for this test.
+- **Status:** Partially verified. Packaged activation and Plan interactions passed, but the complete
+  Manage fixture and state-changing path remain pending.
 
-## Roadmap-only user acceptance
+## Plan user acceptance
 
-These tests describe intended behavior and must not be used as evidence that the feature exists.
+Plan Draft is implemented. Source tests and the packaged observations below do not replace the
+remaining packaged approval-path checks.
 
-### FUT-01 — Draft, preview, and cancel a plan — Future-only
+### PLAN-01 — Draft, preview, and cancel a plan — Packaged partially verified
 
 - **Setup:** Prepare valid, incomplete, missing-dependency, self-dependent, and cyclic plan drafts.
 - **Steps:** Validate and preview each draft; edit one dependency; cancel without approving.
 - **Expected:** Specific validation errors appear, the preview graph updates, and Cancel performs no
   Beads write.
 - **Evidence:** Preview/error screenshots and an empty fake `bd` mutation log.
+- **Observed:** an installed VSIX loaded the example, rendered two tasks, one dependency, the
+  `task-a -> task-b` Critical Path, parallel groups, and five ordered mutations. Cancel cleared the
+  draft, keyboard focus reached the editor, and the 640 CSS px view had no horizontal overflow.
 
-### FUT-02 — Import an approved plan with partial failure — Future-only
+### PLAN-02 — Import an approved plan with partial failure — Current, packaged approval pending
 
 - **Setup:** Use a compatible disposable Beads workspace and fail the third planned mutation.
 - **Steps:** Review the exact mutation preview and approve it.
 - **Expected:** Created IDs, failed mutation, and unexecuted work are listed without claiming rollback
   or success. Unsupported Beads environments keep import disabled.
 - **Evidence:** Approval screenshot, ordered command log, and final Beads state.
+- **Observed:** the production executor created two tasks and one dependency in a compatible
+  disposable database with Plan metadata preserved. The simulated third-operation failure returned
+  completed, failed, and unexecuted groups. The packaged approval/result UI is still pending.
+
+### PLAN-03 — Gate writes on Beads capability and schema compatibility — Current
+
+- **Setup:** Provide compatible, missing-command, unsupported-command, and schema-mismatch fake
+  Beads environments without accepting a migration.
+- **Steps:** Run the planned non-mutating capability probe and inspect every mutation control.
+- **Expected:** Only the observed compatible environment enables mutations. Unsupported and
+  schema-mismatch states show their exact reason and do not initialize, migrate, or emit a mutation.
+- **Evidence:** Capability result, disabled-control screenshots, and an executable call log with no
+  mutation or migration command.
+
+## Remaining roadmap-only user acceptance
+
+These tests describe intended behavior and must not be used as evidence that the feature exists.
 
 ### FUT-03 — Evidence freshness and intervention — Future-only
 
@@ -308,16 +385,6 @@ These tests describe intended behavior and must not be used as evidence that the
 - **Expected:** Commits, changed files, tests/checks, and unknowns are visible; Cancel makes no
   mutation; closing always requires explicit user approval.
 - **Evidence:** Evidence-view screenshots, fake `bd close` log, and final status.
-
-### FUT-05 — Gate writes on Beads capability and schema compatibility — Future-only
-
-- **Setup:** Provide compatible, missing-command, unsupported-command, and schema-mismatch fake
-  Beads environments without accepting a migration.
-- **Steps:** Run the planned read-only capability probe and inspect every mutation control.
-- **Expected:** Only the observed compatible environment enables mutations. Unsupported and
-  schema-mismatch states show their exact reason and do not initialize, migrate, or emit a mutation.
-- **Evidence:** Capability result, disabled-control screenshots, and an executable call log with no
-  mutation or migration command.
 
 ## Result summary
 

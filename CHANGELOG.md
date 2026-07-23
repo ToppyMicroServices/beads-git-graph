@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add a locally validated Plan Draft preview with dependency graph, Critical Path, parallel groups,
+  and exact Beads mutations.
+- Gate approved Plan Import on observed Beads write capabilities and report partial results without
+  claiming rollback.
+
+### Fixed
+
+- Stop reporting a successful Beads sync when the installed CLI does not provide `bd sync`.
+
 ## [0.4.20260710] - 2026-07-08
 
 ### Fixed

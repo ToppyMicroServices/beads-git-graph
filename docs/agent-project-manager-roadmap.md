@@ -48,8 +48,10 @@ Every child task states:
       is declared.
 
 Current limits: execution hints are recorded metadata rather than verified live session state;
-progress can come from issue fields or notes; there is no plan-draft workflow, evidence freshness
-model, or packaged-extension verification of the new Manage view yet.
+progress can come from issue fields or notes; there is no evidence freshness model or structured
+allocation suggestion workflow. Plan Draft is implemented, but its complete approval interaction
+and the full Manage scenario still need packaged Extension Host verification in a trusted,
+compatible disposable workspace.
 
 ## P0 — Agent Work Queue MVP
 
@@ -135,7 +137,7 @@ model, or packaged-extension verification of the new Manage view yet.
     browser preview and recorded separately from Extension Host evidence.
   - **Depends:** PM-003C, PM-004B.
   - **Tier:** low-cost.
-- [ ] **PM-004D — Verify an installed packaged extension — pending**
+- [ ] **PM-004D — Verify an installed packaged extension — partially verified**
   - **Input:** a freshly packaged VSIX, a disposable Git/Beads workspace, and the MAN-10 fixture in
     `docs/user-testing-agent-project-manager.md`.
   - **Edit target:** the MAN-10 result record and screenshots; product code only if a reproducible
@@ -145,6 +147,12 @@ model, or packaged-extension verification of the new Manage view yet.
     this task.
   - **Depends:** PM-005A through PM-005G and a packaged build.
   - **Tier:** capable.
+  - **Observed:** the packaged extension activated in an isolated Extension Host; its webview loaded
+    synthetic Beads data and a fake `bd` without a migration, bootstrap, sync, or write. The packaged
+    Plan view was exercised by mouse and keyboard at 640 CSS px without horizontal overflow.
+  - **Remaining:** complete every MAN-10 Manage/Details/Start/refresh statement in a trusted,
+    initialized disposable workspace. The source preview and partial packaged checks do not satisfy
+    the full task.
 
 ### PM-005 — Queue safety hardening — completed
 
@@ -216,14 +224,14 @@ model, or packaged-extension verification of the new Manage view yet.
 
 ### PM-101 — Define and validate a Plan Draft
 
-- [ ] **PM-101A — Define the versioned draft shape**
+- [x] **PM-101A — Define the versioned draft shape**
   - **Input:** goal, task, dependency, acceptance, priority, optional model, and SSOT requirements.
   - **Edit target:** one new pure Plan Draft model under `src/`.
   - **Done/test:** a minimal valid draft parses and round-trips without adding values; one fixture
     test proves the round-trip.
   - **Depends:** PM-001A.
   - **Tier:** low-cost.
-- [ ] **PM-101B — Return local validation errors**
+- [x] **PM-101B — Return local validation errors**
   - **Input:** valid, duplicate-ID, missing-dependency, self-dependency, and cyclic fixtures.
   - **Edit target:** the PM-101A pure validator and its one table-driven test file.
   - **Done/test:** each invalid fixture returns a specific task/path error and performs no Beads
@@ -233,21 +241,21 @@ model, or packaged-extension verification of the new Manage view yet.
 
 ### PM-102 — Preview a proposed plan
 
-- [ ] **PM-102A — Render a read-only draft summary**
+- [x] **PM-102A — Render a read-only draft summary**
   - **Input:** a validated PM-101 draft.
   - **Edit target:** one Plan Preview webview section.
   - **Done/test:** goal, tasks, dependencies, acceptance criteria, and validation errors are visible;
     one static render test checks escaped content.
   - **Depends:** PM-101B.
   - **Tier:** capable.
-- [ ] **PM-102B — Project the draft into the existing graph**
+- [x] **PM-102B — Project the draft into the existing graph**
   - **Input:** the PM-101 graph plus current graph-model contracts.
   - **Edit target:** one pure draft-to-graph adapter and its fixture test.
   - **Done/test:** Critical Path and parallel candidates update when one dependency changes; the
     fixture test asserts the resulting nodes/edges/path.
   - **Depends:** PM-101B, BASE-001.
   - **Tier:** low-cost.
-- [ ] **PM-102C — Prove Cancel is read-only**
+- [x] **PM-102C — Prove Cancel is read-only**
   - **Input:** a modified preview and a fake mutation recorder.
   - **Edit target:** the preview Cancel handler and one interaction test.
   - **Done/test:** Cancel closes/discards the draft and records zero Beads mutation calls.
@@ -256,14 +264,14 @@ model, or packaged-extension verification of the new Manage view yet.
 
 ### PM-103 — Detect Beads write capabilities
 
-- [ ] **PM-103A — Classify observed command capability**
+- [x] **PM-103A — Classify observed command capability**
   - **Input:** compatible output, missing executable, unknown command, and schema mismatch results.
-  - **Edit target:** one read-only capability probe/model under `src/`.
+  - **Edit target:** one non-mutating capability probe/model under `src/`.
   - **Done/test:** the model returns supported or disabled plus the observed reason; a fake-executable
     test covers all four cases without initialization or migration.
   - **Depends:** PM-101A.
   - **Tier:** capable.
-- [ ] **PM-103B — Bind capability to Plan Import controls**
+- [x] **PM-103B — Bind capability to Plan Import controls**
   - **Input:** PM-103A result and Plan Preview actions.
   - **Edit target:** Plan Preview action rendering only.
   - **Done/test:** Import is enabled only for observed compatible capability; a static test asserts
@@ -273,27 +281,33 @@ model, or packaged-extension verification of the new Manage view yet.
 
 ### PM-104 — Import an approved plan
 
-- [ ] **PM-104A — Show the exact pending mutation list**
+- [x] **PM-104A — Show the exact pending mutation list**
   - **Input:** an approved, validated draft and supported PM-103 capability.
   - **Edit target:** one pure draft-to-mutations projector plus preview rendering.
   - **Done/test:** ordered create/update/dependency operations and arguments are visible before
     confirmation; one snapshot test proves the order.
   - **Depends:** PM-102B, PM-103B.
   - **Tier:** capable.
-- [ ] **PM-104B — Report partial import results**
+- [x] **PM-104B — Report partial import results**
   - **Input:** the PM-104A mutation list and a fake executor that fails operation three.
   - **Edit target:** the Plan Import executor/result model.
   - **Done/test:** created IDs, the failure, and unexecuted operations are returned without claiming
     rollback; the fake-executor test asserts call order and result groups.
   - **Depends:** PM-104A.
   - **Tier:** capable.
-- [ ] **PM-104C — Approve import in a disposable workspace**
+- [ ] **PM-104C — Approve import in a disposable workspace — partially verified**
   - **Input:** a packaged extension, a compatible disposable Beads workspace, and a small draft.
   - **Edit target:** test evidence only.
   - **Done/test:** explicit approval preserves task/dependency fidelity and the simulated failure is
     reported as specified; record final Beads state and command log.
   - **Depends:** PM-104B.
   - **Tier:** human-decision.
+  - **Observed:** the production import executor created two tasks and their dependency in a
+    compatible disposable Beads database with title, priority, acceptance criteria, model, SSOT,
+    goal, and draft-version metadata preserved. The packaged Plan view also completed local
+    preview, Cancel, keyboard, and 640 px checks.
+  - **Remaining:** exercise the packaged approval dialog and its final/partial result UI in a
+    trusted, initialized disposable workspace. No accepted database was migrated or bootstrapped.
 
 ## P2 — Allocate
 
@@ -497,8 +511,9 @@ model, or packaged-extension verification of the new Manage view yet.
 
 - Do not describe the product as live agent monitoring until PM-301 and PM-302 are complete.
 - Do not enable Plan import until PM-103 confirms the active Beads environment.
-- Source-level tests and a browser preview are valid evidence for PM-001 through PM-004C only. They
-  do not count as Extension Host or installed-VSIX evidence.
+- Source-level tests and a browser preview are valid only for the tasks that name those evidence
+  levels. They do not count as Extension Host or installed-VSIX evidence.
 - The Agent Work Queue milestone is not packaged-extension verified until PM-004D passes.
+- Plan Import is not fully packaged-extension verified until PM-104C passes.
 - A future milestone is complete only after its named source tests and packaged-extension user test
   both pass.

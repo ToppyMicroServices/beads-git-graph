@@ -17,6 +17,7 @@ No telemetry. Privacy-first. Security-first.
 - Shows optional parallel, AI model, SSOT/context, worktree, branch, PR, check, and sync-risk hints on Beads items
 - Shows a Beads execution map with Critical Path, dependency edges, parent context, merge/worktree risk, Start AI, Start Parallel, and merge actions
 - Adds a Manage view that groups recorded work into Needs attention, Review, Running, Queue, and Done
+- Adds a Plan Draft workflow that validates and previews tasks, dependencies, Critical Path, parallel groups, and exact Beads mutations before import
 
 ## Use It
 
@@ -37,6 +38,24 @@ Open **Manage** in the Beads view to see the Agent Work Queue. It derives each l
 - **Done**: Beads reports the task as closed
 
 The Manage view does not claim live agent monitoring. “Running” reflects recorded Beads status, and unavailable evidence remains unconfirmed. In Manage, **Start AI** is enabled only when `bd ready` confirms readiness. Use **Details**, **Start AI**, and **Merge PRs** to continue through the existing workflow.
+
+## Plan Agent Work
+
+Open **Plan** in the Beads view, paste a version 1 Plan Draft or select **Load example**, and then
+select **Preview**. The preview is local and read-only. It shows the goal, tasks, dependencies,
+acceptance criteria, SSOT/model hints, Critical Path, parallel groups, and the exact ordered Beads
+mutations that an import would request.
+
+**Import Plan** is enabled only when the active workspace has a Beads database and the installed
+`bd` executable demonstrates the required create, update, and dependency commands. The Extension
+Host parses and validates the draft again, repeats the capability check, shows the mutation list,
+and asks for explicit approval before executing it. **Cancel** discards the draft without a Beads
+write.
+
+A missing executable, unsupported command, or schema mismatch keeps import disabled and shows the
+observed reason. The extension does not initialize, bootstrap, or migrate a Beads database. If an
+approved import fails partway through, it stops, reports created IDs plus failed and unexecuted
+operations, and does not claim rollback.
 
 ## Multi-Agent Hints
 

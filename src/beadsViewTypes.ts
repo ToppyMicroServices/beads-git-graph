@@ -1,4 +1,5 @@
 import { type BeadItem } from "./beadsData";
+import { type BeadsWriteCapability } from "./beadsWriteCapability";
 import { type CommandAvailability } from "./commandAvailability";
 
 export interface BeadGroup {
@@ -25,6 +26,11 @@ export interface BeadLoadResult {
   bdExecutableStatus: CommandAvailability;
   errors: { source: string; message: string }[];
   warnings: BeadWarning[];
+  planImportCapabilities?: Array<{
+    workspace: string;
+    workspacePath: string;
+    capability: BeadsWriteCapability;
+  }>;
 }
 
 export interface CliLoadResult {

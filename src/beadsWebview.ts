@@ -817,6 +817,17 @@ export function renderBeadsWebviewHtml(
     result.errors.length > 0
       ? `<div class="errors"><strong>Parse errors</strong><ul>${result.errors.map((error) => `<li>${escapeHtml(error.source)}: ${escapeHtml(error.message)}</li>`).join("")}</ul></div>`
       : "";
+  const planImportCapabilities = result.planImportCapabilities ?? [];
+  const planWorkspaceOptions =
+    planImportCapabilities.length === 0
+      ? '<option value="">No initialized Beads workspace</option>'
+      : planImportCapabilities
+          .map(
+            ({ workspace, workspacePath, capability }) =>
+              `<option value="${escapeHtml(workspacePath)}" data-plan-capability="${escapeHtml(encodeURIComponent(JSON.stringify(capability)))}">${escapeHtml(workspace)}</option>`
+          )
+          .join("");
+  const planDraftHtml = `<section id="planDraftView" aria-label="Plan Draft"><div class="planDraftHeader"><div><div class="workspaceName">Plan Draft</div><p>Validate dependencies and review every Beads mutation before approval.</p></div><label>Target workspace<select id="planDraftWorkspace"${planImportCapabilities.length === 0 ? " disabled" : ""}>${planWorkspaceOptions}</select></label></div><div class="planDraftEditor"><label for="planDraftText">Draft JSON</label><textarea id="planDraftText" spellcheck="false" placeholder="Paste a version 1 Plan Draft, or load the example."></textarea><div class="planDraftEditorActions"><button id="loadPlanDraftExample" type="button">Load example</button><button id="previewPlanDraft" type="button">Preview Plan</button></div></div><div id="planDraftPreview" aria-live="polite"><div class="empty">Preview a draft to see tasks, validation errors, dependency levels, Critical Path, parallel candidates, and pending mutations.</div></div></section>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -885,6 +896,10 @@ section{margin-bottom:12px;}
 body[data-view-mode="graph"] .tableWrap,body[data-view-mode="control"] .tableWrap{display:none;}
 body[data-view-mode="table"] .graphPane,body[data-view-mode="control"] .graphPane{display:none;}
 body[data-view-mode="table"] .agentWorkQueue,body[data-view-mode="graph"] .agentWorkQueue{display:none;}
+body[data-view-mode="plan"] #beadsWorkspaceViews{display:none;}
+body:not([data-view-mode="plan"]) #planDraftView{display:none;}
+body[data-view-mode="plan"] .toolbarStatsRow{display:none;}
+body[data-view-mode="plan"] .preset,body[data-view-mode="plan"] #chips,body[data-view-mode="plan"] .toolbarMain>.menu,body[data-view-mode="plan"] #clearFilters{display:none;}
 .hierarchyOverlay{position:absolute;inset:0;z-index:0;width:100%;height:100%;pointer-events:none;overflow:visible;}
 table{position:relative;z-index:1;width:100%;border-collapse:separate;border-spacing:0;font-size:13px;table-layout:fixed;}
 th,td{text-align:left;border-bottom:1px solid var(--vscode-panel-border);padding:6px 5px;vertical-align:middle;font-size:13px;}
@@ -1075,6 +1090,40 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .assignStartBead,.mergeParallelPrs{height:24px;padding:0 8px;font-weight:650;}
 .mergeParallelPrs{border-color:rgba(249,115,22,.55);background:rgba(249,115,22,.16);color:var(--vscode-charts-orange,#f97316);}
 .assignStartBead:disabled,.mergeParallelPrs:disabled{opacity:.45;cursor:default;}
+.planDraftHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:10px;padding:12px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));}
+.planDraftHeader p{margin:4px 0 0;color:var(--vscode-descriptionForeground);}
+.planDraftHeader label{display:grid;gap:4px;min-width:min(320px,45%);font-size:11px;font-weight:700;}
+.planDraftHeader select{min-width:0;height:28px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border,var(--vscode-panel-border));border-radius:6px;padding:0 7px;}
+.planDraftEditor{display:grid;gap:6px;padding:12px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);}
+.planDraftEditor>label{font-weight:700;}
+.planDraftEditor textarea{box-sizing:border-box;width:100%;min-height:220px;resize:vertical;padding:10px;border:1px solid var(--vscode-input-border,var(--vscode-panel-border));border-radius:6px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);font-family:var(--vscode-editor-font-family);line-height:1.45;}
+.planDraftEditorActions,.planPreviewActions{display:flex;justify-content:flex-end;gap:8px;}
+#planDraftPreview{margin-top:10px;}
+.planPreviewResult{display:grid;gap:10px;}
+.planValidation,.planCapability{display:grid;gap:3px;padding:9px 10px;border:1px solid var(--vscode-panel-border);border-radius:7px;}
+.planValidationValid,.planCapability.supported{border-color:rgba(34,197,94,.48);background:rgba(34,197,94,.1);}
+.planValidationInvalid,.planCapability.disabled{border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.1);}
+.planValidation ul{margin:5px 0 0;padding-left:20px;}
+.planDraftSummary{padding:12px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);}
+.planDraftSummary h2{margin:0 0 8px;font-size:16px;}
+.planDraftStats{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px;}
+.planDraftStats span{padding:2px 7px;border:1px solid var(--vscode-panel-border);border-radius:999px;font-size:11px;}
+.planPathSummary,.planParallelSummary{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px;margin:5px 0;}
+.planDraftGraph{display:flex;align-items:stretch;gap:12px;overflow-x:auto;margin:12px 0;padding:10px;border:1px solid var(--vscode-panel-border);border-radius:7px;}
+.planDraftLevel{display:grid;align-content:start;gap:6px;min-width:180px;}
+.planDraftLevelLabel{font-size:10px;font-weight:750;color:var(--vscode-descriptionForeground);text-transform:uppercase;}
+.planDraftNode{display:grid;gap:3px;padding:7px;border:1px solid var(--vscode-panel-border);border-radius:6px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));}
+.planDraftNode.critical{border-color:rgba(236,72,153,.62);box-shadow:inset 3px 0 0 var(--vscode-charts-pink,#ec4899);}
+.planDraftNode span{font-size:11px;color:var(--vscode-descriptionForeground);}
+.planDraftTasks{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;}
+.planDraftTask{padding:9px;border:1px solid var(--vscode-panel-border);border-radius:7px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));font-size:11px;line-height:1.45;}
+.planDraftTaskHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px;}
+.planDraftTask ul{margin:3px 0 6px;padding-left:18px;}
+.planMutationPreview{padding:10px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);}
+.planMutationPreview summary{cursor:pointer;font-weight:700;}
+.planMutationPreview ol{display:grid;gap:7px;margin:8px 0 0;padding-left:22px;}
+.planMutationPreview li span{display:inline-block;min-width:95px;font-size:10px;font-weight:750;text-transform:uppercase;color:var(--vscode-descriptionForeground);}
+.planMutationPreview code{display:block;margin-top:2px;overflow-wrap:anywhere;white-space:pre-wrap;}
 @media (max-width:560px){
   .toolbar{grid-template-columns:1fr;gap:6px;}
   .toolbarActions{justify-content:stretch;}
@@ -1113,6 +1162,10 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
   .graphMapHeader{align-items:start;}
   .graphLegend{justify-content:flex-start;}
   .graphCanvas{min-height:100%;}
+  .planDraftHeader{display:grid;}
+  .planDraftHeader label{min-width:0;}
+  .planPathSummary,.planParallelSummary{grid-template-columns:1fr;gap:2px;}
+  .planDraftEditor textarea{min-height:180px;}
 }
 code{font-family:var(--vscode-editor-font-family);}
 </style>
@@ -1124,6 +1177,7 @@ code{font-family:var(--vscode-editor-font-family);}
       <button id="tableView" class="active" type="button">Table</button>
       <button id="graphView" type="button">Graph</button>
       <button id="controlView" type="button">Manage</button>
+      <button id="planView" type="button">Plan</button>
     </div>
     <select id="preset" class="preset">
       <option value="default" selected>Default (Active + Unknown)</option>
@@ -1162,7 +1216,8 @@ code{font-family:var(--vscode-editor-font-family);}
 </div>
 <div class="toolbarStatsRow"><div class="stats" id="stats"></div></div>
 <div id="rowContextMenu" class="contextMenu" role="menu"><button id="createBeadAction" type="button" role="menuitem">Create</button><button id="closeBeadAction" type="button" role="menuitem">Close</button></div>
-${bodyHtml}
+<div id="beadsWorkspaceViews">${bodyHtml}</div>
+${planDraftHtml}
 ${warningHtml}
 ${errorHtml}
 <script nonce="${nonce}" src="${scriptUri}"></script>

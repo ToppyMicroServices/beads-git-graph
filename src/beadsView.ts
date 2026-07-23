@@ -28,10 +28,16 @@ import {
   type EmptyBeadWorkspace
 } from "./beadsViewTypes";
 import { renderBeadsWebviewHtml } from "./beadsWebview";
+import {
+  type BeadsCapabilityCommandResult,
+  probeBeadsWriteCapability
+} from "./beadsWriteCapability";
 import { BranchSwitchSyncCoordinator } from "./branchSwitchSync";
 import { checkExecutable } from "./commandAvailability";
 import { getConfig } from "./config";
 import { GitGraphView } from "./gitGraphView";
+import { parsePlanDraft } from "./planDraft";
+import { executePlanImport, formatPlanMutation, projectPlanDraftMutations } from "./planImport";
 
 type CreateBeadType = "task" | "feature" | "bug" | "epic" | "chore";
 type CreateBeadStatus = "open" | "in_progress" | "blocked" | "closed";
@@ -100,8 +106,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     this.extensionUri = extensionUri;
     this.branchSyncCoordinator = new BranchSwitchSyncCoordinator(
       (workspacePath) => this.loadCurrentBranchKey(workspacePath),
-      (workspacePath) =>
-        syncBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath),
+      async (workspacePath) => {
+        await syncBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
+      },
       async () => {
         await this.refresh();
       },
@@ -302,6 +309,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const unavailableWorkspaces: EmptyBeadWorkspace[] = [];
     const errors: { source: string; message: string }[] = [];
     const warnings: BeadWarning[] = [];
+    const planImportCapabilities: NonNullable<BeadLoadResult["planImportCapabilities"]> = [];
     const bdExecutableStatus = await checkExecutable(getConfig().bdPath());
 
     for (const folder of workspaceFolders) {
@@ -312,6 +320,17 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       const legacyFiles = await this.findLegacyBeadFiles(folder);
       const beadsDirUri = vscode.Uri.joinPath(folder.uri, ".beads");
       const hasBeadsDirectory = await this.pathExists(beadsDirUri);
+
+      if (hasBeadsDirectory) {
+        planImportCapabilities.push({
+          ...workspaceInfo,
+          capability: await probeBeadsWriteCapability(
+            bdExecutableStatus.available,
+            bdExecutableStatus.message,
+            (args) => this.runBdCapabilityProbe(args, folder.uri.fsPath)
+          )
+        });
+      }
 
       if (hasBeadsDirectory && bdExecutableStatus.available) {
         try {
@@ -361,7 +380,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       ),
       bdExecutableStatus,
       errors,
-      warnings
+      warnings,
+      planImportCapabilities: planImportCapabilities.sort((a, b) =>
+        a.workspace.localeCompare(b.workspace)
+      )
     };
   }
 
@@ -383,9 +405,93 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       return;
     }
 
+    if (
+      message.command === "importPlanDraft" &&
+      typeof message.workspacePath === "string" &&
+      typeof message.draftText === "string"
+    ) {
+      const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath.trim());
+      if (workspacePath === null) {
+        vscode.window.showWarningMessage(
+          "Refusing to import a Plan Draft outside an initialized workspace folder."
+        );
+        return;
+      }
+      if (message.draftText.length > 1_000_000) {
+        vscode.window.showWarningMessage("The Plan Draft is too large to import.");
+        return;
+      }
+
+      let parsedValue: unknown;
+      try {
+        parsedValue = JSON.parse(message.draftText);
+      } catch (error) {
+        vscode.window.showWarningMessage(
+          error instanceof Error
+            ? `Invalid Plan Draft JSON: ${error.message}`
+            : "Invalid Plan Draft JSON."
+        );
+        return;
+      }
+      const parsed = parsePlanDraft(parsedValue);
+      if (parsed.draft === null || parsed.errors.length > 0) {
+        const details = parsed.errors
+          .map((error) => `${error.path || "draft"}: ${error.message}`)
+          .join("\n");
+        vscode.window.showWarningMessage(
+          `Plan Draft validation failed.${details === "" ? "" : `\n${details}`}`
+        );
+        return;
+      }
+
+      const executableStatus = await checkExecutable(getConfig().bdPath());
+      const capability = await probeBeadsWriteCapability(
+        executableStatus.available,
+        executableStatus.message,
+        (args) => this.runBdCapabilityProbe(args, workspacePath)
+      );
+      if (!capability.supported) {
+        vscode.window.showWarningMessage(`Plan import is disabled: ${capability.reason}`);
+        return;
+      }
+
+      const mutations = projectPlanDraftMutations(parsed.draft);
+      const confirmation = await vscode.window.showWarningMessage(
+        `Import ${parsed.draft.tasks.length} planned task(s) into ${path.basename(workspacePath)}?`,
+        {
+          modal: true,
+          detail: `${mutations.map((mutation, index) => `${index + 1}. ${formatPlanMutation(mutation)}`).join("\n")}\n\nMutations stop on the first failure. No automatic rollback is attempted.`
+        },
+        "Import Plan"
+      );
+      if (confirmation !== "Import Plan") {
+        return;
+      }
+
+      const importResult = await executePlanImport(mutations, (args) =>
+        this.runBdCommand([...args], workspacePath)
+      );
+      await this.refresh();
+      const createdSummary =
+        importResult.createdIds.length === 0
+          ? "No tasks were created."
+          : `Created: ${importResult.createdIds.map(({ taskId, issueId }) => `${taskId} → ${issueId}`).join(", ")}.`;
+      if (importResult.failed !== null) {
+        vscode.window.showErrorMessage(
+          `Plan import stopped after ${importResult.completed.length} operation(s). ${createdSummary} Failed: ${formatPlanMutation(importResult.failed.mutation)} — ${importResult.failed.error}. ${importResult.unexecuted.length} operation(s) were not executed. No rollback was attempted.`
+        );
+        return;
+      }
+      vscode.window.showInformationMessage(
+        `Plan imported with ${importResult.completed.length} operation(s). ${createdSummary}`
+      );
+      return;
+    }
+
     if (message.command === "syncAllBeads") {
       const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
       const syncedWorkspaces: string[] = [];
+      const unsupportedWorkspaces: string[] = [];
 
       for (const folder of workspaceFolders) {
         const beadsDirUri = vscode.Uri.joinPath(folder.uri, ".beads");
@@ -393,18 +499,30 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           continue;
         }
 
-        await syncBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), folder.uri.fsPath);
-        syncedWorkspaces.push(folder.name);
+        const result = await syncBeadsWorkspace(
+          (args, cwd) => this.runBdCommand(args, cwd),
+          folder.uri.fsPath
+        );
+        if (result.status === "synced") {
+          syncedWorkspaces.push(folder.name);
+        } else {
+          unsupportedWorkspaces.push(folder.name);
+        }
       }
 
       await this.refresh();
 
-      if (syncedWorkspaces.length === 0) {
-        vscode.window.showWarningMessage("No Beads workspace was found to sync.");
-      } else {
+      if (syncedWorkspaces.length > 0) {
         vscode.window.showInformationMessage(
           `Synced Beads data for ${syncedWorkspaces.join(", ")}.`
         );
+      }
+      if (unsupportedWorkspaces.length > 0) {
+        vscode.window.showWarningMessage(
+          `The Beads CLI does not support sync; data was not synced for ${unsupportedWorkspaces.join(", ")}.`
+        );
+      } else if (syncedWorkspaces.length === 0) {
+        vscode.window.showWarningMessage("No Beads workspace was found to sync.");
       }
       return;
     }
@@ -419,11 +537,20 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       }
 
       try {
-        await syncBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
-        await this.refresh();
-        vscode.window.showInformationMessage(
-          `Synced Beads data for ${path.basename(workspacePath)}.`
+        const result = await syncBeadsWorkspace(
+          (args, cwd) => this.runBdCommand(args, cwd),
+          workspacePath
         );
+        await this.refresh();
+        if (result.status === "synced") {
+          vscode.window.showInformationMessage(
+            `Synced Beads data for ${path.basename(workspacePath)}.`
+          );
+        } else {
+          vscode.window.showWarningMessage(
+            "The Beads CLI does not support sync; data was not synced."
+          );
+        }
       } catch (error) {
         const messageText = error instanceof Error ? error.message : "Unable to sync Beads data.";
         vscode.window.showErrorMessage(messageText);
@@ -796,9 +923,18 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
 
     await this.runGitCommand(["pull", "--rebase"], workspacePath);
-    await syncBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
+    const syncResult = await syncBeadsWorkspace(
+      (args, cwd) => this.runBdCommand(args, cwd),
+      workspacePath
+    );
     await this.refresh();
-    vscode.window.showInformationMessage(`Merged ${mergedPrs.join(", ")} and synced Beads.`);
+    if (syncResult.status === "synced") {
+      vscode.window.showInformationMessage(`Merged ${mergedPrs.join(", ")} and synced Beads.`);
+    } else {
+      vscode.window.showWarningMessage(
+        `Merged ${mergedPrs.join(", ")}. The Beads CLI does not support sync; data was not synced.`
+      );
+    }
   }
 
   private buildAssignAgentPrompt(values: {
@@ -1770,6 +1906,27 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
             stderr.trim() || `${bdPath} ${args.join(" ")} failed with exit code ${code ?? -1}.`
           )
         );
+      });
+    });
+  }
+
+  private async runBdCapabilityProbe(
+    args: readonly string[],
+    cwd: string
+  ): Promise<BeadsCapabilityCommandResult> {
+    return new Promise((resolve, reject) => {
+      const child = cp.spawn(getConfig().bdPath(), [...args], { cwd });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString();
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+      child.on("error", reject);
+      child.on("close", (code) => {
+        resolve({ exitCode: code ?? -1, stdout, stderr });
       });
     });
   }

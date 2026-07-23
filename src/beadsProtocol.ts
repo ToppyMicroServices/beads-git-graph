@@ -3,6 +3,7 @@ export type BeadsRequestMessage =
   | { command: "openGitGraph" }
   | { command: "syncAllBeads" }
   | { command: "syncBeads"; workspacePath: string }
+  | { command: "importPlanDraft"; workspacePath: string; draftText: string }
   | { command: "openGitGraphForCommit"; commitHash: string }
   | { command: "createBead"; workspacePath: string }
   | { command: "closeBead"; issueId: string; workspacePath: string; title?: string }
@@ -86,6 +87,8 @@ export function isBeadsRequestMessage(message: unknown): message is BeadsRequest
     case "syncBeads":
     case "createBead":
       return typeof record.workspacePath === "string";
+    case "importPlanDraft":
+      return typeof record.workspacePath === "string" && typeof record.draftText === "string";
     case "startParallelBeads":
       return (
         typeof record.workspacePath === "string" &&

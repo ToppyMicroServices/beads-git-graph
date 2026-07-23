@@ -10,7 +10,10 @@ describe("syncBeadsWorkspace", () => {
       return "";
     });
 
-    await syncBeadsWorkspace(runBdCommand, "/tmp/demo");
+    await expect(syncBeadsWorkspace(runBdCommand, "/tmp/demo")).resolves.toEqual({
+      status: "synced",
+      flush: { status: "flushed" }
+    });
 
     expect(calls).toEqual([
       { args: ["sync"], cwd: "/tmp/demo" },
@@ -30,23 +33,50 @@ describe("syncBeadsWorkspace", () => {
     expect(runBdCommand).toHaveBeenCalledTimes(1);
   });
 
-  it("treats missing sync support as a no-op for newer bd builds", async () => {
+  it("reports missing sync support without claiming success", async () => {
     const runBdCommand = vi.fn(async () => {
       throw new Error('unknown command "sync" for "bd"');
     });
 
-    await expect(syncBeadsWorkspace(runBdCommand, "/tmp/demo")).resolves.toBeUndefined();
+    await expect(syncBeadsWorkspace(runBdCommand, "/tmp/demo")).resolves.toEqual({
+      status: "unsupported"
+    });
     expect(runBdCommand).toHaveBeenCalledWith(["sync"], "/tmp/demo");
+    expect(runBdCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a successful sync separately from an unsupported flush", async () => {
+    const runBdCommand = vi.fn(async (args: string[]) => {
+      if (args.length > 1) {
+        throw new Error('unknown command "sync" for "bd"');
+      }
+      return "";
+    });
+
+    await expect(syncBeadsWorkspace(runBdCommand, "/tmp/demo")).resolves.toEqual({
+      status: "synced",
+      flush: { status: "unsupported" }
+    });
   });
 });
 
 describe("flushBeadsWorkspace", () => {
-  it("ignores missing sync support", async () => {
+  it("reports missing sync support", async () => {
     const runBdCommand = vi.fn(async () => {
       throw new Error('unknown command "sync" for "bd"');
     });
 
-    await expect(flushBeadsWorkspace(runBdCommand, "/tmp/demo")).resolves.toBeUndefined();
+    await expect(flushBeadsWorkspace(runBdCommand, "/tmp/demo")).resolves.toEqual({
+      status: "unsupported"
+    });
     expect(runBdCommand).toHaveBeenCalledWith(["sync", "--flush-only"], "/tmp/demo");
+  });
+
+  it("reports a completed flush", async () => {
+    const runBdCommand = vi.fn(async () => "");
+
+    await expect(flushBeadsWorkspace(runBdCommand, "/tmp/demo")).resolves.toEqual({
+      status: "flushed"
+    });
   });
 });

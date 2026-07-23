@@ -1,4 +1,6 @@
 import type { BeadsRequestMessage } from "../src/beadsProtocol";
+import type { BeadsWriteCapability } from "../src/beadsWriteCapability";
+import { renderPlanDraftPreview } from "../src/planPreview";
 import {
   computePackedGraphLayout,
   computeVisibleGraphState,
@@ -10,6 +12,7 @@ import {
   isCollapsedByEpic,
   shouldShowBeadRow
 } from "./beadsRowVisibility";
+import { createPlanDraftController, type PlanDraftPreviewState } from "./planDraftController";
 
 declare function acquireVsCodeApi(): {
   postMessage(message: BeadsRequestMessage): void;
@@ -19,7 +22,7 @@ declare function acquireVsCodeApi(): {
 
 type SortKey = "order" | "updated" | "type" | "priority";
 type StatusFilter = "open" | "in_progress" | "blocked" | "closed" | "other";
-type ViewMode = "table" | "graph" | "control";
+type ViewMode = "table" | "graph" | "control" | "plan";
 type BeadRow = HTMLTableRowElement & { dataset: DOMStringMap };
 type BeadSection = HTMLElement & { dataset: DOMStringMap };
 type GraphScrollState = { left: number; top: number };
@@ -47,6 +50,8 @@ type BeadsWebviewState = {
   graphPan?: GraphPanState;
   graphTransforms?: Record<string, GraphTransformState>;
   graphScroll?: Record<string, GraphScrollState>;
+  planDraftText?: string;
+  planWorkspacePath?: string;
   [key: string]: unknown;
 };
 
@@ -106,6 +111,33 @@ const GRAPH_LANE_GAP = 30;
 const GRAPH_PADDING_X = 28;
 const GRAPH_PADDING_Y = 44;
 const GRAPH_KEYBOARD_PAN_STEP = 40;
+const PLAN_DRAFT_EXAMPLE = JSON.stringify(
+  {
+    version: 1,
+    goal: "Describe the project outcome",
+    tasks: [
+      {
+        id: "task-a",
+        title: "First deliverable",
+        priority: "P1",
+        acceptanceCriteria: ["Describe the observable completion condition"],
+        dependencyIds: [],
+        ssot: ["AGENTS.md"]
+      },
+      {
+        id: "task-b",
+        title: "Dependent deliverable",
+        priority: "P2",
+        acceptanceCriteria: ["Describe the user-visible result"],
+        dependencyIds: ["task-a"],
+        ssot: ["README.md"],
+        model: "optional-model"
+      }
+    ]
+  },
+  null,
+  2
+);
 const PRESET_FILTERS: Record<string, StatusFilter[]> = {
   default: [...DEFAULT_ACTIVE_STATUSES],
   open: ["open"],
@@ -141,8 +173,16 @@ const syncBeadsButton = queryElement<HTMLButtonElement>("#syncBeads");
 const tableViewButton = queryElement<HTMLButtonElement>("#tableView");
 const graphViewButton = queryElement<HTMLButtonElement>("#graphView");
 const controlViewButton = queryElement<HTMLButtonElement>("#controlView");
+const planViewButton = queryElement<HTMLButtonElement>("#planView");
+const planDraftWorkspace = queryElement<HTMLSelectElement>("#planDraftWorkspace");
+const planDraftText = queryElement<HTMLTextAreaElement>("#planDraftText");
+const loadPlanDraftExample = queryElement<HTMLButtonElement>("#loadPlanDraftExample");
+const previewPlanDraft = queryElement<HTMLButtonElement>("#previewPlanDraft");
+const planDraftPreview = queryElement<HTMLDivElement>("#planDraftPreview");
 const bdAvailable = document.body.dataset.bdAvailable === "1";
 const hasSyncWarnings = document.body.dataset.hasSyncWarnings === "1";
+const planDraftController = createPlanDraftController((message) => vscode.postMessage(message));
+let currentPlanPreview: PlanDraftPreviewState | null = null;
 
 if (hasSyncWarnings && bdAvailable) {
   syncBeadsButton.title = "Sync Beads (differences detected)";
@@ -158,7 +198,7 @@ function queryElement<T extends Element>(selector: string) {
 }
 
 function normalizeViewMode(value: unknown): ViewMode {
-  return value === "graph" || value === "control" ? value : "table";
+  return value === "graph" || value === "control" || value === "plan" ? value : "table";
 }
 
 function normalizeGraphZoom(value: unknown) {
@@ -215,6 +255,55 @@ function saveViewMode(mode: ViewMode) {
 function normalizeOptionalDatasetValue(value: string | undefined) {
   const trimmedValue = value?.trim();
   return trimmedValue ? trimmedValue : undefined;
+}
+
+function getSelectedPlanCapability(): BeadsWriteCapability | null {
+  const option = planDraftWorkspace.selectedOptions[0];
+  const encoded = option?.dataset.planCapability;
+  if (!encoded) {
+    return null;
+  }
+  try {
+    const capability = JSON.parse(decodeURIComponent(encoded)) as Partial<BeadsWriteCapability>;
+    if (
+      typeof capability.supported !== "boolean" ||
+      typeof capability.state !== "string" ||
+      typeof capability.reason !== "string"
+    ) {
+      return null;
+    }
+    return capability as BeadsWriteCapability;
+  } catch {
+    return null;
+  }
+}
+
+function renderCurrentPlanPreview() {
+  if (currentPlanPreview === null) {
+    planDraftPreview.innerHTML =
+      '<div class="empty">Preview the current draft before importing it.</div>';
+    return;
+  }
+  planDraftPreview.innerHTML = renderPlanDraftPreview({
+    ...currentPlanPreview,
+    capability: getSelectedPlanCapability()
+  });
+  planDraftPreview
+    .querySelector<HTMLButtonElement>("#cancelPlanDraft")
+    ?.addEventListener("click", () => {
+      planDraftController.cancel();
+      currentPlanPreview = null;
+      planDraftText.value = "";
+      saveWebviewState({ planDraftText: "" });
+      renderCurrentPlanPreview();
+      planDraftText.focus();
+    });
+  planDraftPreview
+    .querySelector<HTMLButtonElement>("#importPlanDraft")
+    ?.addEventListener("click", () => {
+      const capability = getSelectedPlanCapability();
+      planDraftController.importPlan(planDraftWorkspace.value, capability?.supported === true);
+    });
 }
 
 function decodeRowItem(row: BeadRow): BeadRowItem | null {
@@ -684,9 +773,11 @@ function applyViewMode(mode: ViewMode) {
   tableViewButton.classList.toggle("active", mode === "table");
   graphViewButton.classList.toggle("active", mode === "graph");
   controlViewButton.classList.toggle("active", mode === "control");
+  planViewButton.classList.toggle("active", mode === "plan");
   tableViewButton.setAttribute("aria-pressed", mode === "table" ? "true" : "false");
   graphViewButton.setAttribute("aria-pressed", mode === "graph" ? "true" : "false");
   controlViewButton.setAttribute("aria-pressed", mode === "control" ? "true" : "false");
+  planViewButton.setAttribute("aria-pressed", mode === "plan" ? "true" : "false");
   if (mode === "graph") {
     refreshGraphPresentation();
     fitGraphToViewport();
@@ -1713,6 +1804,32 @@ graphViewButton.addEventListener("click", () => {
 controlViewButton.addEventListener("click", () => {
   applyViewMode("control");
 });
+planViewButton.addEventListener("click", () => {
+  applyViewMode("plan");
+});
+loadPlanDraftExample.addEventListener("click", () => {
+  planDraftText.value = PLAN_DRAFT_EXAMPLE;
+  planDraftController.setText(PLAN_DRAFT_EXAMPLE);
+  currentPlanPreview = planDraftController.preview();
+  saveWebviewState({ planDraftText: PLAN_DRAFT_EXAMPLE });
+  renderCurrentPlanPreview();
+});
+previewPlanDraft.addEventListener("click", () => {
+  planDraftController.setText(planDraftText.value);
+  currentPlanPreview = planDraftController.preview();
+  saveWebviewState({ planDraftText: planDraftText.value });
+  renderCurrentPlanPreview();
+});
+planDraftText.addEventListener("input", () => {
+  planDraftController.setText(planDraftText.value);
+  currentPlanPreview = null;
+  saveWebviewState({ planDraftText: planDraftText.value });
+  renderCurrentPlanPreview();
+});
+planDraftWorkspace.addEventListener("change", () => {
+  saveWebviewState({ planWorkspacePath: planDraftWorkspace.value });
+  renderCurrentPlanPreview();
+});
 clearFilters.addEventListener("click", () => {
   applyPreset("default");
 });
@@ -1989,6 +2106,21 @@ for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRo
       true
     );
   });
+}
+
+const restoredPlanDraftText = vscode.getState()?.planDraftText;
+if (typeof restoredPlanDraftText === "string") {
+  planDraftText.value = restoredPlanDraftText;
+  planDraftController.setText(restoredPlanDraftText);
+}
+const restoredPlanWorkspacePath = vscode.getState()?.planWorkspacePath;
+if (
+  typeof restoredPlanWorkspacePath === "string" &&
+  Array.from(planDraftWorkspace.options).some(
+    (option) => option.value === restoredPlanWorkspacePath
+  )
+) {
+  planDraftWorkspace.value = restoredPlanWorkspacePath;
 }
 
 renderFilterChips();

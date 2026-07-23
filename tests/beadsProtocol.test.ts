@@ -8,6 +8,13 @@ describe("isBeadsRequestMessage", () => {
     expect(isBeadsRequestMessage({ command: "syncBeads", workspacePath: "/tmp/demo" })).toBe(true);
     expect(
       isBeadsRequestMessage({
+        command: "importPlanDraft",
+        workspacePath: "/tmp/demo",
+        draftText: '{"version":1}'
+      })
+    ).toBe(true);
+    expect(
+      isBeadsRequestMessage({
         command: "closeBead",
         issueId: "neo-1",
         workspacePath: "/tmp/demo",
@@ -50,6 +57,13 @@ describe("isBeadsRequestMessage", () => {
       false
     );
     expect(isBeadsRequestMessage({ command: "closeBead", issueId: "neo-1" })).toBe(false);
+    expect(
+      isBeadsRequestMessage({
+        command: "importPlanDraft",
+        workspacePath: "/tmp/demo",
+        draftText: { version: 1 }
+      })
+    ).toBe(false);
     expect(
       isBeadsRequestMessage({
         command: "assignStartBead",
