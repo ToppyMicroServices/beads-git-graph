@@ -8,6 +8,8 @@
   and exact Beads mutations.
 - Gate approved Plan Import on observed Beads write capabilities and report partial results without
   claiming rollback.
+- Ask for a model preference before starting single or parallel Copilot agent work.
+- Add a current Plan Draft screenshot to the README.
 
 ### Fixed
 

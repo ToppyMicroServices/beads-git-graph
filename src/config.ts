@@ -1,6 +1,11 @@
 import * as vscode from "vscode";
 
 import {
+  buildAgentModelOptions,
+  DEFAULT_AGENT_MODEL,
+  normalizeAgentModelName
+} from "./agentModelSelection";
+import {
   CommitDetailsFileActionVisibility,
   DateFormat,
   DateType,
@@ -129,6 +134,18 @@ class Config {
 
   public bdPath(): string {
     return this.workspaceConfiguration.get("bdPath", "bd");
+  }
+
+  public agentModelOptions(): string[] {
+    const configured = this.workspaceConfiguration.get<unknown>("agentModelOptions", [
+      DEFAULT_AGENT_MODEL
+    ]);
+    return buildAgentModelOptions(
+      undefined,
+      (Array.isArray(configured) ? configured : [])
+        .map(normalizeAgentModelName)
+        .filter((model): model is string => model !== null)
+    );
   }
 
   public gitPath(): string {

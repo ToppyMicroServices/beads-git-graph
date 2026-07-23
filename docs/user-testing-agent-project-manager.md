@@ -178,6 +178,15 @@ pnpm run compile
 - **Then:** The result is unsupported and the UI does not report successful synchronization.
 - **Evidence:** `beadsSync.test.ts`.
 
+### AUTO-16 — Normalize and apply model preferences — Current
+
+- **Given:** a task model, configured duplicates, empty/multiline/overlong values, mixed parallel
+  models, and one explicit override.
+- **When:** model choices are built or the parallel override is applied.
+- **Then:** task preference appears first, choices are valid and unique, invalid custom values are
+  rejected, per-task models remain intact by default, and an explicit override reaches every task.
+- **Evidence:** `agentModelSelection.test.ts` and the source-order regression check.
+
 ## Completed source-preview check
 
 The following check used the compiled current webview script, synthetic fixture data, and a local
@@ -328,6 +337,17 @@ fixture between state-changing scenarios.
   captured webview messages, fake `bd` log, and pass/fail per expected statement.
 - **Status:** Partially verified. Packaged activation and Plan interactions passed, but the complete
   Manage fixture and state-changing path remain pending.
+
+### MAN-11 — Choose a model before agent work — Pending packaged verification
+
+- **Setup:** Use a packaged extension, a confirmed-ready synthetic task, and a fake `bd` recorder in
+  a disposable workspace.
+- **Steps:** Select **Start AI**, inspect the model picker, cancel once, then repeat and choose a
+  model. Repeat **Start Parallel** with per-task models and an override.
+- **Expected:** the picker states that the value is a Copilot model preference; Cancel records no
+  worktree or Beads mutation; single selection is recorded as requested; parallel preserves each
+  task model or overrides all only when explicitly selected.
+- **Evidence:** picker screenshot, fake `bd` log, worktree list, and pass/fail for each branch.
 
 ## Plan user acceptance
 

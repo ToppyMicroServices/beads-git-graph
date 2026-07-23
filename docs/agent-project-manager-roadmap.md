@@ -311,6 +311,30 @@ compatible disposable workspace.
 
 ## P2 — Allocate
 
+### PM-200 — Choose a model preference — completed
+
+- [x] **PM-200A — Choose before starting one task**
+  - **Input:** task-declared model, configured model choices, and a custom one-line value.
+  - **Edit target:** the Extension Host launch boundary and one pure option-normalization helper.
+  - **Done/test:** the native picker runs before worktree or Beads mutation; Cancel returns without
+    mutation; focused source and pure tests cover order, validation, and deduplication.
+  - **Depends:** BASE-002.
+  - **Tier:** capable.
+- [x] **PM-200B — Preserve or override parallel task models**
+  - **Input:** ready tasks with mixed declared and missing model preferences.
+  - **Edit target:** parallel launch selection plus its pure override helper.
+  - **Done/test:** per-task choice preserves declared values and an explicit override applies to
+    every selected task; a pure test covers both results.
+  - **Depends:** PM-005F, PM-200A.
+  - **Tier:** low-cost.
+- [ ] **PM-200C — Enforce a provider/model choice**
+  - **Input:** the provider-neutral launch result from PM-203A and provider capability evidence.
+  - **Edit target:** future provider adapter only.
+  - **Done/test:** the UI distinguishes requested preference from provider-confirmed execution and
+    never claims an unavailable model was selected.
+  - **Depends:** PM-203A.
+  - **Tier:** human-decision.
+
 ### PM-201 — Model allocation constraints
 
 - [ ] **PM-201A — Parse optional allocation fields**

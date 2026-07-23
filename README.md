@@ -7,6 +7,10 @@ A local-first project manager for agent work, with Git graph and Beads issue too
 
 No telemetry. Privacy-first. Security-first.
 
+![Plan Draft preview showing dependency validation and the Critical Path](./docs/assets/plan-draft-preview.png)
+
+Validate dependencies and review the Critical Path before approving an import.
+
 ## What It Does
 
 - Shows branches, tags, merges, and uncommitted changes in a Git graph
@@ -69,9 +73,22 @@ The Beads view surfaces optional execution hints from issue fields, metadata, or
 - `pr: 123`, `check_status: "success"`, or labels such as `pr:#123`, `checks:success`
 - `sync_risk: "stale"` or label `sync-risk:stale`
 
-When you use **Start AI**, the extension automatically picks the configured or default model, infers SSOT/context from workspace files such as `AGENTS.md`, `.beads/issues.jsonl`, `README.md`, and `docs`, creates or reuses a git worktree for the task, records model/SSOT/worktree/branch metadata, marks the bead in progress, then opens a GitHub Copilot Background Agent chat session with the bead prompt prefilled. If VS Code cannot open that session automatically, the prompt is copied to the clipboard and Chat is opened as a fallback.
+When you use **Start AI**, the extension asks for a model preference before changing anything. The
+picker offers the task's declared model, choices from `beads-git-graph.agentModelOptions`, and a
+custom entry. It then infers SSOT/context from workspace files such as `AGENTS.md`,
+`.beads/issues.jsonl`, `README.md`, and `docs`, creates or reuses a git worktree, records
+model/SSOT/worktree/branch metadata, marks the bead in progress, and opens a GitHub Copilot
+Background Agent chat session with the bead prompt prefilled. Canceling the picker performs no
+Beads or worktree mutation.
 
-When multiple ready tasks can run in parallel, **Start Parallel** assigns and starts them in one action. Each task receives its own worktree so the Beads table and graph can show which worktree is expected to carry that agent's changes. Active tasks that are skipped are reported with the reason.
+The selected value is a requested model recorded in Beads and included in the prompt; the current
+launch provider remains GitHub Copilot, and actual model availability depends on that provider.
+Choosing a different provider such as a local CLI requires the future provider adapter.
+
+When multiple ready tasks can run in parallel, **Start Parallel** asks whether to preserve each
+task's model preference or override every selected task. Each task receives its own worktree so the
+Beads table and graph can show which worktree is expected to carry that agent's changes. Active
+tasks that are skipped are reported with the reason.
 
 These hints are visual metadata. Beads ready/blocking behavior still comes from issue status and dependencies.
 

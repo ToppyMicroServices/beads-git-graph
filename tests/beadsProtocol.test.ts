@@ -69,6 +69,21 @@ describe("isBeadsRequestMessage", () => {
         command: "assignStartBead",
         issueId: "neo-1",
         workspacePath: "/tmp/demo",
+        model: "first\nsecond"
+      })
+    ).toBe(false);
+    expect(
+      isBeadsRequestMessage({
+        command: "startParallelBeads",
+        workspacePath: "/tmp/demo",
+        items: [{ issueId: "neo-1", model: "x".repeat(101) }]
+      })
+    ).toBe(false);
+    expect(
+      isBeadsRequestMessage({
+        command: "assignStartBead",
+        issueId: "neo-1",
+        workspacePath: "/tmp/demo",
         model: 1234
       })
     ).toBe(false);

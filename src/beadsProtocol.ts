@@ -1,3 +1,5 @@
+import { normalizeAgentModelName } from "./agentModelSelection";
+
 export type BeadsRequestMessage =
   | { command: "refresh" }
   | { command: "openGitGraph" }
@@ -45,6 +47,13 @@ export interface BeadsExecutionSkip {
   reason: string;
 }
 
+function isOptionalAgentModel(value: unknown) {
+  return (
+    typeof value === "undefined" ||
+    (typeof value === "string" && (value.trim() === "" || normalizeAgentModelName(value) !== null))
+  );
+}
+
 function isBeadsExecutionTarget(value: unknown): value is BeadsExecutionTarget {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -54,7 +63,7 @@ function isBeadsExecutionTarget(value: unknown): value is BeadsExecutionTarget {
   return (
     typeof record.issueId === "string" &&
     (typeof record.title === "string" || typeof record.title === "undefined") &&
-    (typeof record.model === "string" || typeof record.model === "undefined") &&
+    isOptionalAgentModel(record.model) &&
     (typeof record.ssot === "string" || typeof record.ssot === "undefined") &&
     (typeof record.worktree === "string" || typeof record.worktree === "undefined")
   );
@@ -115,7 +124,7 @@ export function isBeadsRequestMessage(message: unknown): message is BeadsRequest
         (typeof record.title === "string" || typeof record.title === "undefined") &&
         (record.command !== "assignStartBead" ||
           ((typeof record.agent === "string" || typeof record.agent === "undefined") &&
-            (typeof record.model === "string" || typeof record.model === "undefined") &&
+            isOptionalAgentModel(record.model) &&
             (typeof record.ssot === "string" || typeof record.ssot === "undefined") &&
             (typeof record.worktree === "string" || typeof record.worktree === "undefined")))
       );

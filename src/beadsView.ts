@@ -5,6 +5,12 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import {
+  applyAgentModelOverride,
+  buildAgentModelOptions,
+  DEFAULT_AGENT_MODEL,
+  normalizeAgentModelName
+} from "./agentModelSelection";
+import {
   type BeadItem,
   beadsAsArray,
   deriveParallelMergeItems,
@@ -42,7 +48,6 @@ import { executePlanImport, formatPlanMutation, projectPlanDraftMutations } from
 type CreateBeadType = "task" | "feature" | "bug" | "epic" | "chore";
 type CreateBeadStatus = "open" | "in_progress" | "blocked" | "closed";
 type CreateBeadPriority = "P0" | "P1" | "P2" | "P3" | "P4";
-const DEFAULT_ASSIGN_MODEL = "gpt-5-codex";
 const SSOT_USAGE_MANIFEST_CANDIDATES = [
   "ssot-usage.json",
   ".beads/ssot-usage.json",
@@ -726,7 +731,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     currentSsot: string | undefined,
     currentWorktree: string | undefined
   ) {
-    const model = this.resolveAssignModel(currentModel);
+    const model = await this.pickAgentModelPreference(currentModel);
+    if (model === null) {
+      return;
+    }
     const ssot = this.resolveAssignSsot(workspacePath, issueId, currentSsot);
     const worktree = this.resolveAssignWorktree(workspacePath, issueId, currentWorktree);
 
@@ -742,20 +750,20 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
     if (openResult === "opened") {
       vscode.window.showInformationMessage(
-        `Started ${issueId} with ${model}. Opened Copilot agent session for ${path.basename(worktree)}.`
+        `Started ${issueId} with requested model ${model}. Opened Copilot agent session for ${path.basename(worktree)}.`
       );
       return;
     }
 
     if (openResult === "copied-prompt") {
       vscode.window.showInformationMessage(
-        `Started ${issueId} with ${model}. Copilot agent prompt copied to clipboard; paste it into Copilot chat.`
+        `Started ${issueId} with requested model ${model}. Copilot agent prompt copied to clipboard; paste it into Copilot chat.`
       );
       return;
     }
 
     vscode.window.showWarningMessage(
-      `Started ${issueId} with ${model}, but could not open Copilot chat or copy the agent prompt.`
+      `Started ${issueId} with requested model ${model}, but could not open Copilot chat or copy the agent prompt.`
     );
   }
 
@@ -811,17 +819,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     items: BeadsExecutionTarget[],
     skipped: BeadsExecutionSkip[] = []
   ) {
-    const candidates = items
-      .map((item) => ({
-        issueId: item.issueId.trim(),
-        title: item.title,
-        model: this.resolveAssignModel(item.model),
-        ssot: "",
-        worktree: ""
-      }))
-      .filter((item) => item.issueId !== "");
-
-    if (candidates.length === 0) {
+    const startableItems = items.filter((item) => item.issueId.trim() !== "");
+    if (startableItems.length === 0) {
       const skippedSummary = this.formatSkippedParallelTargets(skipped);
       vscode.window.showWarningMessage(
         skippedSummary === ""
@@ -831,11 +830,24 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       return;
     }
 
+    const modelSelection = await this.pickParallelAgentModelPreference(startableItems);
+    if (modelSelection.cancelled) {
+      return;
+    }
+    const selectedItems = applyAgentModelOverride(startableItems, modelSelection.overrideModel);
+    const candidates = selectedItems.map((item) => ({
+      issueId: item.issueId.trim(),
+      title: item.title,
+      model: this.resolveAssignModel(item.model),
+      ssot: "",
+      worktree: ""
+    }));
+
     const uniqueCandidates = [...new Map(candidates.map((item) => [item.issueId, item])).values()];
     let openedCount = 0;
     let copiedPromptCount = 0;
     for (const candidate of uniqueCandidates) {
-      const source = items.find((item) => item.issueId.trim() === candidate.issueId);
+      const source = selectedItems.find((item) => item.issueId.trim() === candidate.issueId);
       candidate.ssot = this.resolveAssignSsot(workspacePath, candidate.issueId, source?.ssot);
       candidate.worktree = this.resolveAssignWorktree(
         workspacePath,
@@ -1012,8 +1024,100 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
   }
 
+  private async pickAgentModelPreference(currentModel: string | undefined) {
+    const taskModel = normalizeAgentModelName(currentModel);
+    const selected = await vscode.window.showQuickPick(
+      [
+        ...buildAgentModelOptions(currentModel, getConfig().agentModelOptions()).map((model) => ({
+          label: model,
+          description: model === taskModel ? "Task model preference" : "Configured preference",
+          choice: "model" as const,
+          model
+        })),
+        {
+          label: "Enter another model...",
+          description: "Record a different model preference",
+          choice: "custom" as const,
+          model: ""
+        }
+      ],
+      {
+        title: "Model preference (Copilot)",
+        placeHolder:
+          "Choose the requested model. Actual availability depends on the Copilot provider."
+      }
+    );
+    if (selected === undefined) {
+      return null;
+    }
+    if (selected.choice === "model") {
+      return selected.model;
+    }
+    return this.inputCustomAgentModel();
+  }
+
+  private async pickParallelAgentModelPreference(
+    items: readonly BeadsExecutionTarget[]
+  ): Promise<{ cancelled: boolean; overrideModel: string | null }> {
+    const selected = await vscode.window.showQuickPick(
+      [
+        {
+          label: "Use each task's model preference",
+          description: "Keep each task model, then use the default where none is set",
+          choice: "per-task" as const,
+          model: ""
+        },
+        ...buildAgentModelOptions(undefined, [
+          ...items.map((item) => item.model ?? ""),
+          ...getConfig().agentModelOptions()
+        ]).map((model) => ({
+          label: model,
+          description: "Override every selected task",
+          choice: "model" as const,
+          model
+        })),
+        {
+          label: "Enter another model...",
+          description: "Override every selected task with another preference",
+          choice: "custom" as const,
+          model: ""
+        }
+      ],
+      {
+        title: "Model preference for parallel work (Copilot)",
+        placeHolder: "Keep task-specific models or choose one requested model for every task."
+      }
+    );
+    if (selected === undefined) {
+      return { cancelled: true, overrideModel: null };
+    }
+    if (selected.choice === "per-task") {
+      return { cancelled: false, overrideModel: null };
+    }
+    if (selected.choice === "model") {
+      return { cancelled: false, overrideModel: selected.model };
+    }
+    const customModel = await this.inputCustomAgentModel();
+    return customModel === null
+      ? { cancelled: true, overrideModel: null }
+      : { cancelled: false, overrideModel: customModel };
+  }
+
+  private async inputCustomAgentModel() {
+    const value = await vscode.window.showInputBox({
+      title: "Model preference (Copilot)",
+      prompt:
+        "Enter the model preference to record and include in the agent prompt. Availability depends on the provider.",
+      validateInput: (input) =>
+        normalizeAgentModelName(input) === null
+          ? "Enter a one-line model name between 1 and 100 characters."
+          : null
+    });
+    return value === undefined ? null : normalizeAgentModelName(value);
+  }
+
   private resolveAssignModel(currentModel: string | undefined) {
-    return currentModel?.trim() || DEFAULT_ASSIGN_MODEL;
+    return normalizeAgentModelName(currentModel) ?? DEFAULT_AGENT_MODEL;
   }
 
   private resolveAssignSsot(

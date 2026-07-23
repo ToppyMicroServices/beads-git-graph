@@ -357,6 +357,17 @@
           "default": "bd",
           "description": "Path or command name for the Beads CLI executable used by the Beads view."
         },
+        "beads-git-graph.agentModelOptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "default": [
+            "gpt-5-codex"
+          ],
+          "description": "Model preference choices shown before starting Copilot agent work. These values are recorded and included in the prompt; actual model availability depends on the launch provider."
+        },
         "beads-git-graph.tabIconColourTheme": {
           "type": "string",
           "enum": [

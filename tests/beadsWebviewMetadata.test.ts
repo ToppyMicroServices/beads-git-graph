@@ -242,12 +242,22 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("Checks");
   });
 
-  it("starts AI work with automatic model, SSOT, and worktree context", () => {
+  it("selects a model preference before starting AI work with SSOT and worktree context", () => {
     expect(beadsView).toContain("refreshDebounceMs");
     expect(beadsView).toContain("refreshTimer");
     expect(beadsView).toContain("scheduleRefresh");
-    expect(beadsView).toContain("DEFAULT_ASSIGN_MODEL");
+    expect(beadsView).toContain("DEFAULT_AGENT_MODEL");
     expect(beadsView).toContain("resolveAssignModel");
+    expect(beadsView).toContain("pickAgentModelPreference");
+    expect(beadsView).toContain("pickParallelAgentModelPreference");
+    expect(beadsView).toContain('title: "Model preference (Copilot)"');
+    expect(beadsView).toContain("Actual availability depends on the Copilot provider.");
+    expect(beadsView).toContain("Use each task's model preference");
+    expect(beadsView).toContain("Enter another model...");
+    expect(beadsView).toContain("if (model === null)");
+    expect(beadsView.indexOf("await this.pickAgentModelPreference")).toBeLessThan(
+      beadsView.indexOf("const agentWorktree = await this.ensureAgentWorktree")
+    );
     expect(beadsView).toContain("resolveAssignSsot");
     expect(beadsView).toContain("resolveAssignWorktree");
     expect(beadsView).toContain("ensureAgentWorktree");
@@ -267,6 +277,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("workbench.action.chat.open");
     expect(beadsView).toContain("vscode.env.clipboard.writeText(prompt)");
     expect(beadsView).toContain("Copilot agent prompt copied to clipboard");
+    expect(beadsView).toContain("with requested model");
     expect(beadsView).toContain("Copied $" + "{copiedPromptCount} prompt(s)");
     expect(beadsView).toContain("vscode.Uri.file(values.worktree?.trim() || values.workspacePath)");
     expect(beadsView).toContain("AGENTS.md");
