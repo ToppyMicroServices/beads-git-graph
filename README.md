@@ -3,13 +3,14 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](./LICENSE)
 [![Version 0.4.20260710](https://img.shields.io/badge/version-0.4.20260710-0366d6?style=flat-square)](./CHANGELOG.md)
 
-A local-first project manager for agent work, with Git graph and Beads issue tools in one VS Code extension.
+A local-first project manager for coordinating dependency-linked work across different requested AI
+models, with Git graph and Beads issue tools in one VS Code extension.
 
 No telemetry. Privacy-first. Security-first.
 
-![Plan Draft preview showing dependency validation and the Critical Path](./docs/assets/plan-draft-preview.png)
+![Plan Draft preview showing dependency-linked requested AI model transitions](./docs/assets/plan-draft-preview.png)
 
-Validate dependencies and review the Critical Path before approving an import.
+Plan and review requested-model handoffs before approving an import.
 
 ## What It Does
 
@@ -21,7 +22,7 @@ Validate dependencies and review the Critical Path before approving an import.
 - Shows optional parallel, AI model, SSOT/context, worktree, branch, PR, check, and sync-risk hints on Beads items
 - Shows a Beads execution map with Critical Path, dependency edges, parent context, merge/worktree risk, Start AI, Start Parallel, and merge actions
 - Adds a Manage view that groups recorded work into Needs attention, Review, Running, Queue, and Done
-- Adds a Plan Draft workflow that validates and previews tasks, dependencies, Critical Path, parallel groups, and exact Beads mutations before import
+- Adds a Plan Draft workflow that validates and previews tasks, dependencies, Critical Path, parallel groups, requested-model transitions, and exact Beads mutations before import
 
 ## Use It
 
@@ -48,7 +49,8 @@ The Manage view does not claim live agent monitoring. “Running” reflects rec
 Open **Plan** in the Beads view, paste a version 1 Plan Draft or select **Load example**, and then
 select **Preview**. The preview is local and read-only. It shows the goal, tasks, dependencies,
 acceptance criteria, SSOT/model hints, Critical Path, parallel groups, and the exact ordered Beads
-mutations that an import would request.
+mutations that an import would request. When dependency-linked tasks declare different models, the
+preview shows the planned requested-model transitions between them.
 
 **Import Plan** is enabled only when the active workspace has a Beads database and the installed
 `bd` executable demonstrates the required create, update, and dependency commands. The Extension
@@ -84,6 +86,14 @@ Beads or worktree mutation.
 The selected value is a requested model recorded in Beads and included in the prompt; the current
 launch provider remains GitHub Copilot, and actual model availability depends on that provider.
 Choosing a different provider such as a local CLI requires the future provider adapter.
+
+Use task dependencies to plan work across different requested AI models. Acceptance criteria and
+shared SSOT references record the intended handoff, while Beads readiness controls when dependent
+work becomes eligible. When dependent work starts, its prompt lists upstream bead handoffs and asks
+the agent to inspect their recorded output, worktree, and PR state instead of assuming integration.
+The Extension Host rechecks readiness and current `bd show` dependencies before worktree
+preparation and again before the Beads update. SSOT remains a shared reference, not an enforced
+artifact-production contract.
 
 When multiple ready tasks can run in parallel, **Start Parallel** asks whether to preserve each
 task's model preference or override every selected task. Each task receives its own worktree so the

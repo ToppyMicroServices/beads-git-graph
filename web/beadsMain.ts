@@ -114,24 +114,34 @@ const GRAPH_KEYBOARD_PAN_STEP = 40;
 const PLAN_DRAFT_EXAMPLE = JSON.stringify(
   {
     version: 1,
-    goal: "Describe the project outcome",
+    goal: "Coordinate a linked workflow across requested AI models",
     tasks: [
       {
-        id: "task-a",
-        title: "First deliverable",
+        id: "research",
+        title: "Research the decision",
         priority: "P1",
-        acceptanceCriteria: ["Describe the observable completion condition"],
+        acceptanceCriteria: ["Record the recommendation and evidence in docs/decision.md"],
         dependencyIds: [],
-        ssot: ["AGENTS.md"]
+        ssot: ["AGENTS.md", "docs/decision.md"],
+        model: "reasoning-model"
       },
       {
-        id: "task-b",
-        title: "Dependent deliverable",
+        id: "implement",
+        title: "Implement the approved decision",
+        priority: "P1",
+        acceptanceCriteria: ["Implementation follows the recorded decision and passes tests"],
+        dependencyIds: ["research"],
+        ssot: ["AGENTS.md", "docs/decision.md"],
+        model: "coding-model"
+      },
+      {
+        id: "review",
+        title: "Review the integrated result",
         priority: "P2",
-        acceptanceCriteria: ["Describe the user-visible result"],
-        dependencyIds: ["task-a"],
-        ssot: ["README.md"],
-        model: "optional-model"
+        acceptanceCriteria: ["Review records pass/fail evidence against the acceptance criteria"],
+        dependencyIds: ["implement"],
+        ssot: ["docs/decision.md", "README.md"],
+        model: "review-model"
       }
     ]
   },

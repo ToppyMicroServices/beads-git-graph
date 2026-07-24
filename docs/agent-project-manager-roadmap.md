@@ -334,6 +334,17 @@ compatible disposable workspace.
     never claims an unavailable model was selected.
   - **Depends:** PM-203A.
   - **Tier:** human-decision.
+- [x] **PM-200D — Connect requested models through task dependencies**
+  - **Input:** a valid Plan Draft whose dependency-linked tasks declare different requested models
+    and shared SSOT references.
+  - **Edit target:** Plan graph projection, Plan preview, and the dependent-task launch prompt.
+  - **Done/test:** preview labels only explicit cross-model transitions; downstream prompts carry
+    upstream bead IDs from a fresh Host-side `bd show` and require recorded output/worktree/PR
+    verification; the Host checks `bd ready` before worktree preparation and again before mutation;
+    behavior tests cover guard ordering, stale readiness, dependency-query failure, parse, graph,
+    preview, mutation projection, and resolved Beads dependency creation.
+  - **Depends:** PM-101B, PM-104A, PM-200A.
+  - **Tier:** capable.
 
 ### PM-201 — Model allocation constraints
 

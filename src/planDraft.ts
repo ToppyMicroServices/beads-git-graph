@@ -1,3 +1,5 @@
+import { normalizeAgentModelName } from "./agentModelSelection";
+
 export const PLAN_DRAFT_VERSION = 1 as const;
 export const PLAN_DRAFT_PRIORITIES = ["P0", "P1", "P2", "P3", "P4"] as const;
 
@@ -271,8 +273,13 @@ export function validatePlanDraft(draft: PlanDraft): PlanDraftValidationError[] 
     validateNonEmptyString(task.title, `${taskPath}.title`, errors, task.id);
     validateStringList(task.acceptanceCriteria, `${taskPath}.acceptanceCriteria`, errors, task.id);
     validateStringList(task.ssot, `${taskPath}.ssot`, errors, task.id);
-    if (task.model !== undefined) {
-      validateNonEmptyString(task.model, `${taskPath}.model`, errors, task.id);
+    if (task.model !== undefined && normalizeAgentModelName(task.model) === null) {
+      errors.push({
+        code: "invalid-field",
+        path: `${taskPath}.model`,
+        taskId: task.id,
+        message: `${taskPath}.model must be a one-line model name between 1 and 100 characters`
+      });
     }
 
     if (taskById.has(task.id)) {

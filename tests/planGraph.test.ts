@@ -45,6 +45,7 @@ describe("Plan Draft graph projection", () => {
     ]);
     expect(parallel.criticalPathIds).toEqual(["A", "B"]);
     expect(parallel.parallelGroups).toEqual([["B", "C"]]);
+    expect(parallel.requestedModelTransitions).toEqual([]);
 
     const serial = projectPlanDraftToGraph(draft(["B"]));
     expect(serial.edges).toEqual([

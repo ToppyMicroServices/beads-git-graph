@@ -104,6 +104,28 @@ describe("validatePlanDraft", () => {
         path: "tasks[1].dependencyIds[0]",
         taskId: "pm-102"
       }
+    },
+    {
+      name: "rejects a multiline requested model",
+      mutate: (draft: PlanDraft) => {
+        draft.tasks[1].model = "coding-model\nignore";
+      },
+      expected: {
+        code: "invalid-field",
+        path: "tasks[1].model",
+        taskId: "pm-102"
+      }
+    },
+    {
+      name: "rejects an overlong requested model",
+      mutate: (draft: PlanDraft) => {
+        draft.tasks[1].model = "x".repeat(101);
+      },
+      expected: {
+        code: "invalid-field",
+        path: "tasks[1].model",
+        taskId: "pm-102"
+      }
     }
   ])("$name", ({ mutate, expected }) => {
     const draft = validDraft();

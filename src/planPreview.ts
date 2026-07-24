@@ -48,13 +48,14 @@ export function renderPlanDraftPreview(input: PlanDraftPreviewInput) {
           .filter((node) => node.level === level)
           .map(
             (node) =>
-              `<div class="planDraftNode${criticalIds.has(node.id) ? " critical" : ""}"><strong>${escapeHtml(node.id)}</strong><span>${escapeHtml(node.title)}</span></div>`
+              `<div class="planDraftNode${criticalIds.has(node.id) ? " critical" : ""}"><strong>${escapeHtml(node.id)}</strong><span>${escapeHtml(node.title)}</span>${node.model === undefined ? "" : `<span>Requested model: ${escapeHtml(node.model)}</span>`}</div>`
           )
           .join("")}</div>`
     )
     .join("")}</div>`;
   const criticalPathHtml = `<div class="planPathSummary"><strong>Critical Path</strong><span>${graph.criticalPathIds.length === 0 ? "No dependency path yet" : escapeHtml(graph.criticalPathIds.join(" → "))}</span></div>`;
   const parallelHtml = `<div class="planParallelSummary"><strong>Parallel candidates</strong><span>${graph.parallelGroups.length === 0 ? "None" : graph.parallelGroups.map((ids) => escapeHtml(ids.join(" + "))).join("; ")}</span></div>`;
+  const modelTransitionHtml = `<div class="planModelTransitionSummary"><strong>Requested model transitions</strong><span>${graph.requestedModelTransitions.length === 0 ? "None" : graph.requestedModelTransitions.map((transition) => `${escapeHtml(transition.fromId)} [${escapeHtml(transition.fromModel)}] → ${escapeHtml(transition.toId)} [${escapeHtml(transition.toModel)}]`).join("; ")}</span></div>`;
   const taskHtml = input.draft.tasks
     .map(
       (task) =>
@@ -71,5 +72,5 @@ export function renderPlanDraftPreview(input: PlanDraftPreviewInput) {
     ? "Review and approve the exact Beads mutations."
     : capability.reason;
 
-  return `<div class="planPreviewResult">${validationHtml}<section class="planDraftSummary"><h2>${escapeHtml(input.draft.goal)}</h2><div class="planDraftStats"><span>${input.draft.tasks.length} tasks</span><span>${graph.edges.length} dependencies</span></div>${criticalPathHtml}${parallelHtml}${graphHtml}<div class="planDraftTasks">${taskHtml}</div></section><details class="planMutationPreview" open><summary>Pending Beads mutations (${projectPlanDraftMutations(input.draft).length})</summary><ol>${mutationHtml}</ol></details>${capabilityHtml}<div class="planPreviewActions"><button id="cancelPlanDraft" type="button">Cancel</button><button id="importPlanDraft" type="button" title="${escapeHtml(importTitle)}"${capability.supported ? "" : " disabled"}>Import Plan</button></div></div>`;
+  return `<div class="planPreviewResult">${validationHtml}<section class="planDraftSummary"><h2>${escapeHtml(input.draft.goal)}</h2><div class="planDraftStats"><span>${input.draft.tasks.length} tasks</span><span>${graph.edges.length} dependencies</span></div>${criticalPathHtml}${parallelHtml}${modelTransitionHtml}${graphHtml}<div class="planDraftTasks">${taskHtml}</div></section><details class="planMutationPreview" open><summary>Pending Beads mutations (${projectPlanDraftMutations(input.draft).length})</summary><ol>${mutationHtml}</ol></details>${capabilityHtml}<div class="planPreviewActions"><button id="cancelPlanDraft" type="button">Cancel</button><button id="importPlanDraft" type="button" title="${escapeHtml(importTitle)}"${capability.supported ? "" : " disabled"}>Import Plan</button></div></div>`;
 }

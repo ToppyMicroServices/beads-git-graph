@@ -39,6 +39,8 @@ describe("Plan Draft preview", () => {
     expect(html).not.toContain("<safe>");
     expect(html).toContain("Critical Path");
     expect(html).toContain("plan-a → plan-b");
+    expect(html).toContain("Requested model transitions");
+    expect(html).toContain("None");
     expect(html).toContain("Depends on:");
     expect(html).toContain("Unsafe &lt;text&gt; is escaped");
     expect(html).toContain("small-model");

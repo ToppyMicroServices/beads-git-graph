@@ -291,6 +291,88 @@ describe("Agent Project Manager webview", () => {
     ).not.toContain(" disabled");
   });
 
+  it("moves a linked cross-model handoff from upstream work to the downstream queue", () => {
+    const render = (items: BeadItem[]) =>
+      renderBeadsWebviewHtml(
+        {
+          cspSource: "vscode-webview:",
+          asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+        } as never,
+        { path: "/extension" } as never,
+        {
+          groups: [
+            {
+              workspace: "Mission Control",
+              workspacePath: "/tmp/mission-control",
+              items
+            }
+          ],
+          emptyWorkspaces: [],
+          unavailableWorkspaces: [],
+          bdExecutableStatus: { available: true, command: "bd", message: null },
+          errors: [],
+          warnings: []
+        }
+      );
+    const research = makeBead({
+      id: "research",
+      title: "Research the decision",
+      readyByBd: true,
+      model: "reasoning-model",
+      ssot: "docs/decision.md"
+    });
+    const implement = makeBead({
+      id: "implement",
+      title: "Implement the decision",
+      dependencyIds: ["research"],
+      model: "coding-model",
+      ssot: "docs/decision.md"
+    });
+
+    const before = render([research, implement]);
+    expect(
+      getTagContaining(
+        getAgentCard(before, "research"),
+        "button",
+        'data-assign-start-id="research"'
+      )
+    ).not.toContain(" disabled");
+    const blockedHandoff = getTagContaining(
+      getAgentCard(before, "implement"),
+      "button",
+      'data-assign-start-id="implement"'
+    );
+    expect(blockedHandoff).toContain(" disabled");
+    expect(blockedHandoff).toContain('data-assign-start-model="coding-model"');
+    expect(blockedHandoff).toContain('data-assign-start-ssot="docs/decision.md"');
+    const blockedGraphHandoff = getTagContaining(
+      before,
+      "button",
+      'data-assign-start-id="implement"'
+    );
+    expect(blockedGraphHandoff).toContain(" disabled");
+    expect(blockedGraphHandoff).toContain(
+      "Start is unavailable until bd ready confirms this task and its dependencies."
+    );
+    expect(before).not.toContain('class="startParallelBeads');
+
+    const after = render([
+      { ...research, status: "closed", readyByBd: false },
+      { ...implement, readyByBd: true }
+    ]);
+    const readyHandoff = getTagContaining(
+      getAgentCard(after, "implement"),
+      "button",
+      'data-assign-start-id="implement"'
+    );
+    expect(readyHandoff).not.toContain(" disabled");
+    expect(getTagContaining(after, "button", 'data-assign-start-id="implement"')).not.toContain(
+      " disabled"
+    );
+    expect(after).toContain("<span>Depends</span><strong");
+    expect(after).toContain(">research</strong>");
+  });
+
   it("disables state-changing actions without bd and explains derived merge work", () => {
     const result: BeadLoadResult = {
       groups: [

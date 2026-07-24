@@ -14,11 +14,17 @@ export interface PlanGraphEdge {
   toId: string;
 }
 
+export interface PlanRequestedModelTransition extends PlanGraphEdge {
+  fromModel: string;
+  toModel: string;
+}
+
 export interface PlanGraphProjection {
   nodes: PlanGraphNode[];
   edges: PlanGraphEdge[];
   criticalPathIds: string[];
   parallelGroups: string[][];
+  requestedModelTransitions: PlanRequestedModelTransition[];
 }
 
 export function projectPlanDraftToGraph(draft: PlanDraft): PlanGraphProjection {
@@ -70,6 +76,17 @@ export function projectPlanDraftToGraph(draft: PlanDraft): PlanGraphProjection {
   const edges = draft.tasks.flatMap((task) =>
     task.dependencyIds.map((dependencyId) => ({ fromId: dependencyId, toId: task.id }))
   );
+  const requestedModelTransitions = edges.flatMap((edge) => {
+    const fromModel = taskById.get(edge.fromId)?.model?.trim();
+    const toModel = taskById.get(edge.toId)?.model?.trim();
+    return fromModel === undefined ||
+      fromModel === "" ||
+      toModel === undefined ||
+      toModel === "" ||
+      fromModel === toModel
+      ? []
+      : [{ ...edge, fromModel, toModel }];
+  });
   const criticalPathIds =
     edges.length === 0
       ? []
@@ -94,5 +111,5 @@ export function projectPlanDraftToGraph(draft: PlanDraft): PlanGraphProjection {
     )
     .filter((ids) => ids.length > 1);
 
-  return { nodes, edges, criticalPathIds, parallelGroups };
+  return { nodes, edges, criticalPathIds, parallelGroups, requestedModelTransitions };
 }

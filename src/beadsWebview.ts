@@ -283,7 +283,7 @@ function renderAgentWorkCard(
       ? "The Beads CLI is unavailable; configure bd before starting work."
       : entry.readiness !== "confirmed"
         ? "Start is unavailable until bd ready confirms this task."
-        : "Assign the default AI model, attach SSOT/context, and mark this bead in progress.";
+        : "Choose a requested model, attach SSOT/context, and mark this bead in progress.";
     primaryAction = `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(item.ssot.trim())}" data-assign-start-worktree="${escapeHtml(item.worktree.trim())}" title="${escapeHtml(startTitle)}"${startDisabled ? " disabled" : ""}>Start AI</button>`;
   } else if (
     entry.lane === "queue" &&
@@ -430,12 +430,15 @@ function renderBeadsDependencyGraph(
         ]
           .filter((line) => line !== "")
           .join("");
-        const assignDisabled = !bdAvailable || normalizedStatus === "closed" ? " disabled" : "";
+        const assignDisabled =
+          !bdAvailable || normalizedStatus !== "open" || !item.readyByBd ? " disabled" : "";
         const assignTitle = !bdAvailable
           ? "The Beads CLI is unavailable; configure bd before starting work."
-          : normalizedStatus === "closed"
-            ? "Closed beads cannot be started."
-            : "Assign the default AI model, attach SSOT/context, and mark this bead in progress.";
+          : normalizedStatus !== "open"
+            ? "Only open beads can be started."
+            : !item.readyByBd
+              ? "Start is unavailable until bd ready confirms this task and its dependencies."
+              : "Choose a requested model, attach SSOT/context, and mark this bead in progress.";
         const initialDisplay = isDefaultVisibleStatus(normalizedStatus) ? "" : "display:none;";
         const actionHtml = derivedMerge
           ? `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="${escapeHtml(bdAvailable ? "Check agent worktrees, auto-merge their PRs, then sync Beads." : "The Beads CLI is unavailable; configure bd before merging.")}"${bdAvailable ? "" : " disabled"}>Merge PRs</button>`
@@ -827,7 +830,7 @@ export function renderBeadsWebviewHtml(
               `<option value="${escapeHtml(workspacePath)}" data-plan-capability="${escapeHtml(encodeURIComponent(JSON.stringify(capability)))}">${escapeHtml(workspace)}</option>`
           )
           .join("");
-  const planDraftHtml = `<section id="planDraftView" aria-label="Plan Draft"><div class="planDraftHeader"><div><div class="workspaceName">Plan Draft</div><p>Validate dependencies and review every Beads mutation before approval.</p></div><label>Target workspace<select id="planDraftWorkspace"${planImportCapabilities.length === 0 ? " disabled" : ""}>${planWorkspaceOptions}</select></label></div><div class="planDraftEditor"><label for="planDraftText">Draft JSON</label><textarea id="planDraftText" spellcheck="false" placeholder="Paste a version 1 Plan Draft, or load the example."></textarea><div class="planDraftEditorActions"><button id="loadPlanDraftExample" type="button">Load example</button><button id="previewPlanDraft" type="button">Preview Plan</button></div></div><div id="planDraftPreview" aria-live="polite"><div class="empty">Preview a draft to see tasks, validation errors, dependency levels, Critical Path, parallel candidates, and pending mutations.</div></div></section>`;
+  const planDraftHtml = `<section id="planDraftView" aria-label="Plan Draft"><div class="planDraftHeader"><div><div class="workspaceName">Plan Draft</div><p>Validate dependencies, requested-model handoffs, and every Beads mutation before approval.</p></div><label>Target workspace<select id="planDraftWorkspace"${planImportCapabilities.length === 0 ? " disabled" : ""}>${planWorkspaceOptions}</select></label></div><div class="planDraftEditor"><label for="planDraftText">Draft JSON</label><textarea id="planDraftText" spellcheck="false" placeholder="Paste a version 1 Plan Draft, or load the example."></textarea><div class="planDraftEditorActions"><button id="loadPlanDraftExample" type="button">Load example</button><button id="previewPlanDraft" type="button">Preview Plan</button></div></div><div id="planDraftPreview" aria-live="polite"><div class="empty">Preview a draft to see tasks, validation errors, dependency levels, Critical Path, parallel candidates, requested-model transitions, and pending mutations.</div></div></section>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1108,7 +1111,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .planDraftSummary h2{margin:0 0 8px;font-size:16px;}
 .planDraftStats{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px;}
 .planDraftStats span{padding:2px 7px;border:1px solid var(--vscode-panel-border);border-radius:999px;font-size:11px;}
-.planPathSummary,.planParallelSummary{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px;margin:5px 0;}
+.planPathSummary,.planParallelSummary,.planModelTransitionSummary{display:grid;grid-template-columns:190px minmax(0,1fr);gap:8px;margin:5px 0;}
 .planDraftGraph{display:flex;align-items:stretch;gap:12px;overflow-x:auto;margin:12px 0;padding:10px;border:1px solid var(--vscode-panel-border);border-radius:7px;}
 .planDraftLevel{display:grid;align-content:start;gap:6px;min-width:180px;}
 .planDraftLevelLabel{font-size:10px;font-weight:750;color:var(--vscode-descriptionForeground);text-transform:uppercase;}
@@ -1164,7 +1167,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
   .graphCanvas{min-height:100%;}
   .planDraftHeader{display:grid;}
   .planDraftHeader label{min-width:0;}
-  .planPathSummary,.planParallelSummary{grid-template-columns:1fr;gap:2px;}
+  .planPathSummary,.planParallelSummary,.planModelTransitionSummary{grid-template-columns:1fr;gap:2px;}
   .planDraftEditor textarea{min-height:180px;}
 }
 code{font-family:var(--vscode-editor-font-family);}

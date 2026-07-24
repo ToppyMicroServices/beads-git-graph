@@ -36,7 +36,7 @@ and any unexpected behavior. Capture screenshots for visible state and command l
 Run the focused current-behavior suite:
 
 ```bash
-pnpm exec vitest run tests/beadsData.test.ts tests/beadsGraphModel.test.ts tests/beadsProjectState.test.ts tests/beadsWebviewMetadata.test.ts tests/beadsMissionControlWebview.test.ts tests/beadsProtocol.test.ts tests/beadsRowVisibility.test.ts tests/worktreeSyncGuard.test.ts tests/planDraft.test.ts tests/planGraph.test.ts tests/planPreview.test.ts tests/planDraftController.test.ts tests/planImport.test.ts tests/beadsWriteCapability.test.ts
+pnpm exec vitest run tests/beadsData.test.ts tests/beadsGraphModel.test.ts tests/beadsProjectState.test.ts tests/beadsWebviewMetadata.test.ts tests/beadsMissionControlWebview.test.ts tests/beadsProtocol.test.ts tests/beadsRowVisibility.test.ts tests/worktreeSyncGuard.test.ts tests/agentReadiness.test.ts tests/agentStartGuard.test.ts tests/agentWorkPrompt.test.ts tests/crossModelTaskChain.test.ts tests/planDraft.test.ts tests/planGraph.test.ts tests/planPreview.test.ts tests/planDraftController.test.ts tests/planImport.test.ts tests/beadsWriteCapability.test.ts
 ```
 
 Then run the complete quality gate:
@@ -187,6 +187,22 @@ pnpm run compile
   rejected, per-task models remain intact by default, and an explicit override reaches every task.
 - **Evidence:** `agentModelSelection.test.ts` and the source-order regression check.
 
+### AUTO-17 — Preserve a cross-model linked task chain — Current
+
+- **Given:** research, implementation, and review tasks with three distinct requested models,
+  shared SSOT references, and a serial dependency chain.
+- **When:** the draft is parsed, graphed, previewed, projected into mutations, and executed with a
+  fake successful Beads runner.
+- **Then:** all requested models remain task-scoped; exactly two requested-model transitions appear;
+  shared references remain visible; and resolved Beads dependency commands preserve handoff order.
+  The Extension Host checks `bd ready` and `bd show` before worktree preparation, then checks both
+  again before mutation. Stale readiness or failed dependency inspection prevents Beads mutation
+  and agent launch. The downstream prompt treats task metadata as data and requires recorded
+  integration evidence.
+- **Evidence:** `crossModelTaskChain.test.ts`, `agentReadiness.test.ts`,
+  `agentStartGuard.test.ts`, `agentWorkPrompt.test.ts`, and
+  `beadsMissionControlWebview.test.ts`.
+
 ## Completed source-preview check
 
 The following check used the compiled current webview script, synthetic fixture data, and a local
@@ -210,18 +226,24 @@ browser page. It verifies user-visible source behavior, but it does not exercise
   horizontal `scrollWidth` overflow.
 - **Evidence level:** compiled-source browser preview only. PM-004D/MAN-10 remains pending.
 
-## Packaged VSIX result — 2026-07-23
+## Packaged VSIX result — 2026-07-24
 
 - **Artifact:** `beads-git-graph-0.4.20260710.vsix`, SHA-256
-  `d73d18fcb297787590887afa14aa29229f4b3e4c9e36b61757e95097eece1736`.
-- **Install/activation:** the artifact installed as
-  `ToppyMicroServices.beads-git-graph@0.4.20260710` in an isolated extension directory and opened
-  the Beads webview in an isolated VS Code profile.
-- **Plan observation:** in an empty workspace, **Load example** rendered two tasks, one dependency,
-  `task-a -> task-b` as Critical Path, and five ordered mutations. Import remained disabled because
-  no initialized Beads workspace existed.
+  `dae85414690161ec22e65219413d5cb9de1eb0b4f58947abad316b7c3b8554af`.
+- **Package inspection:** the final artifact contains the requested-model Plan UI, Host-side
+  readiness/dependency checks, and metadata-safe prompt text. Its README screenshot URL resolves to
+  the repository asset.
+- **Install/activation boundary:** a package built immediately before the final Host safety changes
+  installed as `ToppyMicroServices.beads-git-graph@0.4.20260710` in an isolated extension directory
+  and opened the Beads webview in an isolated VS Code profile. The final artifact above was rebuilt
+  and inspected, but not reinstalled.
+- **Plan observation:** in an empty workspace, **Load example** rendered three tasks, two
+  dependencies, two requested-model transitions, `research -> implement -> review` as Critical
+  Path, and eight ordered mutations. Import remained disabled because no initialized Beads
+  workspace existed.
 - **Interaction observation:** **Cancel** cleared the draft and preview. Four Tab presses from
-  **Plan** reached the draft editor. At 640 CSS px, document and body scroll widths remained 640 px.
+  **Plan** reached the draft editor. The earlier 640 CSS px check and current 852 CSS px check showed
+  no horizontal overflow.
 - **Mutation evidence:** separately, the production import executor created two tasks and their
   dependency in a compatible disposable Beads database. The current repository database was not
   migrated, initialized, bootstrapped, synchronized, or written.
@@ -349,6 +371,23 @@ fixture between state-changing scenarios.
   task model or overrides all only when explicitly selected.
 - **Evidence:** picker screenshot, fake `bd` log, worktree list, and pass/fail for each branch.
 
+### MAN-12 — Follow a cross-model task handoff — Partially verified
+
+- **Setup:** Import a disposable three-task chain with distinct requested models and a shared SSOT
+  path. Use a fake `bd` recorder and synthetic readiness transitions.
+- **Steps:** Preview the Plan; confirm two requested-model transitions; start only the first ready
+  task; record its output reference; close it; refresh readiness; start the dependent task and
+  inspect its prompt.
+- **Expected:** dependency direction and task-specific model preferences remain unchanged; blocked
+  downstream work cannot start early; the Host checks current readiness and dependencies before
+  worktree preparation and again before mutation; the downstream prompt lists its upstream bead and
+  requires output/worktree/PR verification. The UI does not claim the provider ran the requested
+  models.
+- **Evidence:** Plan and prompt screenshots, ordered fake `bd` log, and pass/fail for each handoff.
+- **Observed:** the installed VSIX rendered the three requested models, two transitions, Critical
+  Path, and eight ordered mutations without horizontal overflow. The packaged readiness transition
+  and downstream prompt inspection still require a trusted disposable workspace.
+
 ## Plan user acceptance
 
 Plan Draft is implemented. Source tests and the packaged observations below do not replace the
@@ -361,9 +400,11 @@ remaining packaged approval-path checks.
 - **Expected:** Specific validation errors appear, the preview graph updates, and Cancel performs no
   Beads write.
 - **Evidence:** Preview/error screenshots and an empty fake `bd` mutation log.
-- **Observed:** an installed VSIX loaded the example, rendered two tasks, one dependency, the
-  `task-a -> task-b` Critical Path, parallel groups, and five ordered mutations. Cancel cleared the
-  draft, keyboard focus reached the editor, and the 640 CSS px view had no horizontal overflow.
+- **Observed:** the current installed VSIX loaded a three-task, three-model example and rendered two
+  dependency-linked requested-model transitions, the `research -> implement -> review` Critical
+  Path, and eight ordered mutations. The current 852 CSS px view had no horizontal overflow.
+  Earlier packaged checks also confirmed Cancel cleared the draft, keyboard focus reached the
+  editor, and the 640 CSS px view had no horizontal overflow.
 
 ### PLAN-02 — Import an approved plan with partial failure — Current, packaged approval pending
 

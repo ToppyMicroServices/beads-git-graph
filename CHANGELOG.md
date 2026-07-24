@@ -9,11 +9,18 @@
 - Gate approved Plan Import on observed Beads write capabilities and report partial results without
   claiming rollback.
 - Ask for a model preference before starting single or parallel Copilot agent work.
+- Show requested-model transitions for dependency-linked tasks and include upstream bead handoffs
+  in dependent task prompts.
+- Add a cross-model task-chain behavior test from Plan Draft through Beads import.
 - Add a current Plan Draft screenshot to the README.
 
 ### Fixed
 
 - Stop reporting a successful Beads sync when the installed CLI does not provide `bd sync`.
+- Disable Graph-view Start AI until `bd ready` confirms the task and its dependencies.
+- Recheck `bd ready` before worktree preparation and again immediately before Beads mutation.
+- Read handoff dependencies from a fresh `bd show` result instead of trusting webview metadata.
+- Validate Plan Draft model preferences consistently and quote untrusted task metadata in prompts.
 
 ## [0.4.20260710] - 2026-07-08
 

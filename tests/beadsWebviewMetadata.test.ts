@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 const repoRoot = join(import.meta.dirname, "..");
 const beadsWebview = readFileSync(join(repoRoot, "src", "beadsWebview.ts"), "utf8");
 const beadsView = readFileSync(join(repoRoot, "src", "beadsView.ts"), "utf8");
+const agentStartGuard = readFileSync(join(repoRoot, "src", "agentStartGuard.ts"), "utf8");
+const agentWorkPrompt = readFileSync(join(repoRoot, "src", "agentWorkPrompt.ts"), "utf8");
 const beadsMain = readFileSync(join(repoRoot, "web", "beadsMain.ts"), "utf8");
 
 describe("beads webview presentation metadata", () => {
@@ -255,9 +257,15 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("Use each task's model preference");
     expect(beadsView).toContain("Enter another model...");
     expect(beadsView).toContain("if (model === null)");
-    expect(beadsView.indexOf("await this.pickAgentModelPreference")).toBeLessThan(
-      beadsView.indexOf("const agentWorktree = await this.ensureAgentWorktree")
-    );
+    expect(beadsView).toContain("queryReadyItemIds");
+    expect(beadsView).toContain("queryDependencyIdsForStart");
+    expect(beadsView).toContain("bd ready no longer reports this task as ready");
+    expect(beadsView).toContain("Unable to verify current Beads dependencies for:");
+    expect(beadsView).toContain("revalidateExecutionTargets");
+    expect(beadsView).toContain("runReadinessGuardedStart");
+    expect(agentStartGuard).toContain("readyBeforePreparation");
+    expect(agentStartGuard).toContain("readyBeforeMutation");
+    expect(agentStartGuard).toContain("mutateAndLaunch");
     expect(beadsView).toContain("resolveAssignSsot");
     expect(beadsView).toContain("resolveAssignWorktree");
     expect(beadsView).toContain("ensureAgentWorktree");
@@ -270,6 +278,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("inferAssignSsot");
     expect(beadsView).toContain("deriveParallelMergeItems");
     expect(beadsView).toContain("openAssignAgentSession");
+    expect(beadsView).toContain("buildAgentWorkPrompt");
     expect(beadsView).toContain("startParallelBeads");
     expect(beadsView).toContain("formatSkippedParallelTargets");
     expect(beadsView).toContain("workbench.action.chat.openSessionWithPrompt.copilotcli");
@@ -280,14 +289,16 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("with requested model");
     expect(beadsView).toContain("Copied $" + "{copiedPromptCount} prompt(s)");
     expect(beadsView).toContain("vscode.Uri.file(values.worktree?.trim() || values.workspacePath)");
-    expect(beadsView).toContain("AGENTS.md");
+    expect(agentWorkPrompt).toContain("AGENTS.md");
     expect(beadsView).toContain(".beads/issues.jsonl");
     expect(beadsView).toContain("README.md");
     expect(beadsView).toContain("`model=$" + "{values.model}`");
     expect(beadsView).toContain("`ssot=$" + "{values.ssot}`");
     expect(beadsView).toContain("`worktree=$" + "{worktree}`");
     expect(beadsView).toContain("`branch=$" + "{agentWorktree.branch.trim()}`");
-    expect(beadsView).toContain("Inspect the bead details with bd show");
+    expect(agentWorkPrompt).toContain("Inspect the current bead in Beads using ID");
+    expect(agentWorkPrompt).toContain("Upstream bead handoff IDs");
+    expect(beadsView).toContain('["show", issueId, "--json"]');
     expect(beadsView).not.toContain("Assign Agent");
     expect(beadsView).not.toContain("Assign AI Model");
   });

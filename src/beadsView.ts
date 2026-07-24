@@ -10,6 +10,9 @@ import {
   DEFAULT_AGENT_MODEL,
   normalizeAgentModelName
 } from "./agentModelSelection";
+import { revalidateExecutionTargets } from "./agentReadiness";
+import { runReadinessGuardedStart } from "./agentStartGuard";
+import { buildAgentWorkPrompt } from "./agentWorkPrompt";
 import {
   type BeadItem,
   beadsAsArray,
@@ -738,7 +741,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const ssot = this.resolveAssignSsot(workspacePath, issueId, currentSsot);
     const worktree = this.resolveAssignWorktree(workspacePath, issueId, currentWorktree);
 
-    const openResult = await this.assignAndStartBead({
+    const startResult = await this.assignAndStartBead({
       workspacePath,
       issueId,
       title,
@@ -746,6 +749,15 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       ssot,
       worktree
     });
+    if (startResult.status === "not-ready") {
+      vscode.window.showWarningMessage(
+        startResult.phase === "before-preparation"
+          ? `Refusing to start ${issueId}: bd ready no longer reports this task as ready. Refresh the Beads view and review its dependencies.`
+          : `Stopped ${issueId} before updating Beads because readiness changed while preparing its worktree. No agent session was started.`
+      );
+      return;
+    }
+    const openResult = startResult.result;
     await this.refresh();
 
     if (openResult === "opened") {
@@ -775,43 +787,56 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     ssot: string;
     worktree: string;
   }) {
-    const agentWorktree = await this.ensureAgentWorktree(
-      values.workspacePath,
-      values.issueId,
-      values.worktree
-    );
-    const worktree = agentWorktree.path;
-    const metadata = [
-      `agent=${values.model}`,
-      `model=${values.model}`,
-      `ssot=${values.ssot}`,
-      `worktree=${worktree}`,
-      agentWorktree.branch.trim() === "" ? "" : `branch=${agentWorktree.branch.trim()}`
-    ].filter((entry) => entry !== "");
+    return runReadinessGuardedStart({
+      issueId: values.issueId,
+      queryReadyItemIds: () => this.queryReadyItemIds(values.workspacePath),
+      queryDependencyIds: async () => {
+        const dependencies = await this.queryDependencyIdsForStart(
+          [values.issueId],
+          values.workspacePath
+        );
+        return dependencies.get(values.issueId) ?? [];
+      },
+      prepare: () =>
+        this.ensureAgentWorktree(values.workspacePath, values.issueId, values.worktree),
+      mutateAndLaunch: async (agentWorktree, dependencyIds) => {
+        const worktree = agentWorktree.path;
+        const metadata = [
+          `agent=${values.model}`,
+          `model=${values.model}`,
+          `ssot=${values.ssot}`,
+          `worktree=${worktree}`,
+          agentWorktree.branch.trim() === "" ? "" : `branch=${agentWorktree.branch.trim()}`
+        ].filter((entry) => entry !== "");
 
-    const notes = [
-      `model=${values.model}`,
-      `ssot=${values.ssot}`,
-      `worktree=${worktree}`,
-      agentWorktree.branch.trim() === "" ? "" : `branch=${agentWorktree.branch.trim()}`
-    ].filter((entry) => entry !== "");
+        const notes = [
+          `model=${values.model}`,
+          `ssot=${values.ssot}`,
+          `worktree=${worktree}`,
+          agentWorktree.branch.trim() === "" ? "" : `branch=${agentWorktree.branch.trim()}`
+        ].filter((entry) => entry !== "");
 
-    await this.runBdCommand(["assign", values.issueId, values.model], values.workspacePath);
-    await this.runBdCommand(
-      [
-        "update",
-        values.issueId,
-        "--status",
-        "in_progress",
-        "--append-notes",
-        notes.join("\n"),
-        ...metadata.flatMap((entry) => ["--set-metadata", entry])
-      ],
-      values.workspacePath
-    );
-    await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), values.workspacePath);
+        await this.runBdCommand(["assign", values.issueId, values.model], values.workspacePath);
+        await this.runBdCommand(
+          [
+            "update",
+            values.issueId,
+            "--status",
+            "in_progress",
+            "--append-notes",
+            notes.join("\n"),
+            ...metadata.flatMap((entry) => ["--set-metadata", entry])
+          ],
+          values.workspacePath
+        );
+        await flushBeadsWorkspace(
+          (args, cwd) => this.runBdCommand(args, cwd),
+          values.workspacePath
+        );
 
-    return this.openAssignAgentSession({ ...values, worktree });
+        return this.openAssignAgentSession({ ...values, worktree, dependencyIds });
+      }
+    });
   }
 
   private async startParallelBeads(
@@ -819,9 +844,15 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     items: BeadsExecutionTarget[],
     skipped: BeadsExecutionSkip[] = []
   ) {
-    const startableItems = items.filter((item) => item.issueId.trim() !== "");
-    if (startableItems.length === 0) {
-      const skippedSummary = this.formatSkippedParallelTargets(skipped);
+    const modelSelection = await this.pickParallelAgentModelPreference(items);
+    if (modelSelection.cancelled) {
+      return;
+    }
+    const readyItemIds = await this.queryReadyItemIds(workspacePath);
+    const revalidated = revalidateExecutionTargets(items, readyItemIds);
+    const revalidatedSkipped = [...skipped, ...revalidated.noLongerReady];
+    if (revalidated.ready.length === 0) {
+      const skippedSummary = this.formatSkippedParallelTargets(revalidatedSkipped);
       vscode.window.showWarningMessage(
         skippedSummary === ""
           ? "No parallel beads were available to start."
@@ -829,12 +860,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       );
       return;
     }
-
-    const modelSelection = await this.pickParallelAgentModelPreference(startableItems);
-    if (modelSelection.cancelled) {
-      return;
-    }
-    const selectedItems = applyAgentModelOverride(startableItems, modelSelection.overrideModel);
+    const selectedItems = applyAgentModelOverride(revalidated.ready, modelSelection.overrideModel);
     const candidates = selectedItems.map((item) => ({
       issueId: item.issueId.trim(),
       title: item.title,
@@ -844,6 +870,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }));
 
     const uniqueCandidates = [...new Map(candidates.map((item) => [item.issueId, item])).values()];
+    let startedCount = 0;
     let openedCount = 0;
     let copiedPromptCount = 0;
     for (const candidate of uniqueCandidates) {
@@ -854,7 +881,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         candidate.issueId,
         source?.worktree
       );
-      const openResult = await this.assignAndStartBead({
+      const startResult = await this.assignAndStartBead({
         workspacePath,
         issueId: candidate.issueId,
         title: candidate.title,
@@ -862,6 +889,19 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         ssot: candidate.ssot,
         worktree: candidate.worktree
       });
+      if (startResult.status === "not-ready") {
+        revalidatedSkipped.push({
+          issueId: candidate.issueId,
+          title: candidate.title,
+          reason:
+            startResult.phase === "before-preparation"
+              ? "no longer reported ready by bd"
+              : "readiness changed while preparing worktree"
+        });
+        continue;
+      }
+      startedCount += 1;
+      const openResult = startResult.result;
       if (openResult === "opened") {
         openedCount += 1;
       } else if (openResult === "copied-prompt") {
@@ -870,9 +910,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
 
     await this.refresh();
-    const skippedSummary = this.formatSkippedParallelTargets(skipped);
+    const skippedSummary = this.formatSkippedParallelTargets(revalidatedSkipped);
     vscode.window.showInformationMessage(
-      `Started ${uniqueCandidates.length} parallel bead(s). Opened ${openedCount} Copilot session(s). Copied ${copiedPromptCount} prompt(s).${skippedSummary === "" ? "" : ` Skipped ${skippedSummary}.`}`
+      `Started ${startedCount} parallel bead(s). Opened ${openedCount} Copilot session(s). Copied ${copiedPromptCount} prompt(s).${skippedSummary === "" ? "" : ` Skipped ${skippedSummary}.`}`
     );
   }
 
@@ -949,34 +989,6 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
   }
 
-  private buildAssignAgentPrompt(values: {
-    issueId: string;
-    title: string | undefined;
-    model: string;
-    ssot: string;
-    workspacePath: string;
-    worktree: string | undefined;
-  }) {
-    const lines = [
-      `Start work on bead ${values.issueId}${values.title ? `: ${values.title}` : ""}.`,
-      `Use model ${values.model}.`,
-      `Workspace: ${values.workspacePath}`,
-      `SSOT/context: ${values.ssot}`
-    ];
-
-    if ((values.worktree ?? "").trim() !== "") {
-      lines.push(`Preferred worktree: ${values.worktree?.trim()}`);
-    }
-
-    lines.push(
-      `Read AGENTS.md and the listed SSOT/context before changing code.`,
-      `Inspect the bead details with bd show ${values.issueId}.`,
-      `Keep the work scoped to this bead and proceed autonomously.`
-    );
-
-    return lines.join("\n");
-  }
-
   private async openAssignAgentSession(values: {
     workspacePath: string;
     issueId: string;
@@ -984,9 +996,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     model: string;
     ssot: string;
     worktree: string | undefined;
+    dependencyIds: readonly string[];
   }): Promise<AssignAgentOpenResult> {
     const commands = new Set(await vscode.commands.getCommands(true));
-    const prompt = this.buildAssignAgentPrompt(values);
+    const prompt = buildAgentWorkPrompt(values);
     const resource = vscode.Uri.file(values.worktree?.trim() || values.workspacePath);
 
     for (const command of COPILOT_ASSIGN_COMMAND_CANDIDATES) {
@@ -1924,9 +1937,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   private async loadReadyItemIds(cwd: string, warnings: BeadWarning[]) {
     try {
-      const stdout = await this.runBdCommand(["ready", "--json", "--limit", "0"], cwd);
-      const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
-      return new Set(extractBeadItems(parsed).map((item) => item.id));
+      return await this.queryReadyItemIds(cwd);
     } catch (error) {
       warnings.push({
         source: path.join(cwd, ".beads"),
@@ -1938,6 +1949,30 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       });
       return new Set<string>();
     }
+  }
+
+  private async queryReadyItemIds(cwd: string) {
+    const stdout = await this.runBdCommand(["ready", "--json", "--limit", "0"], cwd);
+    const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
+    return new Set(extractBeadItems(parsed).map((item) => item.id));
+  }
+
+  private async queryDependencyIdsForStart(issueIds: readonly string[], cwd: string) {
+    const uniqueIssueIds = [
+      ...new Set(issueIds.map((issueId) => issueId.trim()).filter((issueId) => issueId !== ""))
+    ];
+    const items = await this.loadBdShowItems(uniqueIssueIds, cwd);
+    const itemById = new Map(items.map((item) => [item.id, item]));
+    const missingIssueIds = uniqueIssueIds.filter((issueId) => !itemById.has(issueId));
+    if (missingIssueIds.length > 0) {
+      throw new Error(
+        `Unable to verify current Beads dependencies for: ${missingIssueIds.join(", ")}. No work was started.`
+      );
+    }
+
+    return new Map(
+      uniqueIssueIds.map((issueId) => [issueId, [...(itemById.get(issueId)?.dependencyIds ?? [])]])
+    );
   }
 
   private async loadBdShowItems(issueIds: string[], cwd: string) {
