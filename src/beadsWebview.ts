@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 
+import { normalizeAgentArtifactReference } from "./agentArtifactReference";
 import { anonymizeAgentIdentity, buildAgentAliasMap } from "./agentDisplay";
+import { getAgentProviderDefinition, resolveAgentProviderId } from "./agentProvider";
 import {
   type BeadHierarchyItem,
   type BeadItem,
@@ -50,12 +52,27 @@ function getDisplayLabel(value: string, agentAliases: ReadonlyMap<string, string
   return anonymizeAgentIdentity(value, agentAliases);
 }
 
+function getProviderLabel(item: BeadItem) {
+  return getAgentProviderDefinition(resolveAgentProviderId(item.provider)).label;
+}
+
 function isDerivedMergeTask(item: BeadItem) {
   return item.synthetic && item.syntheticKind === "parallel-pr-merge";
 }
 
 function encodeJsonData(value: unknown) {
   return escapeHtml(encodeURIComponent(JSON.stringify(value)));
+}
+
+function renderArtifactAction(artifactUri: string) {
+  const normalizedUri = artifactUri.trim();
+  if (normalizedUri === "") {
+    return "";
+  }
+  const reference = normalizeAgentArtifactReference(normalizedUri);
+  return reference === null
+    ? `<span class="executionBadge artifactBadge" title="${escapeHtml(normalizedUri)}">Artifact recorded</span>`
+    : `<button class="openAgentArtifact executionBadge artifactBadge" type="button" data-artifact-uri="${escapeHtml(reference)}" title="Open the stored response artifact">Open response</button>`;
 }
 
 function getBeadDetailsId(workspacePath: string, issueId: string) {
@@ -68,8 +85,12 @@ function isDefaultVisibleStatus(status: string) {
   );
 }
 
+function isCodingSessionProvider(item: BeadItem) {
+  return resolveAgentProviderId(item.provider) === "copilot";
+}
+
 function getWorktreeLabel(item: BeadItem) {
-  if (item.worktree.trim() === "") {
+  if (!isCodingSessionProvider(item) || item.worktree.trim() === "") {
     return "";
   }
 
@@ -115,13 +136,24 @@ function getExecutionStateLabel(item: BeadItem, normalizedStatus: string, derive
   if (item.pullRequest.trim() !== "") {
     return "PR open";
   }
+  if (
+    normalizedStatus === "in_progress" &&
+    !isCodingSessionProvider(item) &&
+    item.artifact.trim() !== ""
+  ) {
+    return "Response ready";
+  }
   if (normalizedStatus === "in_progress") {
     return "Running";
   }
   if (normalizedStatus === "closed") {
     return "Done";
   }
-  if (item.worktree.trim() !== "" || item.model.trim() !== "" || item.agent.trim() !== "") {
+  if (
+    (isCodingSessionProvider(item) && item.worktree.trim() !== "") ||
+    item.model.trim() !== "" ||
+    item.agent.trim() !== ""
+  ) {
     return "Assigned";
   }
   if (item.readyByBd) {
@@ -207,6 +239,7 @@ function buildMergeRiskWarnings(items: BeadItem[]) {
     if (
       item.parallelizable &&
       !item.synthetic &&
+      isCodingSessionProvider(item) &&
       (status === "open" || status === "in_progress") &&
       item.worktree.trim() === ""
     ) {
@@ -236,13 +269,15 @@ function renderAgentWorkCard(
   entry: AgentWorkItem,
   workspacePath: string,
   agentAliases: ReadonlyMap<string, string>,
-  bdAvailable: boolean
+  writeAvailable: boolean,
+  writeUnavailableReason: string
 ) {
   const item = entry.item;
   const normalizedStatus = normalizeBeadStatus(item.status);
   const normalizedPriority = normalizeBeadPriority(item.priority);
   const normalizedType = normalizeBeadType(item.type);
   const ownerLabel = getDisplayLabel(getRawAgentLabel(item, normalizedStatus), agentAliases);
+  const providerLabel = getProviderLabel(item);
   const modelLabel = getDisplayLabel(getRawModelLabel(item, normalizedStatus), agentAliases);
   const progressLabel = item.progress === null ? "" : `Reported ${item.progress}%`;
   const readinessLabel =
@@ -257,9 +292,13 @@ function renderAgentWorkCard(
     ownerLabel === ""
       ? ""
       : `<span class="executionBadge ownerBadge">Owner ${escapeHtml(ownerLabel)}</span>`,
+    item.synthetic
+      ? ""
+      : `<span class="executionBadge providerBadge">Provider ${escapeHtml(providerLabel)}</span>`,
     modelLabel === ""
       ? ""
       : `<span class="executionBadge modelBadge">Model ${escapeHtml(modelLabel)}</span>`,
+    renderArtifactAction(item.artifact),
     progressLabel === ""
       ? ""
       : `<span class="executionBadge stateBadge">${escapeHtml(progressLabel)}</span>`,
@@ -278,22 +317,22 @@ function renderAgentWorkCard(
   const detailsAction = `<button class="graphDetailsBead agentWorkDetails" type="button" data-graph-details-id="${escapeHtml(item.id)}" data-graph-details-workspace="${escapeHtml(workspacePath)}">Details</button>`;
   let primaryAction = "";
   if (entry.lane === "queue" && !item.synthetic && normalizedStatus === "open") {
-    const startDisabled = !bdAvailable || entry.readiness !== "confirmed";
-    const startTitle = !bdAvailable
-      ? "The Beads CLI is unavailable; configure bd before starting work."
+    const startDisabled = !writeAvailable || entry.readiness !== "confirmed";
+    const startTitle = !writeAvailable
+      ? writeUnavailableReason
       : entry.readiness !== "confirmed"
         ? "Start is unavailable until bd ready confirms this task."
-        : "Choose a requested model, attach SSOT/context, and mark this bead in progress.";
-    primaryAction = `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(item.ssot.trim())}" data-assign-start-worktree="${escapeHtml(item.worktree.trim())}" title="${escapeHtml(startTitle)}"${startDisabled ? " disabled" : ""}>Start AI</button>`;
+        : "Choose a provider and requested model, attach SSOT/context, and start this bead.";
+    primaryAction = `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-provider="${escapeHtml(item.provider)}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(item.ssot.trim())}" data-assign-start-worktree="${escapeHtml(isCodingSessionProvider(item) ? item.worktree.trim() : "")}" title="${escapeHtml(startTitle)}"${startDisabled ? " disabled" : ""}>Start AI</button>`;
   } else if (
     entry.lane === "queue" &&
     item.syntheticKind === "parallel-pr-merge" &&
     item.dependencyIds.length > 0
   ) {
-    const mergeTitle = bdAvailable
+    const mergeTitle = writeAvailable
       ? "Check agent worktrees, auto-merge their PRs, then sync Beads."
-      : "The Beads CLI is unavailable; configure bd before merging.";
-    primaryAction = `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="${escapeHtml(mergeTitle)}"${bdAvailable ? "" : " disabled"}>Merge PRs</button>`;
+      : writeUnavailableReason;
+    primaryAction = `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="${escapeHtml(mergeTitle)}"${writeAvailable ? "" : " disabled"}>Merge PRs</button>`;
   }
 
   return `<article class="agentWorkCard" data-status="${escapeHtml(normalizedStatus)}" data-work-item-id="${escapeHtml(item.id)}"><div class="agentWorkCardTop"><span class="beadId">${escapeHtml(item.id)}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></div><div class="agentWorkCardTitle">${escapeHtml(item.title)}</div><div class="agentWorkCardMeta"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${meta}</div><div class="agentWorkReason">${escapeHtml(entry.reason)}</div><div class="agentWorkCardActions">${detailsAction}${primaryAction}</div></article>`;
@@ -303,7 +342,8 @@ function renderAgentWorkQueue(
   items: BeadItem[],
   workspacePath: string,
   agentAliases: ReadonlyMap<string, string>,
-  bdAvailable: boolean
+  writeAvailable: boolean,
+  writeUnavailableReason: string
 ) {
   const queue = buildAgentWorkQueue(items);
   const overview = AGENT_WORK_LANES.map(
@@ -312,7 +352,15 @@ function renderAgentWorkQueue(
   ).join("");
   const lanes = AGENT_WORK_LANES.map((lane) => {
     const cards = queue.lanes[lane]
-      .map((entry) => renderAgentWorkCard(entry, workspacePath, agentAliases, bdAvailable))
+      .map((entry) =>
+        renderAgentWorkCard(
+          entry,
+          workspacePath,
+          agentAliases,
+          writeAvailable,
+          writeUnavailableReason
+        )
+      )
       .join("");
     return `<div class="agentWorkLane" data-work-lane="${lane}"><div class="agentWorkLaneHeader"><span>${AGENT_WORK_LANE_LABELS[lane]}</span><span class="agentWorkLaneCount">${queue.counts[lane]}</span></div><div class="agentWorkLaneCards">${cards}<div class="agentWorkLaneEmpty"${queue.counts[lane] === 0 ? "" : " hidden"}>No matching work</div></div></div>`;
   }).join("");
@@ -324,7 +372,8 @@ function renderBeadsDependencyGraph(
   hierarchyItems: BeadHierarchyItem[],
   workspacePath: string,
   agentAliases: ReadonlyMap<string, string>,
-  bdAvailable: boolean
+  writeAvailable: boolean,
+  writeUnavailableReason: string
 ) {
   const items = hierarchyItems.map((entry) => entry.item);
   const graph = buildBeadDependencyGraph(items);
@@ -400,10 +449,12 @@ function renderBeadsDependencyGraph(
         const rawAgentLabel = getRawAgentLabel(item, normalizedStatus);
         const rawModelLabel = getRawModelLabel(item, normalizedStatus);
         const ownerLabel = getDisplayLabel(rawAgentLabel, agentAliases);
+        const providerLabel = getProviderLabel(item);
         const modelLabel = getDisplayLabel(rawModelLabel, agentAliases);
         const worktreeLabel = getWorktreeLabel(item);
         const pullRequestLabel = getPullRequestLabel(item);
         const ssotLabel = item.ssot.trim();
+        const artifactLabel = item.artifact.trim();
         const branchLabel = item.branch.trim();
         const checkStatusLabel = item.checkStatus.trim();
         const syncRiskLabel = item.syncRisk.trim();
@@ -431,18 +482,18 @@ function renderBeadsDependencyGraph(
           .filter((line) => line !== "")
           .join("");
         const assignDisabled =
-          !bdAvailable || normalizedStatus !== "open" || !item.readyByBd ? " disabled" : "";
-        const assignTitle = !bdAvailable
-          ? "The Beads CLI is unavailable; configure bd before starting work."
+          !writeAvailable || normalizedStatus !== "open" || !item.readyByBd ? " disabled" : "";
+        const assignTitle = !writeAvailable
+          ? writeUnavailableReason
           : normalizedStatus !== "open"
             ? "Only open beads can be started."
             : !item.readyByBd
               ? "Start is unavailable until bd ready confirms this task and its dependencies."
-              : "Choose a requested model, attach SSOT/context, and mark this bead in progress.";
+              : "Choose a provider and requested model, attach SSOT/context, and start this bead.";
         const initialDisplay = isDefaultVisibleStatus(normalizedStatus) ? "" : "display:none;";
         const actionHtml = derivedMerge
-          ? `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="${escapeHtml(bdAvailable ? "Check agent worktrees, auto-merge their PRs, then sync Beads." : "The Beads CLI is unavailable; configure bd before merging.")}"${bdAvailable ? "" : " disabled"}>Merge PRs</button>`
-          : `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(ssotLabel)}" data-assign-start-worktree="${escapeHtml(item.worktree.trim())}" title="${escapeHtml(assignTitle)}"${assignDisabled}>Start AI</button>`;
+          ? `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="${escapeHtml(writeAvailable ? "Check agent worktrees, auto-merge their PRs, then sync Beads." : writeUnavailableReason)}"${writeAvailable ? "" : " disabled"}>Merge PRs</button>`
+          : `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-provider="${escapeHtml(item.provider)}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(ssotLabel)}" data-assign-start-worktree="${escapeHtml(isCodingSessionProvider(item) ? item.worktree.trim() : "")}" title="${escapeHtml(assignTitle)}"${assignDisabled}>Start AI</button>`;
         const graphBadges = [
           executionStateLabel === ""
             ? ""
@@ -451,9 +502,13 @@ function renderBeadsDependencyGraph(
           ownerLabel === ""
             ? ""
             : `<span class="executionBadge ownerBadge">Owner ${escapeHtml(ownerLabel)}</span>`,
+          derivedMerge
+            ? ""
+            : `<span class="executionBadge providerBadge">Provider ${escapeHtml(providerLabel)}</span>`,
           modelLabel === ""
             ? ""
             : `<span class="executionBadge modelBadge">Model ${escapeHtml(modelLabel)}</span>`,
+          renderArtifactAction(artifactLabel),
           worktreeLabel === ""
             ? ""
             : `<span class="executionBadge worktreeBadge">WT ${escapeHtml(worktreeLabel)}</span>`,
@@ -522,7 +577,7 @@ function renderBeadsDependencyGraph(
       ? ""
       : `<div class="graphIssueStack">${dependencyWarningHtml}${mergeRiskHtml}</div>`;
 
-  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">Click, then wheel to zoom · Drag a box to zoom · Shift+drag to pan · Double-click to fit</div></div><div class="graphHeaderActions"><div class="workspaceSummary"><span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="fit">Fit</button></div></div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Click to activate wheel zoom. Drag to zoom, Shift drag to pan, arrow keys to pan, and press zero to fit."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
+  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">Point anywhere and wheel to zoom there · Drag a box to zoom · Shift+drag to pan · Double-click to fit</div></div><div class="graphHeaderActions"><div class="workspaceSummary"><span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="fit">Fit</button></div></div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to zoom, Shift drag to pan, arrow keys to pan, and press zero to fit."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
 }
 
 export function renderBeadsWebviewHtml(
@@ -558,6 +613,20 @@ export function renderBeadsWebviewHtml(
     );
     const populatedHtml = rows
       .map((group) => {
+        const agentWriteCapability = (result.agentWriteCapabilities ?? []).find(
+          (entry) => entry.workspacePath === group.workspacePath
+        )?.capability;
+        const writeAvailable =
+          result.bdExecutableStatus.available && agentWriteCapability?.supported !== false;
+        const writeUnavailableReason = !result.bdExecutableStatus.available
+          ? "The Beads CLI is unavailable; configure bd before changing task state."
+          : agentWriteCapability?.supported === false
+            ? `AI actions are disabled because Beads cannot be updated safely: ${agentWriteCapability.reason}`
+            : "AI actions are unavailable because Beads write capability is unconfirmed.";
+        const writeCapabilityWarning =
+          agentWriteCapability?.supported === false
+            ? `<div class="warnings agentWriteWarning"><strong>AI actions disabled</strong><div>${escapeHtml(agentWriteCapability.reason)}</div></div>`
+            : "";
         const flatItems = flattenBeadHierarchy(group.items);
         const childCountByParent = new Map<string, number>();
         let activeCount = 0;
@@ -604,9 +673,10 @@ export function renderBeadsWebviewHtml(
             : parallelReadyCandidates.map((item) => ({
                 issueId: item.id,
                 title: item.title,
+                provider: item.provider,
                 model: item.model,
                 ssot: item.ssot,
-                worktree: item.worktree
+                worktree: isCodingSessionProvider(item) ? item.worktree : ""
               }));
         const parallelStartTargetIds = new Set(
           parallelStartTargets.map((target) => target.issueId)
@@ -681,9 +751,11 @@ export function renderBeadsWebviewHtml(
             const rawAgentLabel = getRawAgentLabel(item, normalizedStatus);
             const rawModelLabel = getRawModelLabel(item, normalizedStatus);
             const rowAgentLabel = getDisplayLabel(rawAgentLabel, agentAliases);
+            const providerLabel = getProviderLabel(item);
             const rowModelLabel = getDisplayLabel(rawModelLabel, agentAliases);
             const rowAssigneeLabel = getDisplayLabel(getRawAssigneeLabel(item), agentAliases);
             const branchLabel = item.branch.trim();
+            const artifactLabel = item.artifact.trim();
             const checkStatusLabel = item.checkStatus.trim();
             const syncRiskLabel = item.syncRisk.trim();
             const executionStateLabel = getExecutionStateLabel(
@@ -705,9 +777,13 @@ export function renderBeadsWebviewHtml(
               rowAgentLabel === ""
                 ? ""
                 : `<span class="executionBadge ownerBadge">Owner ${escapeHtml(rowAgentLabel)}</span>`,
+              isDerivedMergeTask(item)
+                ? ""
+                : `<span class="executionBadge providerBadge">Provider ${escapeHtml(providerLabel)}</span>`,
               rowModelLabel === ""
                 ? ""
                 : `<span class="executionBadge modelBadge">Model ${escapeHtml(rowModelLabel)}</span>`,
+              renderArtifactAction(artifactLabel),
               item.ssot.trim() === "" ? "" : `<span class="executionBadge ssotBadge">SSOT</span>`,
               worktreeLabel === ""
                 ? ""
@@ -780,20 +856,22 @@ export function renderBeadsWebviewHtml(
           flatItems,
           group.workspacePath,
           agentAliases,
-          result.bdExecutableStatus.available
+          writeAvailable,
+          writeUnavailableReason
         );
         const agentWorkQueueHtml = renderAgentWorkQueue(
           flatItems.map((entry) => entry.item),
           group.workspacePath,
           agentAliases,
-          result.bdExecutableStatus.available
+          writeAvailable,
+          writeUnavailableReason
         );
         const parallelAction =
           parallelStartTargets.length > 0
-            ? `<button class="startParallelBeads workspaceAction" type="button" data-start-parallel-workspace="${escapeHtml(group.workspacePath)}" data-start-parallel-items="${encodeJsonData(parallelStartTargets)}" data-start-parallel-skipped="${encodeJsonData(skippedParallelTargets)}" title="${escapeHtml(result.bdExecutableStatus.available ? `Assign and start all parallel-ready tasks with Copilot${skippedParallelTargets.length > 0 ? `; ${skippedParallelTargets.length} active task(s) skipped with reasons` : ""}` : "The Beads CLI is unavailable; configure bd before starting work.")}"${result.bdExecutableStatus.available ? "" : " disabled"}>${parallelStartTargets.length} Start Parallel</button>`
+            ? `<button class="startParallelBeads workspaceAction" type="button" data-start-parallel-workspace="${escapeHtml(group.workspacePath)}" data-start-parallel-items="${encodeJsonData(parallelStartTargets)}" data-start-parallel-skipped="${encodeJsonData(skippedParallelTargets)}" title="${escapeHtml(writeAvailable ? `Assign and start all parallel-ready tasks with their requested providers${skippedParallelTargets.length > 0 ? `; ${skippedParallelTargets.length} active task(s) skipped with reasons` : ""}` : writeUnavailableReason)}"${writeAvailable ? "" : " disabled"}>${parallelStartTargets.length} Start Parallel</button>`
             : "";
 
-        return `<section data-workspace-path="${escapeHtml(group.workspacePath)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceHeaderRight"><div class="workspaceSummary">${workspaceSummary}</div>${parallelAction}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated"> </span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div>${graphHtml}${agentWorkQueueHtml}</section>`;
+        return `<section data-workspace-path="${escapeHtml(group.workspacePath)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceHeaderRight"><div class="workspaceSummary">${workspaceSummary}</div>${parallelAction}</div></div>${writeCapabilityWarning}<div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated"> </span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div>${graphHtml}${agentWorkQueueHtml}</section>`;
       })
       .join("");
     const emptyHtml = result.emptyWorkspaces
@@ -830,7 +908,7 @@ export function renderBeadsWebviewHtml(
               `<option value="${escapeHtml(workspacePath)}" data-plan-capability="${escapeHtml(encodeURIComponent(JSON.stringify(capability)))}">${escapeHtml(workspace)}</option>`
           )
           .join("");
-  const planDraftHtml = `<section id="planDraftView" aria-label="Plan Draft"><div class="planDraftHeader"><div><div class="workspaceName">Plan Draft</div><p>Validate dependencies, requested-model handoffs, and every Beads mutation before approval.</p></div><label>Target workspace<select id="planDraftWorkspace"${planImportCapabilities.length === 0 ? " disabled" : ""}>${planWorkspaceOptions}</select></label></div><div class="planDraftEditor"><label for="planDraftText">Draft JSON</label><textarea id="planDraftText" spellcheck="false" placeholder="Paste a version 1 Plan Draft, or load the example."></textarea><div class="planDraftEditorActions"><button id="loadPlanDraftExample" type="button">Load example</button><button id="previewPlanDraft" type="button">Preview Plan</button></div></div><div id="planDraftPreview" aria-live="polite"><div class="empty">Preview a draft to see tasks, validation errors, dependency levels, Critical Path, parallel candidates, requested-model transitions, and pending mutations.</div></div></section>`;
+  const planDraftHtml = `<section id="planDraftView" aria-label="Plan Draft"><div class="planDraftHeader"><div><div class="workspaceName">Plan Draft</div><p>Validate dependencies, requested provider/model handoffs, and every Beads mutation before approval.</p></div><label>Target workspace<select id="planDraftWorkspace"${planImportCapabilities.length === 0 ? " disabled" : ""}>${planWorkspaceOptions}</select></label></div><div class="planDraftEditor"><label for="planDraftText">Draft JSON</label><textarea id="planDraftText" spellcheck="false" placeholder="Paste a version 1 Plan Draft, or load the example."></textarea><div class="planDraftEditorActions"><button id="loadPlanDraftExample" type="button">Load example</button><button id="previewPlanDraft" type="button">Preview Plan</button></div></div><div id="planDraftPreview" aria-live="polite"><div class="empty">Preview a draft to see tasks, validation errors, dependency levels, Critical Path, parallel candidates, requested provider/model transitions, and pending mutations.</div></div></section>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -944,6 +1022,8 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .parallelBadge{border-color:rgba(34,197,94,.65);color:var(--vscode-testing-iconPassed, #22c55e);background:rgba(34,197,94,.16);}
 .mergeBadge{border-color:rgba(249,115,22,.55);color:var(--vscode-charts-orange, #f97316);background:rgba(249,115,22,.14);}
 .modelBadge{border-color:rgba(59,130,246,.55);color:var(--vscode-textLink-foreground, #3b82f6);background:rgba(59,130,246,.12);}
+.providerBadge{border-color:rgba(168,85,247,.55);color:var(--vscode-charts-purple, #a855f7);background:rgba(168,85,247,.12);}
+.artifactBadge{border-color:rgba(20,184,166,.55);color:var(--vscode-charts-green, #14b8a6);background:rgba(20,184,166,.12);}
 .ssotBadge{border-color:rgba(168,85,247,.5);color:var(--vscode-charts-purple,#a855f7);background:rgba(168,85,247,.12);}
 .worktreeBadge{border-color:rgba(234,179,8,.55);color:var(--vscode-charts-yellow, #d97706);background:rgba(234,179,8,.12);}
 .branchBadge{border-color:rgba(20,184,166,.5);color:var(--vscode-charts-cyan,#14b8a6);background:rgba(20,184,166,.12);}

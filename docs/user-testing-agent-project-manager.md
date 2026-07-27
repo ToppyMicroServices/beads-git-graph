@@ -226,13 +226,13 @@ browser page. It verifies user-visible source behavior, but it does not exercise
   horizontal `scrollWidth` overflow.
 - **Evidence level:** compiled-source browser preview only. PM-004D/MAN-10 remains pending.
 
-## Packaged VSIX result — 2026-07-24
+## Packaged VSIX result — 2026-07-24; rebuilt 2026-07-27
 
 - **Artifact:** `beads-git-graph-0.4.20260710.vsix`, SHA-256
-  `dae85414690161ec22e65219413d5cb9de1eb0b4f58947abad316b7c3b8554af`.
-- **Package inspection:** the final artifact contains the requested-model Plan UI, Host-side
-  readiness/dependency checks, and metadata-safe prompt text. Its README screenshot URL resolves to
-  the repository asset.
+  `3c466d29c9e1a313c54265b19ba1d210b957c0a622b31daf5401dfc8519dc010`.
+- **Package inspection:** the current artifact contains provider/model selection, Host-side
+  readiness/schema/dependency checks, response-artifact preservation, and pointer-centered Graph
+  zoom. VSCE rewrote the README screenshot to the repository asset URL.
 - **Install/activation boundary:** a package built immediately before the final Host safety changes
   installed as `ToppyMicroServices.beads-git-graph@0.4.20260710` in an isolated extension directory
   and opened the Beads webview in an isolated VS Code profile. The final artifact above was rebuilt
@@ -250,6 +250,19 @@ browser page. It verifies user-visible source behavior, but it does not exercise
 - **Boundary:** this passes packaged activation and the named Plan preview/Cancel/keyboard/narrow
   checks. It does not pass the complete MAN-10 Manage workflow or the packaged Plan approval,
   success-result, and partial-failure UI.
+
+## Graph zoom source-browser result — 2026-07-27
+
+- **Observed:** wheel zoom around a node preserved the selected graph coordinate with `0 px`
+  measured drift in both axes. A fine-grained wheel input changed the full-precision zoom value
+  instead of being discarded.
+- **Observed:** the zoom-in button reused the last graph pointer location with `0 px` measured drift.
+  Returning from Table to Graph preserved the manually selected `166%` zoom instead of fitting the
+  graph again.
+- **Additional checks:** Fit and rectangle-selection zoom now center their result, line/page wheel
+  deltas are normalized and bounded, and continuous wheel persistence is debounced.
+- **Evidence level:** compiled-source browser preview plus pure transform tests. The freshly
+  packaged VSIX was inspected, but this graph scenario was not rerun in an installed Extension Host.
 
 ## Extension Host and manual checks
 

@@ -5,6 +5,7 @@ import {
   DEFAULT_AGENT_MODEL,
   normalizeAgentModelName
 } from "./agentModelSelection";
+import { type AgentProviderId } from "./agentProvider";
 import {
   CommitDetailsFileActionVisibility,
   DateFormat,
@@ -146,6 +147,40 @@ class Config {
         .map(normalizeAgentModelName)
         .filter((model): model is string => model !== null)
     );
+  }
+
+  public agentProviderModelOptions(provider: AgentProviderId): string[] {
+    if (provider === "copilot") {
+      return this.agentModelOptions();
+    }
+    const configurationKey: Record<Exclude<AgentProviderId, "copilot">, string> = {
+      ollama: "agentOllamaModelOptions",
+      huggingface: "agentHuggingFaceModelOptions",
+      openai: "agentOpenAIModelOptions",
+      anthropic: "agentAnthropicModelOptions"
+    };
+    const configured = this.workspaceConfiguration.get<unknown>(configurationKey[provider], []);
+    return [
+      ...new Set(
+        (Array.isArray(configured) ? configured : [])
+          .map(normalizeAgentModelName)
+          .filter((model): model is string => model !== null)
+      )
+    ];
+  }
+
+  public agentOllamaBaseUrl() {
+    return this.workspaceConfiguration.get("agentOllamaBaseUrl", "http://127.0.0.1:11434");
+  }
+
+  public agentProviderTimeoutMs() {
+    const seconds = this.workspaceConfiguration.get("agentProviderTimeoutSeconds", 120);
+    return Math.round(Math.min(600, Math.max(5, seconds)) * 1_000);
+  }
+
+  public agentProviderMaxOutputTokens() {
+    const tokens = this.workspaceConfiguration.get("agentProviderMaxOutputTokens", 2_048);
+    return Math.round(Math.min(32_768, Math.max(64, tokens)));
   }
 
   public gitPath(): string {

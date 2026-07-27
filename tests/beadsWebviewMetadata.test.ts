@@ -94,6 +94,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("data-start-parallel-items");
     expect(beadsWebview).toContain("item.readyByBd &&");
     expect(beadsWebview).toContain("!item.parallelizableSuppressed &&");
+    expect(beadsWebview).toContain("data-assign-start-provider");
     expect(beadsWebview).toContain("data-assign-start-model");
     expect(beadsWebview).toContain("data-assign-start-ssot");
     expect(beadsWebview).toContain("data-assign-start-worktree");
@@ -103,6 +104,10 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("mergeBadge");
     expect(beadsWebview).toContain("stateBadge");
     expect(beadsWebview).toContain("ownerBadge");
+    expect(beadsWebview).toContain("providerBadge");
+    expect(beadsWebview).toContain("artifactBadge");
+    expect(beadsWebview).toContain("openAgentArtifact");
+    expect(beadsWebview).toContain("data-artifact-uri");
     expect(beadsWebview).toContain("modelBadge");
     expect(beadsWebview).toContain("ssotBadge");
     expect(beadsWebview).toContain("dependencyWarningBadge");
@@ -166,6 +171,20 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("graphTransforms");
     expect(beadsMain).toContain("getGraphTransform");
     expect(beadsMain).toContain("saveGraphTransforms");
+    expect(beadsMain).toContain("Object.keys(normalized).length === 0 && hasLegacyTransform");
+    expect(beadsMain).toContain(
+      'Object.prototype.hasOwnProperty.call(graphTransforms, "__legacy__")'
+    );
+    expect(beadsMain).toContain("delete nextState.graphZoom");
+    expect(beadsMain).toContain("delete nextState.graphPan");
+    const persistedGraphTransformSource = beadsMain.slice(
+      beadsMain.indexOf("function hasPersistedGraphTransform"),
+      beadsMain.indexOf("function updateGraphViewportPreservingTransform")
+    );
+    expect(persistedGraphTransformSource).toContain("graphTransforms");
+    expect(persistedGraphTransformSource).not.toContain("vscode.getState");
+    expect(persistedGraphTransformSource).not.toContain("state?.graphZoom");
+    expect(persistedGraphTransformSource).not.toContain("state?.graphPan");
     expect(beadsMain).toContain("saveViewMode(mode)");
     expect(beadsMain).toContain("saveWebviewState");
     expect(beadsMain).toContain("saveGraphScroll");
@@ -178,7 +197,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("GRAPH_ZOOM_MAX");
     expect(beadsMain).toContain("GRAPH_FIT_PADDING");
     expect(beadsMain).toContain("getGraphFitZoomForPane");
-    expect(beadsMain).toContain("fitGraphToViewport");
+    expect(beadsMain).toContain("updateGraphViewportPreservingTransform");
     expect(beadsMain).toContain("availableWidth / requiredSize.width");
     expect(beadsMain).toContain("availableHeight / requiredSize.height");
     const interpolationStart = String.fromCharCode(36) + "{";
@@ -187,9 +206,18 @@ describe("beads webview presentation metadata", () => {
       `canvas.style.height = \`${interpolationStart}viewport.height}px\``
     );
     expect(beadsMain).toContain("zoomGraphFromWheel");
-    expect(beadsMain).toContain("document.activeElement !== scroller");
-    expect(beadsMain).toContain("event.ctrlKey");
-    expect(beadsMain).toContain("event.metaKey");
+    expect(beadsMain).toContain("rememberGraphZoomAnchor");
+    expect(beadsMain).toContain("computeAnchoredGraphPan");
+    expect(beadsMain).toContain("graphZoomAnchors.get(pane)");
+    expect(beadsMain).toContain(
+      'content.style.setProperty("--graph-zoom", String(transform.zoom))'
+    );
+    expect(beadsMain).toContain("event.deltaMode === WheelEvent.DOM_DELTA_LINE");
+    expect(beadsMain).toContain("event.deltaMode === WheelEvent.DOM_DELTA_PAGE");
+    expect(beadsMain).toContain("const boundedDeltaPixels");
+    expect(beadsMain).toContain("scheduleGraphTransformSave");
+    expect(beadsMain).not.toContain("document.activeElement !== scroller");
+    expect(beadsMain).not.toContain("Math.abs(transform.zoom - nextZoom) < 0.001");
     expect(beadsMain).toContain('addEventListener("wheel"');
     expect(beadsMain).toContain('addEventListener("pointerdown"');
     expect(beadsMain).toContain('addEventListener("dblclick"');
@@ -205,6 +233,11 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain(
       "agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent)"
     );
+    expect(beadsMain).toContain(
+      "provider: resolveAgentProviderId(button.dataset.assignStartProvider)"
+    );
+    expect(beadsMain).toContain('target.closest(".openAgentArtifact")');
+    expect(beadsMain).toContain('command: "openAgentArtifact", artifactUri');
     expect(beadsMain).toContain(
       "model: normalizeOptionalDatasetValue(button.dataset.assignStartModel)"
     );
@@ -244,17 +277,18 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("Checks");
   });
 
-  it("selects a model preference before starting AI work with SSOT and worktree context", () => {
+  it("selects a provider and model before starting guarded AI work", () => {
     expect(beadsView).toContain("refreshDebounceMs");
     expect(beadsView).toContain("refreshTimer");
     expect(beadsView).toContain("scheduleRefresh");
     expect(beadsView).toContain("DEFAULT_AGENT_MODEL");
     expect(beadsView).toContain("resolveAssignModel");
+    expect(beadsView).toContain("pickAgentProviderPreference");
     expect(beadsView).toContain("pickAgentModelPreference");
-    expect(beadsView).toContain("pickParallelAgentModelPreference");
-    expect(beadsView).toContain('title: "Model preference (Copilot)"');
-    expect(beadsView).toContain("Actual availability depends on the Copilot provider.");
-    expect(beadsView).toContain("Use each task's model preference");
+    expect(beadsView).toContain("pickParallelAgentProviderModelPreference");
+    expect(beadsView).toContain('title: "AI provider"');
+    expect(beadsView).toContain("Other providers generate a reviewable text artifact.");
+    expect(beadsView).toContain("Use each task's provider and model");
     expect(beadsView).toContain("Enter another model...");
     expect(beadsView).toContain("if (model === null)");
     expect(beadsView).toContain("queryReadyItemIds");
@@ -287,7 +321,11 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("vscode.env.clipboard.writeText(prompt)");
     expect(beadsView).toContain("Copilot agent prompt copied to clipboard");
     expect(beadsView).toContain("with requested model");
-    expect(beadsView).toContain("Copied $" + "{copiedPromptCount} prompt(s)");
+    expect(beadsView).toContain("generated $" + "{responseCount} local response artifact(s)");
+    expect(beadsView).toContain("confirmTextProviderRequests");
+    expect(beadsView).toContain("Cloud providers may charge for each request.");
+    expect(beadsView).toContain("MAX_PARALLEL_TEXT_PROVIDER_REQUESTS = 20");
+    expect(beadsView).toContain("vscode.workspace.isTrusted");
     expect(beadsView).toContain("vscode.Uri.file(values.worktree?.trim() || values.workspacePath)");
     expect(agentWorkPrompt).toContain("AGENTS.md");
     expect(beadsView).toContain(".beads/issues.jsonl");
@@ -295,7 +333,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("`model=$" + "{values.model}`");
     expect(beadsView).toContain("`ssot=$" + "{values.ssot}`");
     expect(beadsView).toContain("`worktree=$" + "{worktree}`");
-    expect(beadsView).toContain("`branch=$" + "{agentWorktree.branch.trim()}`");
+    expect(beadsView).toContain("`branch=$" + "{prepared.worktree.branch.trim()}`");
     expect(agentWorkPrompt).toContain("Inspect the current bead in Beads using ID");
     expect(agentWorkPrompt).toContain("Upstream bead handoff IDs");
     expect(beadsView).toContain('["show", issueId, "--json"]');

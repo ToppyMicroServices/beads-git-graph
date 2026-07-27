@@ -3,8 +3,8 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](./LICENSE)
 [![Version 0.4.20260710](https://img.shields.io/badge/version-0.4.20260710-0366d6?style=flat-square)](./CHANGELOG.md)
 
-A local-first project manager for coordinating dependency-linked work across different requested AI
-models, with Git graph and Beads issue tools in one VS Code extension.
+A local-first project manager for coordinating dependency-linked work across different AI providers
+and requested models, with Git graph and Beads issue tools in one VS Code extension.
 
 No telemetry. Privacy-first. Security-first.
 
@@ -19,10 +19,11 @@ Plan and review requested-model handoffs before approving an import.
 - Adds a Beads view in the Activity Bar
 - Lets you switch between Git Graph and Beads from the toolbar
 - Lets you refresh, create, close, and sync Beads items inside VS Code
-- Shows optional parallel, AI model, SSOT/context, worktree, branch, PR, check, and sync-risk hints on Beads items
+- Shows optional parallel, AI provider/model, response artifact, SSOT/context, worktree, branch, PR, check, and sync-risk hints on Beads items
 - Shows a Beads execution map with Critical Path, dependency edges, parent context, merge/worktree risk, Start AI, Start Parallel, and merge actions
+- Zooms the execution map around the location under the pointer and preserves manual zoom when switching views or resizing
 - Adds a Manage view that groups recorded work into Needs attention, Review, Running, Queue, and Done
-- Adds a Plan Draft workflow that validates and previews tasks, dependencies, Critical Path, parallel groups, requested-model transitions, and exact Beads mutations before import
+- Adds a Plan Draft workflow that validates and previews tasks, dependencies, Critical Path, parallel groups, requested provider/model transitions, and exact Beads mutations before import
 
 ## Use It
 
@@ -48,9 +49,10 @@ The Manage view does not claim live agent monitoring. “Running” reflects rec
 
 Open **Plan** in the Beads view, paste a version 1 Plan Draft or select **Load example**, and then
 select **Preview**. The preview is local and read-only. It shows the goal, tasks, dependencies,
-acceptance criteria, SSOT/model hints, Critical Path, parallel groups, and the exact ordered Beads
-mutations that an import would request. When dependency-linked tasks declare different models, the
-preview shows the planned requested-model transitions between them.
+acceptance criteria, SSOT/provider/model hints, Critical Path, parallel groups, and the exact ordered
+Beads mutations that an import would request. When dependency-linked tasks declare different
+providers or models, the preview shows the planned requested provider/model transitions between
+them.
 
 **Import Plan** is enabled only when the active workspace has a Beads database and the installed
 `bd` executable demonstrates the required create, update, and dependency commands. The Extension
@@ -68,6 +70,7 @@ operations, and does not claim rollback.
 The Beads view surfaces optional execution hints from issue fields, metadata, or labels:
 
 - `parallelizable: true` or label `parallel-ok`
+- `provider: "ollama"` or label `provider:ollama`
 - `model: "gpt-5-codex"` or label `model:gpt-5-codex`
 - `ssot: "AGENTS.md, .beads/issues.jsonl"` or label `ssot:AGENTS.md`
 - `worktree: "../repo-agent-a"` or label `worktree:../repo-agent-a`
@@ -75,17 +78,51 @@ The Beads view surfaces optional execution hints from issue fields, metadata, or
 - `pr: 123`, `check_status: "success"`, or labels such as `pr:#123`, `checks:success`
 - `sync_risk: "stale"` or label `sync-risk:stale`
 
-When you use **Start AI**, the extension asks for a model preference before changing anything. The
-picker offers the task's declared model, choices from `beads-git-graph.agentModelOptions`, and a
-custom entry. It then infers SSOT/context from workspace files such as `AGENTS.md`,
-`.beads/issues.jsonl`, `README.md`, and `docs`, creates or reuses a git worktree, records
-model/SSOT/worktree/branch metadata, marks the bead in progress, and opens a GitHub Copilot
-Background Agent chat session with the bead prompt prefilled. Canceling the picker performs no
-Beads or worktree mutation.
+When you use **Start AI**, the extension asks for a provider and then a provider-scoped model before
+changing anything:
 
-The selected value is a requested model recorded in Beads and included in the prompt; the current
-launch provider remains GitHub Copilot, and actual model availability depends on that provider.
-Choosing a different provider such as a local CLI requires the future provider adapter.
+| Provider               | Result                                                                                          |
+| ---------------------- | ----------------------------------------------------------------------------------------------- |
+| GitHub Copilot         | Creates or reuses a git worktree and opens a coding-agent session, with clipboard/chat fallback |
+| Ollama                 | Calls a loopback-only local Ollama runtime and stores its text response as a local artifact     |
+| Hugging Face Inference | Calls the Hugging Face Inference Providers chat endpoint and stores its text response           |
+| OpenAI API             | Calls the OpenAI Responses API with `store: false` and stores the returned text locally         |
+| Anthropic API (Claude) | Calls the Anthropic Messages API and stores the returned text locally                           |
+
+Direct Ollama, Hugging Face, OpenAI, and Anthropic calls are text-response runs, not coding-agent
+sessions. Their output is marked untrusted, is not executed or applied to the worktree, and must be
+reviewed. The extension records `provider`, requested `model`, response status, and a local artifact
+reference in Beads; it does not record the API key, full prompt, or raw response there.
+
+Canceling a picker or the request confirmation performs no provider call, Beads write, or worktree
+mutation. Before a cloud request, the confirmation shows the request count and each provider/model.
+The prompt contains the task ID/title, workspace name, SSOT references, and dependency IDs, but no
+file contents are read into it automatically. Cloud providers may charge for each request.
+
+Before preparing a worktree or contacting any provider, the extension runs a non-mutating Beads
+dry-run and checks that one atomic task update can record the assignment, status, notes, and
+metadata. A missing command or schema mismatch disables AI actions before any paid request. If a
+write still fails after a response is generated, the local response artifact is preserved and
+opened for review with the partial state reported explicitly.
+
+Use **Beads Git Graph: Manage AI Provider Credentials** to store or delete Hugging Face, OpenAI, and
+Anthropic credentials in VS Code SecretStorage. `HF_TOKEN`, `OPENAI_API_KEY`, and
+`ANTHROPIC_API_KEY` are supported as environment fallbacks. API keys are not accepted in workspace
+settings. Cloud endpoints are fixed, Ollama is restricted to loopback URLs, and all AI execution and
+credential management require a trusted workspace.
+
+Configure model choices with:
+
+- `beads-git-graph.agentModelOptions` for Copilot
+- `beads-git-graph.agentOllamaModelOptions`
+- `beads-git-graph.agentHuggingFaceModelOptions`
+- `beads-git-graph.agentOpenAIModelOptions`
+- `beads-git-graph.agentAnthropicModelOptions`
+
+Exact model availability remains provider/account-specific, so every picker also accepts a custom
+model ID. A Hugging Face repository model run by Ollama should be represented as
+`provider=ollama` plus its exact `hf.co/...` model name. Hugging Face Inference Providers may route
+through another inference provider, so the extension does not infer an unconfirmed backend.
 
 Use task dependencies to plan work across different requested AI models. Acceptance criteria and
 shared SSOT references record the intended handoff, while Beads readiness controls when dependent
@@ -96,9 +133,11 @@ preparation and again before the Beads update. SSOT remains a shared reference, 
 artifact-production contract.
 
 When multiple ready tasks can run in parallel, **Start Parallel** asks whether to preserve each
-task's model preference or override every selected task. Each task receives its own worktree so the
-Beads table and graph can show which worktree is expected to carry that agent's changes. Active
-tasks that are skipped are reported with the reason.
+task's provider/model handoff or override every selected task. It preflights every required
+credential before execution, confirms the number of text-response calls, and limits one batch to 20
+direct-provider requests. Copilot tasks receive isolated worktrees; direct API tasks receive local
+response artifacts and are not presented as worktree-editing agents. Active tasks that are skipped
+are reported with the reason.
 
 These hints are visual metadata. Beads ready/blocking behavior still comes from issue status and dependencies.
 

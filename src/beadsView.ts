@@ -4,13 +4,28 @@ import * as path from "node:path";
 
 import * as vscode from "vscode";
 
+import { AgentArtifactStore, type AgentResponseArtifact } from "./agentArtifactStore";
+import { buildAgentBeadUpdateArgs } from "./agentBeadUpdate";
+import { AgentCredentialStore } from "./agentCredentialStore";
 import {
-  applyAgentModelOverride,
   buildAgentModelOptions,
   DEFAULT_AGENT_MODEL,
   normalizeAgentModelName
 } from "./agentModelSelection";
+import {
+  AGENT_PROVIDERS,
+  type AgentExecutionOutcomeStatus,
+  type AgentProviderId,
+  getAgentProviderDefinition,
+  resolveAgentProviderId
+} from "./agentProvider";
+import {
+  normalizeOllamaBaseUrl,
+  requestAgentProviderResponse,
+  type TextResponseProviderId
+} from "./agentProviderClient";
 import { revalidateExecutionTargets } from "./agentReadiness";
+import { persistGeneratedAgentResponse } from "./agentResponsePersistence";
 import { runReadinessGuardedStart } from "./agentStartGuard";
 import { buildAgentWorkPrompt } from "./agentWorkPrompt";
 import {
@@ -39,6 +54,7 @@ import {
 import { renderBeadsWebviewHtml } from "./beadsWebview";
 import {
   type BeadsCapabilityCommandResult,
+  probeBeadsAgentWriteCapability,
   probeBeadsWriteCapability
 } from "./beadsWriteCapability";
 import { BranchSwitchSyncCoordinator } from "./branchSwitchSync";
@@ -70,8 +86,17 @@ const COPILOT_ASSIGN_COMMAND_CANDIDATES = [
   "workbench.action.chat.openSessionWithPrompt.copilot-cloud-agent"
 ];
 const CHAT_FALLBACK_COMMAND_CANDIDATES = ["workbench.action.chat.open"];
+const MAX_PARALLEL_TEXT_PROVIDER_REQUESTS = 20;
 
-type AssignAgentOpenResult = "opened" | "copied-prompt" | "failed";
+type AssignAgentOpenResult = AgentExecutionOutcomeStatus;
+
+type PreparedAgentExecution =
+  | { kind: "copilot-worktree"; worktree: GitWorktreeInfo }
+  | {
+      kind: "text-response";
+      artifact: AgentResponseArtifact;
+      dependencyIds: readonly string[];
+    };
 
 interface GitWorktreeInfo {
   path: string;
@@ -109,9 +134,17 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private readonly branchWatchers = new Map<string, vscode.Disposable[]>();
   private readonly branchSyncCoordinator: BranchSwitchSyncCoordinator;
   private readonly extensionUri: vscode.Uri;
+  private readonly credentialStore: AgentCredentialStore;
+  private readonly artifactStore: AgentArtifactStore;
 
-  constructor(extensionUri: vscode.Uri) {
+  constructor(
+    extensionUri: vscode.Uri,
+    credentialStore: AgentCredentialStore,
+    artifactStore: AgentArtifactStore
+  ) {
     this.extensionUri = extensionUri;
+    this.credentialStore = credentialStore;
+    this.artifactStore = artifactStore;
     this.branchSyncCoordinator = new BranchSwitchSyncCoordinator(
       (workspacePath) => this.loadCurrentBranchKey(workspacePath),
       async (workspacePath) => {
@@ -318,6 +351,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const errors: { source: string; message: string }[] = [];
     const warnings: BeadWarning[] = [];
     const planImportCapabilities: NonNullable<BeadLoadResult["planImportCapabilities"]> = [];
+    const agentWriteCapabilities: NonNullable<BeadLoadResult["agentWriteCapabilities"]> = [];
     const bdExecutableStatus = await checkExecutable(getConfig().bdPath());
 
     for (const folder of workspaceFolders) {
@@ -330,6 +364,14 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       const hasBeadsDirectory = await this.pathExists(beadsDirUri);
 
       if (hasBeadsDirectory) {
+        agentWriteCapabilities.push({
+          ...workspaceInfo,
+          capability: await probeBeadsAgentWriteCapability(
+            bdExecutableStatus.available,
+            bdExecutableStatus.message,
+            (args) => this.runBdCapabilityProbe(args, folder.uri.fsPath)
+          )
+        });
         planImportCapabilities.push({
           ...workspaceInfo,
           capability: await probeBeadsWriteCapability(
@@ -389,6 +431,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       bdExecutableStatus,
       errors,
       warnings,
+      agentWriteCapabilities: agentWriteCapabilities.sort((a, b) =>
+        a.workspace.localeCompare(b.workspace)
+      ),
       planImportCapabilities: planImportCapabilities.sort((a, b) =>
         a.workspace.localeCompare(b.workspace)
       )
@@ -410,6 +455,20 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
     if (message.command === "openGitGraph") {
       await vscode.commands.executeCommand("beads-git-graph.view");
+      return;
+    }
+
+    if (message.command === "openAgentArtifact") {
+      const openResult = await this.artifactStore.openRecordedUri(message.artifactUri);
+      if (openResult.status === "invalid-reference") {
+        vscode.window.showWarningMessage(
+          "Refusing to open an AI response artifact outside this workspace's extension storage."
+        );
+      } else if (openResult.status === "could-not-open") {
+        vscode.window.showWarningMessage(
+          "The recorded AI response artifact is missing or could not be opened."
+        );
+      }
       return;
     }
 
@@ -660,6 +719,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           workspacePath,
           issueId,
           message.title,
+          message.provider,
           message.model?.trim() || message.agent,
           message.ssot,
           message.worktree
@@ -730,21 +790,42 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     workspacePath: string,
     issueId: string,
     title: string | undefined,
+    currentProvider: string | undefined,
     currentModel: string | undefined,
     currentSsot: string | undefined,
     currentWorktree: string | undefined
   ) {
-    const model = await this.pickAgentModelPreference(currentModel);
+    this.assertTrustedWorkspaceForAgentAction();
+    const provider = await this.pickAgentProviderPreference(currentProvider);
+    if (provider === null) {
+      return;
+    }
+    const model = await this.pickAgentModelPreference(
+      provider,
+      provider === resolveAgentProviderId(currentProvider) ? currentModel : undefined
+    );
     if (model === null) {
       return;
     }
+    await this.assertAgentWriteCapability(workspacePath);
+    await this.preflightAgentProvider(provider);
+    if (
+      provider !== "copilot" &&
+      !(await this.confirmTextProviderRequests([{ provider, model }]))
+    ) {
+      return;
+    }
     const ssot = this.resolveAssignSsot(workspacePath, issueId, currentSsot);
-    const worktree = this.resolveAssignWorktree(workspacePath, issueId, currentWorktree);
+    const worktree =
+      provider === "copilot"
+        ? this.resolveAssignWorktree(workspacePath, issueId, currentWorktree)
+        : "";
 
     const startResult = await this.assignAndStartBead({
       workspacePath,
       issueId,
       title,
+      provider,
       model,
       ssot,
       worktree
@@ -753,29 +834,47 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       vscode.window.showWarningMessage(
         startResult.phase === "before-preparation"
           ? `Refusing to start ${issueId}: bd ready no longer reports this task as ready. Refresh the Beads view and review its dependencies.`
-          : `Stopped ${issueId} before updating Beads because readiness changed while preparing its worktree. No agent session was started.`
+          : startResult.phase === "dependencies-changed"
+            ? `Stopped ${issueId} because its dependency handoffs changed while generating the response. The response artifact was preserved locally and opened when possible; no Beads mutation was made.`
+            : provider === "copilot"
+              ? `Stopped ${issueId} before updating Beads because readiness changed while preparing its worktree. No agent session was started.`
+              : `Stopped ${issueId} before updating Beads because readiness changed while generating the response. The response artifact was preserved locally and opened when possible; no Beads mutation was made.`
       );
       return;
     }
     const openResult = startResult.result;
     await this.refresh();
 
-    if (openResult === "opened") {
+    if (openResult === "session-opened") {
       vscode.window.showInformationMessage(
         `Started ${issueId} with requested model ${model}. Opened Copilot agent session for ${path.basename(worktree)}.`
       );
       return;
     }
 
-    if (openResult === "copied-prompt") {
+    if (openResult === "prompt-prepared") {
       vscode.window.showInformationMessage(
         `Started ${issueId} with requested model ${model}. Copilot agent prompt copied to clipboard; paste it into Copilot chat.`
       );
       return;
     }
 
+    if (openResult === "response-opened" || openResult === "response-stored") {
+      const providerLabel = getAgentProviderDefinition(provider).label;
+      const detail =
+        openResult === "response-opened"
+          ? "Opened the local response artifact for review."
+          : "Stored the local response artifact, but could not open it.";
+      vscode.window.showInformationMessage(
+        `${providerLabel} generated a response for ${issueId} with requested model ${model}. ${detail} No code was applied automatically.`
+      );
+      return;
+    }
+
     vscode.window.showWarningMessage(
-      `Started ${issueId} with requested model ${model}, but could not open Copilot chat or copy the agent prompt.`
+      provider === "copilot"
+        ? `Updated ${issueId} with requested model ${model}, but could not open Copilot chat or copy the agent prompt.`
+        : `Generated a response for ${issueId}, but could not store its local artifact.`
     );
   }
 
@@ -783,11 +882,12 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     workspacePath: string;
     issueId: string;
     title: string | undefined;
+    provider: AgentProviderId;
     model: string;
     ssot: string;
     worktree: string;
   }) {
-    return runReadinessGuardedStart({
+    return runReadinessGuardedStart<PreparedAgentExecution, AssignAgentOpenResult>({
       issueId: values.issueId,
       queryReadyItemIds: () => this.queryReadyItemIds(values.workspacePath),
       queryDependencyIds: async () => {
@@ -797,36 +897,120 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         );
         return dependencies.get(values.issueId) ?? [];
       },
-      prepare: () =>
-        this.ensureAgentWorktree(values.workspacePath, values.issueId, values.worktree),
-      mutateAndLaunch: async (agentWorktree, dependencyIds) => {
-        const worktree = agentWorktree.path;
+      preflight: () => this.assertAgentWriteCapability(values.workspacePath),
+      prepare: async (dependencyIds) => {
+        if (values.provider === "copilot") {
+          return {
+            kind: "copilot-worktree",
+            worktree: await this.ensureAgentWorktree(
+              values.workspacePath,
+              values.issueId,
+              values.worktree
+            )
+          };
+        }
+        const response = await this.requestTextProviderResponse(
+          {
+            workspacePath: values.workspacePath,
+            issueId: values.issueId,
+            title: values.title,
+            provider: values.provider,
+            model: values.model,
+            ssot: values.ssot
+          },
+          dependencyIds
+        );
+        const capture = await this.artifactStore.writeOrOpenFallback({
+          issueId: values.issueId,
+          title: values.title,
+          response
+        });
+        if (capture.status === "opened-unsaved") {
+          throw new Error(
+            `Generated the ${values.provider} response, but extension storage failed: ${capture.storageError}. The response was opened as an unsaved document; save it before closing. No Beads mutation was made.`
+          );
+        }
+        return {
+          kind: "text-response",
+          artifact: capture.artifact,
+          dependencyIds: [...dependencyIds]
+        };
+      },
+      preservePreparedOnAbort: async (prepared) => {
+        if (prepared.kind === "text-response") {
+          await this.openAgentResponseArtifact(prepared.artifact);
+        }
+      },
+      isPreparedStillValid: (prepared, dependencyIds) =>
+        prepared.kind !== "text-response" ||
+        this.haveSameDependencyIds(prepared.dependencyIds, dependencyIds),
+      mutateAndLaunch: async (prepared, dependencyIds) => {
+        if (prepared.kind === "text-response") {
+          const agent = `${values.provider}:${values.model}`;
+          return persistGeneratedAgentResponse({
+            createArtifact: async () => prepared.artifact,
+            updateBead: async (artifact) => {
+              const metadata = [
+                `agent=${agent}`,
+                `provider=${values.provider}`,
+                `model=${values.model}`,
+                `ssot=${values.ssot}`,
+                "provider_status=response_completed",
+                `artifact_run=${artifact.runId}`,
+                `artifact=${artifact.reference}`
+              ];
+              const notes = [
+                `provider=${values.provider}`,
+                `model=${values.model}`,
+                "provider_status=response_completed",
+                `artifact_run=${artifact.runId}`,
+                `artifact=${artifact.reference}`
+              ];
+              await this.runBdCommand(
+                buildAgentBeadUpdateArgs({
+                  issueId: values.issueId,
+                  assignee: agent,
+                  notes,
+                  metadata
+                }),
+                values.workspacePath
+              );
+            },
+            flushBeads: async () => {
+              await flushBeadsWorkspace(
+                (args, cwd) => this.runBdCommand(args, cwd),
+                values.workspacePath
+              );
+            },
+            openArtifact: (artifact) => this.openAgentResponseArtifact(artifact)
+          });
+        }
+
+        const worktree = prepared.worktree.path;
         const metadata = [
           `agent=${values.model}`,
+          `provider=${values.provider}`,
           `model=${values.model}`,
           `ssot=${values.ssot}`,
           `worktree=${worktree}`,
-          agentWorktree.branch.trim() === "" ? "" : `branch=${agentWorktree.branch.trim()}`
+          prepared.worktree.branch.trim() === "" ? "" : `branch=${prepared.worktree.branch.trim()}`
         ].filter((entry) => entry !== "");
 
         const notes = [
+          `provider=${values.provider}`,
           `model=${values.model}`,
           `ssot=${values.ssot}`,
           `worktree=${worktree}`,
-          agentWorktree.branch.trim() === "" ? "" : `branch=${agentWorktree.branch.trim()}`
+          prepared.worktree.branch.trim() === "" ? "" : `branch=${prepared.worktree.branch.trim()}`
         ].filter((entry) => entry !== "");
 
-        await this.runBdCommand(["assign", values.issueId, values.model], values.workspacePath);
         await this.runBdCommand(
-          [
-            "update",
-            values.issueId,
-            "--status",
-            "in_progress",
-            "--append-notes",
-            notes.join("\n"),
-            ...metadata.flatMap((entry) => ["--set-metadata", entry])
-          ],
+          buildAgentBeadUpdateArgs({
+            issueId: values.issueId,
+            assignee: values.model,
+            notes,
+            metadata
+          }),
           values.workspacePath
         );
         await flushBeadsWorkspace(
@@ -834,7 +1018,12 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           values.workspacePath
         );
 
-        return this.openAssignAgentSession({ ...values, worktree, dependencyIds });
+        return this.openAssignAgentSession({
+          ...values,
+          provider: "copilot",
+          worktree,
+          dependencyIds
+        });
       }
     });
   }
@@ -844,10 +1033,12 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     items: BeadsExecutionTarget[],
     skipped: BeadsExecutionSkip[] = []
   ) {
-    const modelSelection = await this.pickParallelAgentModelPreference(items);
-    if (modelSelection.cancelled) {
+    this.assertTrustedWorkspaceForAgentAction();
+    const selection = await this.pickParallelAgentProviderModelPreference(items);
+    if (selection.cancelled) {
       return;
     }
+    await this.assertAgentWriteCapability(workspacePath);
     const readyItemIds = await this.queryReadyItemIds(workspacePath);
     const revalidated = revalidateExecutionTargets(items, readyItemIds);
     const revalidatedSkipped = [...skipped, ...revalidated.noLongerReady];
@@ -860,35 +1051,81 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       );
       return;
     }
-    const selectedItems = applyAgentModelOverride(revalidated.ready, modelSelection.overrideModel);
-    const candidates = selectedItems.map((item) => ({
-      issueId: item.issueId.trim(),
-      title: item.title,
-      model: this.resolveAssignModel(item.model),
-      ssot: "",
-      worktree: ""
+    const selectedItems = revalidated.ready.map((item) => ({
+      ...item,
+      ...(selection.overrideProvider === null ? {} : { provider: selection.overrideProvider }),
+      ...(selection.overrideModel === null ? {} : { model: selection.overrideModel })
     }));
+    const missingModelItems: string[] = [];
+    const candidates = selectedItems.flatMap((item) => {
+      const provider = resolveAgentProviderId(item.provider);
+      const model = this.resolveAssignModel(provider, item.model);
+      if (model === null) {
+        missingModelItems.push(item.issueId.trim());
+        return [];
+      }
+      return [
+        {
+          issueId: item.issueId.trim(),
+          title: item.title,
+          provider,
+          model,
+          ssot: "",
+          worktree: ""
+        }
+      ];
+    });
+    if (missingModelItems.length > 0) {
+      vscode.window.showWarningMessage(
+        `No model is configured for ${missingModelItems.join(", ")}. Set a provider-specific model option or override the provider and model for this run.`
+      );
+      return;
+    }
 
     const uniqueCandidates = [...new Map(candidates.map((item) => [item.issueId, item])).values()];
-    let startedCount = 0;
-    let openedCount = 0;
-    let copiedPromptCount = 0;
+    for (const provider of new Set(uniqueCandidates.map((candidate) => candidate.provider))) {
+      await this.preflightAgentProvider(provider);
+    }
+    const textRequests = uniqueCandidates
+      .filter(
+        (candidate): candidate is typeof candidate & { provider: TextResponseProviderId } =>
+          candidate.provider !== "copilot"
+      )
+      .map(({ provider, model }) => ({ provider, model }));
+    if (!(await this.confirmTextProviderRequests(textRequests))) {
+      return;
+    }
+
+    let processedCount = 0;
+    let sessionCount = 0;
+    let promptCount = 0;
+    let responseCount = 0;
     for (const candidate of uniqueCandidates) {
       const source = selectedItems.find((item) => item.issueId.trim() === candidate.issueId);
       candidate.ssot = this.resolveAssignSsot(workspacePath, candidate.issueId, source?.ssot);
-      candidate.worktree = this.resolveAssignWorktree(
-        workspacePath,
-        candidate.issueId,
-        source?.worktree
-      );
-      const startResult = await this.assignAndStartBead({
-        workspacePath,
-        issueId: candidate.issueId,
-        title: candidate.title,
-        model: candidate.model,
-        ssot: candidate.ssot,
-        worktree: candidate.worktree
-      });
+      candidate.worktree =
+        candidate.provider === "copilot"
+          ? this.resolveAssignWorktree(workspacePath, candidate.issueId, source?.worktree)
+          : "";
+      let startResult;
+      try {
+        startResult = await this.assignAndStartBead({
+          workspacePath,
+          issueId: candidate.issueId,
+          title: candidate.title,
+          provider: candidate.provider,
+          model: candidate.model,
+          ssot: candidate.ssot,
+          worktree: candidate.worktree
+        });
+      } catch (error) {
+        revalidatedSkipped.push({
+          issueId: candidate.issueId,
+          title: candidate.title,
+          reason: error instanceof Error ? error.message : "provider execution failed"
+        });
+        continue;
+      }
       if (startResult.status === "not-ready") {
         revalidatedSkipped.push({
           issueId: candidate.issueId,
@@ -896,23 +1133,29 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           reason:
             startResult.phase === "before-preparation"
               ? "no longer reported ready by bd"
-              : "readiness changed while preparing worktree"
+              : startResult.phase === "dependencies-changed"
+                ? "dependency handoffs changed after generation; response artifact preserved locally"
+                : candidate.provider === "copilot"
+                  ? "readiness changed while preparing worktree"
+                  : "readiness changed after generation; response artifact preserved locally"
         });
         continue;
       }
-      startedCount += 1;
+      processedCount += 1;
       const openResult = startResult.result;
-      if (openResult === "opened") {
-        openedCount += 1;
-      } else if (openResult === "copied-prompt") {
-        copiedPromptCount += 1;
+      if (openResult === "session-opened") {
+        sessionCount += 1;
+      } else if (openResult === "prompt-prepared") {
+        promptCount += 1;
+      } else if (openResult === "response-opened" || openResult === "response-stored") {
+        responseCount += 1;
       }
     }
 
     await this.refresh();
     const skippedSummary = this.formatSkippedParallelTargets(revalidatedSkipped);
     vscode.window.showInformationMessage(
-      `Started ${startedCount} parallel bead(s). Opened ${openedCount} Copilot session(s). Copied ${copiedPromptCount} prompt(s).${skippedSummary === "" ? "" : ` Skipped ${skippedSummary}.`}`
+      `Processed ${processedCount} parallel bead(s). Opened ${sessionCount} Copilot session(s), prepared ${promptCount} Copilot prompt(s), and generated ${responseCount} local response artifact(s).${skippedSummary === "" ? "" : ` Skipped ${skippedSummary}.`}`
     );
   }
 
@@ -942,6 +1185,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     title: string | undefined,
     dependencies: BeadsExecutionTarget[]
   ) {
+    this.assertTrustedWorkspaceForAgentAction();
+    await this.assertAgentWriteCapability(workspacePath);
     const worktrees = await this.resolveDependencyWorktrees(workspacePath, dependencies);
     if (worktrees.length === 0) {
       throw new Error("No dependency worktrees were found for this parallel merge task.");
@@ -993,6 +1238,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     workspacePath: string;
     issueId: string;
     title: string | undefined;
+    provider: "copilot";
     model: string;
     ssot: string;
     worktree: string | undefined;
@@ -1012,7 +1258,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           prompt,
           resource
         });
-        return "opened";
+        return "session-opened";
       } catch {
         continue;
       }
@@ -1031,17 +1277,54 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           continue;
         }
       }
-      return "copied-prompt";
+      return "prompt-prepared";
     } catch {
       return "failed";
     }
   }
 
-  private async pickAgentModelPreference(currentModel: string | undefined) {
+  private async pickAgentProviderPreference(currentProvider: string | undefined) {
+    const taskProvider = resolveAgentProviderId(currentProvider);
+    const selected = await vscode.window.showQuickPick(
+      AGENT_PROVIDERS.map((provider) => ({
+        label: provider.label,
+        description:
+          provider.id === taskProvider
+            ? currentProvider === undefined || currentProvider.trim() === ""
+              ? "Current/default provider"
+              : "Task provider preference"
+            : provider.description,
+        provider: provider.id
+      })),
+      {
+        title: "AI provider",
+        placeHolder:
+          "Copilot opens a coding session. Other providers generate a reviewable text artifact."
+      }
+    );
+    return selected?.provider ?? null;
+  }
+
+  private async pickAgentModelPreference(
+    provider: AgentProviderId,
+    currentModel: string | undefined
+  ) {
     const taskModel = normalizeAgentModelName(currentModel);
+    const configuredModels = getConfig().agentProviderModelOptions(provider);
+    const modelOptions =
+      provider === "copilot"
+        ? buildAgentModelOptions(currentModel, configuredModels)
+        : [
+            ...new Set(
+              [currentModel, ...configuredModels]
+                .map(normalizeAgentModelName)
+                .filter((model): model is string => model !== null)
+            )
+          ];
+    const providerLabel = getAgentProviderDefinition(provider).label;
     const selected = await vscode.window.showQuickPick(
       [
-        ...buildAgentModelOptions(currentModel, getConfig().agentModelOptions()).map((model) => ({
+        ...modelOptions.map((model) => ({
           label: model,
           description: model === taskModel ? "Task model preference" : "Configured preference",
           choice: "model" as const,
@@ -1055,9 +1338,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         }
       ],
       {
-        title: "Model preference (Copilot)",
-        placeHolder:
-          "Choose the requested model. Actual availability depends on the Copilot provider."
+        title: `Model for ${providerLabel}`,
+        placeHolder: "Choose the exact requested model. Availability is checked by the provider."
       }
     );
     if (selected === undefined) {
@@ -1066,61 +1348,60 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     if (selected.choice === "model") {
       return selected.model;
     }
-    return this.inputCustomAgentModel();
+    return this.inputCustomAgentModel(provider);
   }
 
-  private async pickParallelAgentModelPreference(
+  private async pickParallelAgentProviderModelPreference(
     items: readonly BeadsExecutionTarget[]
-  ): Promise<{ cancelled: boolean; overrideModel: string | null }> {
+  ): Promise<{
+    cancelled: boolean;
+    overrideProvider: AgentProviderId | null;
+    overrideModel: string | null;
+  }> {
     const selected = await vscode.window.showQuickPick(
       [
         {
-          label: "Use each task's model preference",
-          description: "Keep each task model, then use the default where none is set",
+          label: "Use each task's provider and model",
+          description: "Preserve every task-specific provider/model handoff",
           choice: "per-task" as const,
-          model: ""
+          provider: "copilot" as AgentProviderId
         },
-        ...buildAgentModelOptions(undefined, [
-          ...items.map((item) => item.model ?? ""),
-          ...getConfig().agentModelOptions()
-        ]).map((model) => ({
-          label: model,
-          description: "Override every selected task",
-          choice: "model" as const,
-          model
-        })),
-        {
-          label: "Enter another model...",
-          description: "Override every selected task with another preference",
-          choice: "custom" as const,
-          model: ""
-        }
+        ...AGENT_PROVIDERS.map((provider) => ({
+          label: `Use ${provider.label} for every task`,
+          description: provider.description,
+          choice: "provider" as const,
+          provider: provider.id
+        }))
       ],
       {
-        title: "Model preference for parallel work (Copilot)",
-        placeHolder: "Keep task-specific models or choose one requested model for every task."
+        title: "Provider for parallel work",
+        placeHolder: "Keep task-specific handoffs or override every selected task."
       }
     );
     if (selected === undefined) {
-      return { cancelled: true, overrideModel: null };
+      return { cancelled: true, overrideProvider: null, overrideModel: null };
     }
     if (selected.choice === "per-task") {
-      return { cancelled: false, overrideModel: null };
+      return { cancelled: false, overrideProvider: null, overrideModel: null };
     }
-    if (selected.choice === "model") {
-      return { cancelled: false, overrideModel: selected.model };
-    }
-    const customModel = await this.inputCustomAgentModel();
-    return customModel === null
-      ? { cancelled: true, overrideModel: null }
-      : { cancelled: false, overrideModel: customModel };
+    const existingModel = items.find(
+      (item) => resolveAgentProviderId(item.provider) === selected.provider
+    )?.model;
+    const model = await this.pickAgentModelPreference(selected.provider, existingModel);
+    return model === null
+      ? { cancelled: true, overrideProvider: null, overrideModel: null }
+      : {
+          cancelled: false,
+          overrideProvider: selected.provider,
+          overrideModel: model
+        };
   }
 
-  private async inputCustomAgentModel() {
+  private async inputCustomAgentModel(provider: AgentProviderId) {
+    const providerLabel = getAgentProviderDefinition(provider).label;
     const value = await vscode.window.showInputBox({
-      title: "Model preference (Copilot)",
-      prompt:
-        "Enter the model preference to record and include in the agent prompt. Availability depends on the provider.",
+      title: `Model for ${providerLabel}`,
+      prompt: "Enter the exact provider model ID to request and record with the task.",
       validateInput: (input) =>
         normalizeAgentModelName(input) === null
           ? "Enter a one-line model name between 1 and 100 characters."
@@ -1129,8 +1410,134 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     return value === undefined ? null : normalizeAgentModelName(value);
   }
 
-  private resolveAssignModel(currentModel: string | undefined) {
-    return normalizeAgentModelName(currentModel) ?? DEFAULT_AGENT_MODEL;
+  private resolveAssignModel(provider: AgentProviderId, currentModel: string | undefined) {
+    const normalized = normalizeAgentModelName(currentModel);
+    if (normalized !== null) {
+      return normalized;
+    }
+    return provider === "copilot"
+      ? DEFAULT_AGENT_MODEL
+      : (getConfig().agentProviderModelOptions(provider)[0] ?? null);
+  }
+
+  private assertTrustedWorkspaceForAgentAction() {
+    if (!vscode.workspace.isTrusted) {
+      throw new Error(
+        "Trust this workspace before starting AI work, creating worktrees, or updating Beads."
+      );
+    }
+  }
+
+  private async assertAgentWriteCapability(workspacePath: string) {
+    const executableStatus = await checkExecutable(getConfig().bdPath());
+    const capability = await probeBeadsAgentWriteCapability(
+      executableStatus.available,
+      executableStatus.message,
+      (args) => this.runBdCapabilityProbe(args, workspacePath)
+    );
+    if (!capability.supported) {
+      throw new Error(
+        `AI work is disabled because Beads cannot be updated safely: ${capability.reason}`
+      );
+    }
+  }
+
+  private async preflightAgentProvider(provider: AgentProviderId) {
+    this.assertTrustedWorkspaceForAgentAction();
+    if (provider === "copilot") {
+      return;
+    }
+    if (provider === "ollama") {
+      normalizeOllamaBaseUrl(getConfig().agentOllamaBaseUrl());
+      return;
+    }
+    const credential = await this.credentialStore.get(provider);
+    if (credential === null) {
+      const definition = getAgentProviderDefinition(provider);
+      throw new Error(
+        `${definition.label} has no credential. Run “Beads Git Graph: Manage AI Provider Credentials” or set ${definition.credentialEnvironmentVariable}.`
+      );
+    }
+  }
+
+  private async confirmTextProviderRequests(
+    requests: ReadonlyArray<{ provider: TextResponseProviderId; model: string }>
+  ) {
+    if (requests.length === 0) {
+      return true;
+    }
+    if (requests.length > MAX_PARALLEL_TEXT_PROVIDER_REQUESTS) {
+      vscode.window.showWarningMessage(
+        `Refusing to send ${requests.length} text-response requests at once. Select ${MAX_PARALLEL_TEXT_PROVIDER_REQUESTS} or fewer tasks and retry.`
+      );
+      return false;
+    }
+    const groups = new Map<string, number>();
+    for (const request of requests) {
+      const key = `${getAgentProviderDefinition(request.provider).label} / ${request.model}`;
+      groups.set(key, (groups.get(key) ?? 0) + 1);
+    }
+    const summary = [...groups.entries()].map(([label, count]) => `${count} × ${label}`).join("\n");
+    const action = requests.length === 1 ? "Generate Response" : "Generate Responses";
+    const selected = await vscode.window.showWarningMessage(
+      `Generate ${requests.length} text response${requests.length === 1 ? "" : "s"}?`,
+      {
+        modal: true,
+        detail: `${summary}\n\nThe provider receives the task ID/title, workspace name, SSOT references, and dependency IDs. File contents and API credentials are not included in the prompt. Cloud providers may charge for each request. Output is stored locally as untrusted text and is never applied automatically.`
+      },
+      action
+    );
+    return selected === action;
+  }
+
+  private async requestTextProviderResponse(
+    values: {
+      workspacePath: string;
+      issueId: string;
+      title: string | undefined;
+      provider: TextResponseProviderId;
+      model: string;
+      ssot: string;
+    },
+    dependencyIds: readonly string[]
+  ) {
+    const credential = await this.credentialStore.get(values.provider);
+    const prompt = buildAgentWorkPrompt({
+      ...values,
+      worktree: undefined,
+      dependencyIds,
+      includeLocalPaths: false,
+      executionMode: "text-response"
+    });
+    return requestAgentProviderResponse({
+      provider: values.provider,
+      model: values.model,
+      prompt,
+      apiKey: credential?.value,
+      ollamaBaseUrl: values.provider === "ollama" ? getConfig().agentOllamaBaseUrl() : undefined,
+      maxOutputTokens: getConfig().agentProviderMaxOutputTokens(),
+      timeoutMs: getConfig().agentProviderTimeoutMs()
+    });
+  }
+
+  private async openAgentResponseArtifact(artifact: AgentResponseArtifact) {
+    try {
+      await this.artifactStore.open(artifact);
+      return "response-opened" as const;
+    } catch {
+      return "response-stored" as const;
+    }
+  }
+
+  private haveSameDependencyIds(left: readonly string[], right: readonly string[]) {
+    const normalize = (values: readonly string[]) =>
+      [...new Set(values.map((value) => value.trim()).filter((value) => value !== ""))].sort();
+    const normalizedLeft = normalize(left);
+    const normalizedRight = normalize(right);
+    return (
+      normalizedLeft.length === normalizedRight.length &&
+      normalizedLeft.every((value, index) => value === normalizedRight[index])
+    );
   }
 
   private resolveAssignSsot(

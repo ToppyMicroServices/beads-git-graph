@@ -1,4 +1,5 @@
 import { normalizeAgentModelName } from "./agentModelSelection";
+import { type AgentProviderId, normalizeAgentProviderId } from "./agentProvider";
 
 export type BeadsRequestMessage =
   | { command: "refresh" }
@@ -7,6 +8,7 @@ export type BeadsRequestMessage =
   | { command: "syncBeads"; workspacePath: string }
   | { command: "importPlanDraft"; workspacePath: string; draftText: string }
   | { command: "openGitGraphForCommit"; commitHash: string }
+  | { command: "openAgentArtifact"; artifactUri: string }
   | { command: "createBead"; workspacePath: string }
   | { command: "closeBead"; issueId: string; workspacePath: string; title?: string }
   | {
@@ -15,6 +17,7 @@ export type BeadsRequestMessage =
       workspacePath: string;
       title?: string;
       agent?: string;
+      provider?: AgentProviderId;
       model?: string;
       ssot?: string;
       worktree?: string;
@@ -36,6 +39,7 @@ export type BeadsRequestMessage =
 export interface BeadsExecutionTarget {
   issueId: string;
   title?: string;
+  provider?: AgentProviderId;
   model?: string;
   ssot?: string;
   worktree?: string;
@@ -54,6 +58,23 @@ function isOptionalAgentModel(value: unknown) {
   );
 }
 
+function isOptionalAgentProvider(value: unknown) {
+  return (
+    typeof value === "undefined" ||
+    (typeof value === "string" && (value.trim() === "" || normalizeAgentProviderId(value) !== null))
+  );
+}
+
+function isBoundedArtifactUri(value: unknown) {
+  return (
+    typeof value === "string" &&
+    value.trim() !== "" &&
+    value.length <= 2048 &&
+    !value.includes("\u0000") &&
+    !/[\r\n]/.test(value)
+  );
+}
+
 function isBeadsExecutionTarget(value: unknown): value is BeadsExecutionTarget {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -63,6 +84,7 @@ function isBeadsExecutionTarget(value: unknown): value is BeadsExecutionTarget {
   return (
     typeof record.issueId === "string" &&
     (typeof record.title === "string" || typeof record.title === "undefined") &&
+    isOptionalAgentProvider(record.provider) &&
     isOptionalAgentModel(record.model) &&
     (typeof record.ssot === "string" || typeof record.ssot === "undefined") &&
     (typeof record.worktree === "string" || typeof record.worktree === "undefined")
@@ -108,6 +130,8 @@ export function isBeadsRequestMessage(message: unknown): message is BeadsRequest
       );
     case "openGitGraphForCommit":
       return typeof record.commitHash === "string";
+    case "openAgentArtifact":
+      return isBoundedArtifactUri(record.artifactUri);
     case "mergeParallelPrs":
       return (
         typeof record.issueId === "string" &&
@@ -124,6 +148,7 @@ export function isBeadsRequestMessage(message: unknown): message is BeadsRequest
         (typeof record.title === "string" || typeof record.title === "undefined") &&
         (record.command !== "assignStartBead" ||
           ((typeof record.agent === "string" || typeof record.agent === "undefined") &&
+            isOptionalAgentProvider(record.provider) &&
             isOptionalAgentModel(record.model) &&
             (typeof record.ssot === "string" || typeof record.ssot === "undefined") &&
             (typeof record.worktree === "string" || typeof record.worktree === "undefined")))

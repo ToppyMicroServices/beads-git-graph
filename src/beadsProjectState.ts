@@ -1,3 +1,4 @@
+import { resolveAgentProviderId } from "./agentProvider";
 import { type BeadItem, normalizeBeadStatus } from "./beadsData";
 
 export const AGENT_WORK_LANES = ["attention", "review", "running", "queue", "done"] as const;
@@ -14,6 +15,7 @@ export type AgentWorkReasonCode =
   | "pull-request"
   | "ready-confirmed"
   | "ready-not-confirmed"
+  | "response-artifact"
   | "sync-risk"
   | "unknown-status";
 
@@ -148,6 +150,25 @@ export function deriveAgentWorkItem(item: BeadItem): AgentWorkItem {
       item,
       "review",
       [{ code: "pull-request", message: `Pull request "${pullRequest}" is recorded` }],
+      readiness
+    );
+  }
+
+  if (
+    normalizedStatus === "in_progress" &&
+    resolveAgentProviderId(item.provider) !== "copilot" &&
+    item.artifact.trim() !== ""
+  ) {
+    return makeDerivedItem(
+      item,
+      "review",
+      [
+        {
+          code: "response-artifact",
+          message:
+            "A direct-provider response artifact is ready for review; no live agent is implied"
+        }
+      ],
       readiness
     );
   }

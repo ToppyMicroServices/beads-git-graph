@@ -13,6 +13,13 @@
   in dependent task prompts.
 - Add a cross-model task-chain behavior test from Plan Draft through Beads import.
 - Add a current Plan Draft screenshot to the README.
+- Add provider/model selection for Copilot, local Ollama, Hugging Face Inference, OpenAI, and
+  Anthropic Claude.
+- Store cloud credentials in VS Code SecretStorage with environment fallbacks and require Workspace
+  Trust before provider execution.
+- Store direct API output as a local untrusted response artifact without applying it to a worktree.
+- Preserve provider/model handoffs through Plan Draft, Beads metadata, single starts, and parallel
+  starts, with a cross-provider workflow test.
 
 ### Fixed
 
@@ -21,6 +28,14 @@
 - Recheck `bd ready` before worktree preparation and again immediately before Beads mutation.
 - Read handoff dependencies from a fresh `bd show` result instead of trusting webview metadata.
 - Validate Plan Draft model preferences consistently and quote untrusted task metadata in prompts.
+- Restrict Ollama endpoints to loopback hosts, fix cloud endpoints, redact provider failures, cap
+  response size, and confirm paid parallel fan-out before sending prompts.
+- Keep the Graph point under the pointer fixed during wheel, trackpad, button, and keyboard zoom;
+  preserve manual zoom when switching views or resizing; and center Fit and box-selection zoom.
+- Block AI requests when a non-mutating Beads probe reports an unsafe write/schema state, record
+  agent assignment and response metadata in one update, and preserve generated output on failure.
+- Enforce the provider response-size limit while streaming and distinguish invalid artifact
+  references from missing or unreadable stored artifacts.
 
 ## [0.4.20260710] - 2026-07-08
 

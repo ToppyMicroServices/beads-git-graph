@@ -18,6 +18,7 @@ const draft: PlanDraft = {
       acceptanceCriteria: ["First passes"],
       dependencyIds: [],
       ssot: ["AGENTS.md"],
+      provider: "openai",
       model: "gpt-5"
     },
     {
@@ -46,7 +47,7 @@ describe("Plan Draft mutations", () => {
       [
         "bd create --title "First task" --priority P1 --type task --silent",
         "bd create --title "Second task" --priority P2 --type task --silent",
-        "bd update <created:draft-a> --acceptance "First passes" --set-metadata "plan_goal=Plan safely" --set-metadata plan_draft_version=1 --set-metadata model=gpt-5 --set-metadata ssot=AGENTS.md",
+        "bd update <created:draft-a> --acceptance "First passes" --set-metadata "plan_goal=Plan safely" --set-metadata plan_draft_version=1 --set-metadata provider=openai --set-metadata model=gpt-5 --set-metadata ssot=AGENTS.md",
         "bd update <created:draft-b> --acceptance "Second passes" --set-metadata "plan_goal=Plan safely" --set-metadata plan_draft_version=1 --set-metadata ssot=README.md",
         "bd dep add <created:draft-b> <created:draft-a>",
       ]
@@ -79,6 +80,8 @@ describe("Plan Draft mutations", () => {
         "plan_goal=Plan safely",
         "--set-metadata",
         "plan_draft_version=1",
+        "--set-metadata",
+        "provider=openai",
         "--set-metadata",
         "model=gpt-5",
         "--set-metadata",

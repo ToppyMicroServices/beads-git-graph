@@ -1,4 +1,5 @@
 import { normalizeAgentModelName } from "./agentModelSelection";
+import { type AgentProviderId, normalizeAgentProviderId } from "./agentProvider";
 
 export const PLAN_DRAFT_VERSION = 1 as const;
 export const PLAN_DRAFT_PRIORITIES = ["P0", "P1", "P2", "P3", "P4"] as const;
@@ -13,6 +14,7 @@ export interface PlanDraftTask {
   acceptanceCriteria: string[];
   dependencyIds: string[];
   ssot: string[];
+  provider?: AgentProviderId;
   model?: string;
 }
 
@@ -158,6 +160,18 @@ function parseTask(
     });
   }
 
+  const providerValue = value.provider;
+  const provider =
+    providerValue === undefined ? undefined : normalizeAgentProviderId(providerValue);
+  if (providerValue !== undefined && provider === null) {
+    errors.push({
+      code: "invalid-field",
+      path: `${taskPath}.provider`,
+      message: `${taskPath}.provider must be a known provider ID when provided`,
+      ...(taskId === undefined ? {} : { taskId })
+    });
+  }
+
   if (
     id === null ||
     title === null ||
@@ -165,6 +179,7 @@ function parseTask(
     acceptanceCriteria === null ||
     dependencyIds === null ||
     ssot === null ||
+    provider === null ||
     (model !== undefined && typeof model !== "string")
   ) {
     return null;
@@ -177,6 +192,7 @@ function parseTask(
     acceptanceCriteria,
     dependencyIds,
     ssot,
+    ...(provider === undefined ? {} : { provider }),
     ...(model === undefined ? {} : { model })
   };
 }
@@ -273,6 +289,14 @@ export function validatePlanDraft(draft: PlanDraft): PlanDraftValidationError[] 
     validateNonEmptyString(task.title, `${taskPath}.title`, errors, task.id);
     validateStringList(task.acceptanceCriteria, `${taskPath}.acceptanceCriteria`, errors, task.id);
     validateStringList(task.ssot, `${taskPath}.ssot`, errors, task.id);
+    if (task.provider !== undefined && normalizeAgentProviderId(task.provider) === null) {
+      errors.push({
+        code: "invalid-field",
+        path: `${taskPath}.provider`,
+        taskId: task.id,
+        message: `${taskPath}.provider must be a known provider ID`
+      });
+    }
     if (task.model !== undefined && normalizeAgentModelName(task.model) === null) {
       errors.push({
         code: "invalid-field",

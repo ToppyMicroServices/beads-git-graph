@@ -31,6 +31,11 @@ export interface BeadLoadResult {
     workspacePath: string;
     capability: BeadsWriteCapability;
   }>;
+  agentWriteCapabilities?: Array<{
+    workspace: string;
+    workspacePath: string;
+    capability: BeadsWriteCapability;
+  }>;
 }
 
 export interface CliLoadResult {

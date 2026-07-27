@@ -327,11 +327,12 @@ compatible disposable workspace.
     every selected task; a pure test covers both results.
   - **Depends:** PM-005F, PM-200A.
   - **Tier:** low-cost.
-- [ ] **PM-200C — Enforce a provider/model choice**
-  - **Input:** the provider-neutral launch result from PM-203A and provider capability evidence.
-  - **Edit target:** future provider adapter only.
-  - **Done/test:** the UI distinguishes requested preference from provider-confirmed execution and
-    never claims an unavailable model was selected.
+- [x] **PM-200C — Enforce a provider/model choice**
+  - **Input:** task provider/model metadata, provider-scoped configured choices, and a custom model
+    ID.
+  - **Edit target:** single and parallel provider/model pickers plus provider result artifacts.
+  - **Done/test:** the UI distinguishes a Copilot coding session from a direct API text response;
+    requested and provider-confirmed model IDs are recorded separately in the local artifact.
   - **Depends:** PM-203A.
   - **Tier:** human-decision.
 - [x] **PM-200D — Connect requested models through task dependencies**
@@ -387,29 +388,61 @@ compatible disposable workspace.
   - **Depends:** PM-202A, PM-202B.
   - **Tier:** capable.
 
-### PM-203 — Abstract agent launch providers
+### PM-203 — Execute provider-specific AI work — direct-response milestone completed
 
-- [ ] **PM-203A — Define a provider-neutral launch result**
+- [x] **PM-203A — Define provider-neutral execution outcomes**
   - **Input:** current Copilot launch success/failure/fallback behavior.
-  - **Edit target:** one provider interface and pure result type.
-  - **Done/test:** prepared, launched, failed, and unsupported are distinct and none imply live
-    activity; a contract test covers the four results.
+  - **Edit target:** provider definitions plus the launch-boundary result status.
+  - **Done/test:** session opened, prompt prepared, response opened/stored, and failure are distinct;
+    a pure contract test covers every status.
   - **Depends:** PM-201A, BASE-002.
   - **Tier:** capable.
-- [ ] **PM-203B — Place current Copilot launch behind the adapter**
+- [x] **PM-203B — Route current Copilot launch through provider selection**
   - **Input:** existing Copilot command discovery and prompt preparation.
   - **Edit target:** the current launch integration only.
-  - **Done/test:** current successful launch and failure behavior remain unchanged through the
-    adapter; existing/focused fake-command tests pass.
+  - **Done/test:** current command discovery and clipboard fallback remain under the Copilot branch
+    of the provider selection/start boundary; focused source tests pass.
   - **Depends:** PM-203A.
   - **Tier:** capable.
-- [ ] **PM-203C — Preserve the prompt fallback**
+- [x] **PM-203C — Preserve the prompt fallback**
   - **Input:** unavailable provider, launch failure, and clipboard availability fixtures.
   - **Edit target:** provider fallback handler and one interaction test.
   - **Done/test:** a complete prepared prompt is offered without claiming launch; the test records
     notification and clipboard calls.
   - **Depends:** PM-203B.
   - **Tier:** human-decision.
+- [x] **PM-203D — Add secure direct-response providers**
+  - **Input:** loopback Ollama plus official Hugging Face, OpenAI, and Anthropic HTTP contracts.
+  - **Edit target:** provider client, SecretStorage wrapper, Workspace Trust gate, and credential
+    command.
+  - **Done/test:** fixed cloud endpoints, loopback-only Ollama, redacted failures, timeouts, response
+    limits, provider request fixtures, and a credential canary test pass without SDK dependencies.
+  - **Depends:** PM-203A.
+  - **Tier:** capable.
+- [x] **PM-203E — Preserve provider handoffs and response artifacts**
+  - **Input:** dependency-linked tasks with distinct explicit providers and models.
+  - **Edit target:** Plan Draft, Beads metadata/protocol, provider badges, and local artifact store.
+  - **Done/test:** Hugging Face → Ollama → Anthropic survives parse, preview, mutation projection,
+    and dependency creation; direct output is stored as untrusted text and never applied.
+  - **Depends:** PM-200D, PM-203D.
+  - **Tier:** capable.
+- [ ] **PM-203F — Add autonomous tool-loop adapters for non-Copilot providers**
+  - **Input:** an explicit tool protocol, workspace write policy, patch review UX, and cancellation
+    contract.
+  - **Edit target:** a future sandboxed coding-agent adapter; do not extend direct-response clients
+    implicitly.
+  - **Done/test:** tool calls remain scoped and reviewable, cancellation stops the loop, and UI
+    distinguishes live activity from completed text responses.
+  - **Depends:** PM-203D, a human-approved execution policy.
+  - **Tier:** human-decision.
+- [ ] **PM-203G — Package-test every provider path**
+  - **Input:** packaged VSIX, trusted disposable workspace, fake loopback/provider fixtures, and
+    secret canaries.
+  - **Edit target:** Extension Host acceptance harness and result record.
+  - **Done/test:** picker, Cancel, missing credential, successful response, failure, artifact,
+    parallel confirmation, and no-secret-leak checks pass in the packaged extension.
+  - **Depends:** PM-203E.
+  - **Tier:** capable.
 
 ## P3 — Monitor
 

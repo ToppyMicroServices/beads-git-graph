@@ -39,6 +39,7 @@ export const PLAN_CREATE_CAPABILITY_PROBE_ARGS = [
 
 export const PLAN_UPDATE_CAPABILITY_PROBE_ARGS = ["update", "--help"] as const;
 export const PLAN_DEPENDENCY_CAPABILITY_PROBE_ARGS = ["dep", "add", "--help"] as const;
+export const AGENT_UPDATE_CAPABILITY_PROBE_ARGS = ["update", "--help"] as const;
 
 function getObservedOutput(result: BeadsCapabilityCommandResult) {
   return [result.stdout, result.stderr]
@@ -176,5 +177,70 @@ export async function probeBeadsWriteCapability(
     supported: true,
     state: "supported",
     reason: "Compatible create, update, and dependency commands were observed."
+  };
+}
+
+export async function probeBeadsAgentWriteCapability(
+  executableAvailable: boolean,
+  unavailableReason: string | null,
+  run: BeadsCapabilityCommandRunner
+): Promise<BeadsWriteCapability> {
+  if (!executableAvailable) {
+    return {
+      supported: false,
+      state: "missing-executable",
+      reason: unavailableReason?.trim() || "The Beads CLI is unavailable."
+    };
+  }
+
+  let dryRunProbe: BeadsCapabilityCommandResult;
+  try {
+    dryRunProbe = await run(PLAN_CREATE_CAPABILITY_PROBE_ARGS);
+  } catch (error) {
+    return {
+      supported: false,
+      state: "probe-failed",
+      reason:
+        error instanceof Error
+          ? error.message
+          : "The Beads write capability probe could not be executed."
+    };
+  }
+  if (dryRunProbe.exitCode !== 0) {
+    return classifyFailedProbe(dryRunProbe);
+  }
+
+  let updateProbe: BeadsCapabilityCommandResult;
+  try {
+    updateProbe = await run(AGENT_UPDATE_CAPABILITY_PROBE_ARGS);
+  } catch (error) {
+    return {
+      supported: false,
+      state: "probe-failed",
+      reason:
+        error instanceof Error
+          ? error.message
+          : "The Beads update capability probe could not be executed."
+    };
+  }
+  if (updateProbe.exitCode !== 0) {
+    return classifyFailedProbe(updateProbe);
+  }
+
+  const updateHelp = getObservedOutput(updateProbe);
+  const requiredFlags = ["--assignee", "--append-notes", "--set-metadata", "--status"];
+  const missingFlags = requiredFlags.filter((flag) => !updateHelp.includes(flag));
+  if (missingFlags.length > 0) {
+    return {
+      supported: false,
+      state: "unsupported-command",
+      reason: `The active Beads update command lacks ${missingFlags.join(", ")}.`
+    };
+  }
+
+  return {
+    supported: true,
+    state: "supported",
+    reason: "Compatible dry-run and agent update commands were observed."
   };
 }

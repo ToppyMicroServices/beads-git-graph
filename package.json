@@ -96,6 +96,11 @@
         "category": "Beads Git Graph",
         "command": "beads-git-graph.focusBeadsView",
         "title": "Focus Beads View"
+      },
+      {
+        "category": "Beads Git Graph",
+        "command": "beads-git-graph.manageAgentProviderCredentials",
+        "title": "Manage AI Provider Credentials"
       }
     ],
     "menus": {
@@ -368,6 +373,61 @@
           ],
           "description": "Model preference choices shown before starting Copilot agent work. These values are recorded and included in the prompt; actual model availability depends on the launch provider."
         },
+        "beads-git-graph.agentOllamaModelOptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "default": [],
+          "description": "Ollama model choices shown before generating a local text response. Add the exact model names installed in your Ollama runtime."
+        },
+        "beads-git-graph.agentHuggingFaceModelOptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "default": [],
+          "description": "Hugging Face Inference model choices. Add model IDs supported by your Inference Providers account."
+        },
+        "beads-git-graph.agentOpenAIModelOptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "default": [],
+          "description": "OpenAI Responses API model choices. Add model IDs enabled for your OpenAI project."
+        },
+        "beads-git-graph.agentAnthropicModelOptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "default": [],
+          "description": "Anthropic Messages API model choices. Add model IDs enabled for your Anthropic account."
+        },
+        "beads-git-graph.agentOllamaBaseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:11434",
+          "description": "Loopback-only Ollama base URL. Remote hosts are rejected before any prompt is sent."
+        },
+        "beads-git-graph.agentProviderTimeoutSeconds": {
+          "type": "number",
+          "minimum": 5,
+          "maximum": 600,
+          "default": 120,
+          "description": "Timeout in seconds for Ollama, Hugging Face, OpenAI, and Anthropic text-response requests."
+        },
+        "beads-git-graph.agentProviderMaxOutputTokens": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 32768,
+          "default": 2048,
+          "description": "Maximum requested output tokens for remote text-response APIs. Ollama uses its runtime defaults."
+        },
         "beads-git-graph.tabIconColourTheme": {
           "type": "string",
           "enum": [
@@ -394,5 +454,14 @@
   "engines": {
     "vscode": "^1.120.0"
   },
-  "packageManager": "pnpm@10.29.3"
+  "packageManager": "pnpm@10.29.3",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Viewing remains available, but AI provider execution, credential management, worktree creation, and Beads mutations require a trusted workspace.",
+      "restrictedConfigurations": [
+        "beads-git-graph.agentOllamaBaseUrl"
+      ]
+    }
+  }
 }

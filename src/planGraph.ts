@@ -1,9 +1,11 @@
+import { type AgentProviderId } from "./agentProvider";
 import { type PlanDraft } from "./planDraft";
 
 export interface PlanGraphNode {
   id: string;
   title: string;
   priority: string;
+  provider?: AgentProviderId;
   model?: string;
   ssot: string[];
   level: number;
@@ -19,12 +21,20 @@ export interface PlanRequestedModelTransition extends PlanGraphEdge {
   toModel: string;
 }
 
+export interface PlanRequestedProviderModelTransition extends PlanGraphEdge {
+  fromProvider?: AgentProviderId;
+  toProvider?: AgentProviderId;
+  fromModel?: string;
+  toModel?: string;
+}
+
 export interface PlanGraphProjection {
   nodes: PlanGraphNode[];
   edges: PlanGraphEdge[];
   criticalPathIds: string[];
   parallelGroups: string[][];
   requestedModelTransitions: PlanRequestedModelTransition[];
+  requestedProviderModelTransitions: PlanRequestedProviderModelTransition[];
 }
 
 export function projectPlanDraftToGraph(draft: PlanDraft): PlanGraphProjection {
@@ -68,6 +78,7 @@ export function projectPlanDraftToGraph(draft: PlanDraft): PlanGraphProjection {
       id: task.id,
       title: task.title,
       priority: task.priority,
+      ...(task.provider === undefined ? {} : { provider: task.provider }),
       ...(task.model === undefined ? {} : { model: task.model }),
       ssot: [...task.ssot],
       level
@@ -86,6 +97,29 @@ export function projectPlanDraftToGraph(draft: PlanDraft): PlanGraphProjection {
       fromModel === toModel
       ? []
       : [{ ...edge, fromModel, toModel }];
+  });
+  const requestedProviderModelTransitions = edges.flatMap((edge) => {
+    const fromTask = taskById.get(edge.fromId);
+    const toTask = taskById.get(edge.toId);
+    const fromProvider = fromTask?.provider;
+    const toProvider = toTask?.provider;
+    const fromModel = fromTask?.model?.trim();
+    const toModel = toTask?.model?.trim();
+    if (
+      (fromProvider === undefined && toProvider === undefined) ||
+      (fromProvider === toProvider && fromModel === toModel)
+    ) {
+      return [];
+    }
+    return [
+      {
+        ...edge,
+        ...(fromProvider === undefined ? {} : { fromProvider }),
+        ...(toProvider === undefined ? {} : { toProvider }),
+        ...(fromModel === undefined || fromModel === "" ? {} : { fromModel }),
+        ...(toModel === undefined || toModel === "" ? {} : { toModel })
+      }
+    ];
   });
   const criticalPathIds =
     edges.length === 0
@@ -111,5 +145,12 @@ export function projectPlanDraftToGraph(draft: PlanDraft): PlanGraphProjection {
     )
     .filter((ids) => ids.length > 1);
 
-  return { nodes, edges, criticalPathIds, parallelGroups, requestedModelTransitions };
+  return {
+    nodes,
+    edges,
+    criticalPathIds,
+    parallelGroups,
+    requestedModelTransitions,
+    requestedProviderModelTransitions
+  };
 }

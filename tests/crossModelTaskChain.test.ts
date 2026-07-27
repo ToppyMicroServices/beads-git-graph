@@ -43,6 +43,43 @@ const linkedDraft: PlanDraft = {
   ]
 };
 
+const crossProviderDraft: PlanDraft = {
+  version: 1,
+  goal: "Coordinate distinct providers through linked tasks",
+  tasks: [
+    {
+      id: "research",
+      title: "Research with Hugging Face",
+      priority: "P1",
+      acceptanceCriteria: ["Record research evidence"],
+      dependencyIds: [],
+      ssot: ["docs/decision.md"],
+      provider: "huggingface",
+      model: "research-model"
+    },
+    {
+      id: "implement",
+      title: "Implement with Ollama",
+      priority: "P1",
+      acceptanceCriteria: ["Implement the recorded decision"],
+      dependencyIds: ["research"],
+      ssot: ["docs/decision.md"],
+      provider: "ollama",
+      model: "coding-model"
+    },
+    {
+      id: "review",
+      title: "Review with Anthropic",
+      priority: "P2",
+      acceptanceCriteria: ["Record review evidence"],
+      dependencyIds: ["implement"],
+      ssot: ["docs/decision.md"],
+      provider: "anthropic",
+      model: "review-model"
+    }
+  ]
+};
+
 describe("cross-model linked task workflow", () => {
   it("preserves requested models and handoffs from Plan Draft through Beads import", async () => {
     const parsed = parsePlanDraft(JSON.parse(JSON.stringify(linkedDraft)) as unknown);
@@ -120,5 +157,72 @@ describe("cross-model linked task workflow", () => {
     delete draft.tasks[2].model;
 
     expect(projectPlanDraftToGraph(draft).requestedModelTransitions).toEqual([]);
+  });
+});
+
+describe("cross-provider linked task workflow", () => {
+  it("preserves Hugging Face to Ollama to Anthropic handoffs through Beads import", async () => {
+    const parsed = parsePlanDraft(JSON.parse(JSON.stringify(crossProviderDraft)) as unknown);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.draft?.tasks.map((task) => task.provider)).toEqual([
+      "huggingface",
+      "ollama",
+      "anthropic"
+    ]);
+
+    const graph = projectPlanDraftToGraph(parsed.draft ?? crossProviderDraft);
+    expect(graph.requestedProviderModelTransitions).toEqual([
+      {
+        fromId: "research",
+        toId: "implement",
+        fromProvider: "huggingface",
+        toProvider: "ollama",
+        fromModel: "research-model",
+        toModel: "coding-model"
+      },
+      {
+        fromId: "implement",
+        toId: "review",
+        fromProvider: "ollama",
+        toProvider: "anthropic",
+        fromModel: "coding-model",
+        toModel: "review-model"
+      }
+    ]);
+
+    const preview = renderPlanDraftPreview({
+      draft: parsed.draft,
+      errors: parsed.errors,
+      capability: { supported: true, state: "supported", reason: "compatible" }
+    });
+    expect(preview).toContain("Requested provider/model transitions");
+    expect(preview).toContain(
+      "research [huggingface / research-model] → implement [ollama / coding-model]; implement [ollama / coding-model] → review [anthropic / review-model]"
+    );
+    expect(preview).toContain("Requested provider: huggingface");
+
+    const mutations = projectPlanDraftMutations(parsed.draft ?? crossProviderDraft);
+    const formatted = mutations.map(formatPlanMutation);
+    expect(formatted.filter((line) => line.includes("--set-metadata provider="))).toEqual([
+      expect.stringContaining("provider=huggingface"),
+      expect.stringContaining("provider=ollama"),
+      expect.stringContaining("provider=anthropic")
+    ]);
+
+    const calls: string[][] = [];
+    const createdIds = ["bg-research", "bg-implement", "bg-review"];
+    const result = await executePlanImport(mutations, async (args) => {
+      calls.push([...args]);
+      return args[0] === "create" ? (createdIds.shift() ?? "") : "";
+    });
+
+    expect(result.failed).toBeNull();
+    expect(calls.filter((args) => args.includes("provider=huggingface"))).toHaveLength(1);
+    expect(calls.filter((args) => args.includes("provider=ollama"))).toHaveLength(1);
+    expect(calls.filter((args) => args.includes("provider=anthropic"))).toHaveLength(1);
+    expect(calls.slice(-2)).toEqual([
+      ["dep", "add", "bg-implement", "bg-research"],
+      ["dep", "add", "bg-review", "bg-implement"]
+    ]);
   });
 });

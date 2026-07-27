@@ -29,8 +29,10 @@ function makeBead(overrides: Partial<BeadItem> = {}): BeadItem {
     parallelizableSource: "",
     parallelizableSuppressed: false,
     agent: "",
+    provider: "copilot",
     model: "",
     ssot: "",
+    artifact: "",
     worktree: "",
     branch: "",
     pullRequest: "",
@@ -98,6 +100,21 @@ describe("deriveAgentWorkItem", () => {
     expect(deriveAgentWorkItem(makeBead({ status: "in_progress" }))).toMatchObject({
       lane: "running",
       reason: "Status is in progress; live agent activity is not confirmed"
+    });
+  });
+
+  it("routes completed direct-provider response artifacts to review", () => {
+    expect(
+      deriveAgentWorkItem(
+        makeBead({
+          status: "in_progress",
+          provider: "openai",
+          artifact: "file:///tmp/response.txt"
+        })
+      )
+    ).toMatchObject({
+      lane: "review",
+      reason: "A direct-provider response artifact is ready for review; no live agent is implied"
     });
   });
 

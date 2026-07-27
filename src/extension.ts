@@ -1,5 +1,8 @@
 import * as vscode from "vscode";
 
+import { AgentArtifactStore } from "./agentArtifactStore";
+import { manageAgentProviderCredentials } from "./agentCredentialManager";
+import { AgentCredentialStore } from "./agentCredentialStore";
 import { BeadsViewProvider } from "./beadsView";
 import { DataSource } from "./dataSource";
 import { decodeDiffDocUri, DiffDocProvider } from "./diffDocProvider";
@@ -13,7 +16,13 @@ export function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel("Beads Git Graph");
   const extensionState = new ExtensionState(context);
   const dataSource = new DataSource();
-  const beadsViewProvider = new BeadsViewProvider(context.extensionUri);
+  const agentCredentialStore = new AgentCredentialStore(context.secrets);
+  const agentArtifactStore = new AgentArtifactStore(context.storageUri ?? context.globalStorageUri);
+  const beadsViewProvider = new BeadsViewProvider(
+    context.extensionUri,
+    agentCredentialStore,
+    agentArtifactStore
+  );
   const statusBarItem = new StatusBarItem(context);
   const repoManager = new RepoManager(dataSource, extensionState, statusBarItem);
 
@@ -37,6 +46,9 @@ export function activate(context: vscode.ExtensionContext) {
       const column = GitGraphView.closeCurrentPanel();
       beadsViewProvider.showPanel(column);
     }),
+    vscode.commands.registerCommand("beads-git-graph.manageAgentProviderCredentials", async () =>
+      manageAgentProviderCredentials(agentCredentialStore)
+    ),
     vscode.commands.registerCommand("beads-git-graph.openDiffFile", async (uri?: vscode.Uri) => {
       const sourceUri =
         uri ??

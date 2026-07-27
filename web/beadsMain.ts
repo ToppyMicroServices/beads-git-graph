@@ -1,3 +1,9 @@
+import { normalizeAgentArtifactReference } from "../src/agentArtifactReference";
+import {
+  type AgentProviderId,
+  getAgentProviderDefinition,
+  resolveAgentProviderId
+} from "../src/agentProvider";
 import type { BeadsRequestMessage } from "../src/beadsProtocol";
 import type { BeadsWriteCapability } from "../src/beadsWriteCapability";
 import { renderPlanDraftPreview } from "../src/planPreview";
@@ -12,6 +18,11 @@ import {
   isCollapsedByEpic,
   shouldShowBeadRow
 } from "./beadsRowVisibility";
+import {
+  clampGraphPanForVisibility,
+  computeAnchoredGraphPan,
+  computeCenteredGraphPan
+} from "./graphViewportTransform";
 import { createPlanDraftController, type PlanDraftPreviewState } from "./planDraftController";
 
 declare function acquireVsCodeApi(): {
@@ -28,7 +39,7 @@ type BeadSection = HTMLElement & { dataset: DOMStringMap };
 type GraphScrollState = { left: number; top: number };
 type GraphPanState = { x: number; y: number };
 type GraphTransformState = { zoom: number; pan: GraphPanState };
-type GraphZoomAnchor = { pane: HTMLElement; clientX: number; clientY: number };
+type GraphZoomAnchor = { x: number; y: number };
 type GraphSelectionState = {
   pane: HTMLElement;
   pointerId: number;
@@ -77,8 +88,10 @@ interface BeadRowItem {
   parallelizable: boolean;
   parallelizableSource: "explicit" | "ready" | "";
   agent: string;
+  provider: AgentProviderId;
   model: string;
   ssot: string;
+  artifact: string;
   worktree: string;
   branch: string;
   pullRequest: string;
@@ -111,10 +124,11 @@ const GRAPH_LANE_GAP = 30;
 const GRAPH_PADDING_X = 28;
 const GRAPH_PADDING_Y = 44;
 const GRAPH_KEYBOARD_PAN_STEP = 40;
+const GRAPH_MINIMUM_VISIBLE_SIZE = 48;
 const PLAN_DRAFT_EXAMPLE = JSON.stringify(
   {
     version: 1,
-    goal: "Coordinate a linked workflow across requested AI models",
+    goal: "Coordinate a linked workflow across AI providers and requested models",
     tasks: [
       {
         id: "research",
@@ -123,6 +137,7 @@ const PLAN_DRAFT_EXAMPLE = JSON.stringify(
         acceptanceCriteria: ["Record the recommendation and evidence in docs/decision.md"],
         dependencyIds: [],
         ssot: ["AGENTS.md", "docs/decision.md"],
+        provider: "huggingface",
         model: "reasoning-model"
       },
       {
@@ -132,6 +147,7 @@ const PLAN_DRAFT_EXAMPLE = JSON.stringify(
         acceptanceCriteria: ["Implementation follows the recorded decision and passes tests"],
         dependencyIds: ["research"],
         ssot: ["AGENTS.md", "docs/decision.md"],
+        provider: "ollama",
         model: "coding-model"
       },
       {
@@ -141,6 +157,7 @@ const PLAN_DRAFT_EXAMPLE = JSON.stringify(
         acceptanceCriteria: ["Review records pass/fail evidence against the acceptance criteria"],
         dependencyIds: ["implement"],
         ssot: ["docs/decision.md", "README.md"],
+        provider: "anthropic",
         model: "review-model"
       }
     ]
@@ -167,6 +184,9 @@ let activeViewMode: ViewMode = normalizeViewMode(vscode.getState()?.viewMode);
 let graphTransforms = normalizeGraphTransforms(vscode.getState());
 let graphSelection: GraphSelectionState | null = null;
 let graphPanGesture: GraphPanGestureState | null = null;
+let graphTransformSaveTimer: number | null = null;
+const graphZoomAnchors = new WeakMap<HTMLElement, GraphZoomAnchor>();
+const initializedGraphPanes = new WeakSet<HTMLElement>();
 let rowClickTimer: number | null = null;
 const collapsedIds = new Set<string>();
 const collapsedEpicIds = new Set<string>();
@@ -242,7 +262,8 @@ function normalizeGraphTransforms(state: BeadsWebviewState | undefined) {
       };
     }
   }
-  if (Object.keys(normalized).length === 0) {
+  const hasLegacyTransform = state?.graphZoom !== undefined || state?.graphPan !== undefined;
+  if (Object.keys(normalized).length === 0 && hasLegacyTransform) {
     normalized.__legacy__ = {
       zoom: normalizeGraphZoom(state?.graphZoom),
       pan: normalizeGraphPan(state?.graphPan)
@@ -349,6 +370,7 @@ function toExecutionTarget(item: BeadRowItem) {
   return {
     issueId: item.id,
     title: item.title || "",
+    provider: resolveAgentProviderId(item.provider),
     model: item.model || undefined,
     ssot: item.ssot || undefined,
     worktree: item.worktree || undefined
@@ -400,10 +422,19 @@ function postAssignStartBead(button: HTMLButtonElement) {
     workspacePath,
     title: button.dataset.assignStartTitle || "",
     agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent),
+    provider: resolveAgentProviderId(button.dataset.assignStartProvider),
     model: normalizeOptionalDatasetValue(button.dataset.assignStartModel),
     ssot: normalizeOptionalDatasetValue(button.dataset.assignStartSsot),
     worktree: normalizeOptionalDatasetValue(button.dataset.assignStartWorktree)
   });
+}
+
+function postOpenAgentArtifact(button: HTMLButtonElement) {
+  const artifactUri = button.dataset.artifactUri || "";
+  if (artifactUri.trim() === "" || artifactUri.length > 2048) {
+    return;
+  }
+  vscode.postMessage({ command: "openAgentArtifact", artifactUri });
 }
 
 function openContextMenu(
@@ -554,9 +585,19 @@ function renderDetailsMarkup(item: BeadRowItem) {
         : "-";
   const agent = item.displayAgent?.trim() || "-";
   const assignee = item.displayAssignee?.trim() || item.assignee || "-";
+  const providerId = resolveAgentProviderId(item.provider);
+  const provider =
+    item.syntheticKind === "parallel-pr-merge" ? "-" : getAgentProviderDefinition(providerId).label;
   const model = item.displayModel?.trim() || (item.model !== "" ? item.model : agent);
   const ssot = item.ssot !== "" ? item.ssot : "-";
-  const worktree = item.worktree !== "" ? item.worktree : "-";
+  const artifact = item.artifact !== "" ? item.artifact : "-";
+  const openableArtifact = normalizeAgentArtifactReference(item.artifact);
+  const worktree =
+    item.worktree === ""
+      ? "-"
+      : providerId === "copilot"
+        ? item.worktree
+        : `${item.worktree} (recorded separately; not provider output)`;
   const branch = item.branch !== "" ? item.branch : "-";
   const pullRequest =
     item.pullRequest !== ""
@@ -578,9 +619,17 @@ function renderDetailsMarkup(item: BeadRowItem) {
       ? `<span class="detailPill">${escapeHtml(item.parallelizableSource === "ready" ? "Parallel ready" : "Parallel OK")}</span>`
       : "",
     item.readyByBd ? '<span class="detailPill">Ready confirmed</span>' : "",
+    provider !== "-" ? `<span class="detailPill">Provider ${escapeHtml(provider)}</span>` : "",
     model !== "-" ? `<span class="detailPill">Model ${escapeHtml(model)}</span>` : "",
+    openableArtifact !== null
+      ? `<button class="openAgentArtifact detailPill artifactBadge" type="button" data-artifact-uri="${escapeHtml(openableArtifact)}" title="Open the stored response artifact">Open response</button>`
+      : artifact !== "-"
+        ? `<span class="detailPill artifactBadge">Artifact recorded</span>`
+        : "",
     ssot !== "-" ? `<span class="detailPill">SSOT ${escapeHtml(ssot)}</span>` : "",
-    item.worktree !== "" ? `<span class="detailPill">WT ${escapeHtml(item.worktree)}</span>` : "",
+    providerId === "copilot" && item.worktree !== ""
+      ? `<span class="detailPill">WT ${escapeHtml(item.worktree)}</span>`
+      : "",
     branch !== "-" ? `<span class="detailPill">Branch ${escapeHtml(branch)}</span>` : "",
     pullRequest !== "-" ? `<span class="detailPill">PR ${escapeHtml(pullRequest)}</span>` : "",
     checkStatus !== "-" ? `<span class="detailPill">Checks ${escapeHtml(checkStatus)}</span>` : "",
@@ -602,9 +651,11 @@ function renderDetailsMarkup(item: BeadRowItem) {
     `<div class="key">Readiness</div><div>${escapeHtml(readiness)}</div>` +
     `<div class="key">Parallel</div><div>${escapeHtml(parallel)}</div>` +
     `<div class="key">Agent</div><div>${escapeHtml(agent)}</div>` +
+    `<div class="key">AI Provider</div><div>${escapeHtml(provider)}</div>` +
     `<div class="key">AI Model</div><div>${escapeHtml(model)}</div>` +
+    `<div class="key">Response Artifact</div><div>${escapeHtml(artifact)}</div>` +
     `<div class="key">SSOT / Context</div><div>${escapeHtml(ssot)}</div>` +
-    `<div class="key">Worktree</div><div>${escapeHtml(worktree)}</div>` +
+    `<div class="key">Coding Worktree</div><div>${escapeHtml(worktree)}</div>` +
     `<div class="key">Branch</div><div>${escapeHtml(branch)}</div>` +
     `<div class="key">PR</div><div>${escapeHtml(pullRequest)}</div>` +
     `<div class="key">Checks</div><div>${escapeHtml(checkStatus)}</div>` +
@@ -767,7 +818,7 @@ function refreshRowVisibility() {
   renderHierarchyOverlays();
   if (activeViewMode === "graph") {
     refreshGraphPresentation();
-    fitGraphToViewport();
+    updateGraphViewportPreservingTransform();
   }
   renderDependencyGraphOverlays();
 }
@@ -790,7 +841,7 @@ function applyViewMode(mode: ViewMode) {
   planViewButton.setAttribute("aria-pressed", mode === "plan" ? "true" : "false");
   if (mode === "graph") {
     refreshGraphPresentation();
-    fitGraphToViewport();
+    updateGraphViewportPreservingTransform();
   }
   renderHierarchyOverlays();
   renderDependencyGraphOverlays();
@@ -1281,8 +1332,8 @@ function getGraphBaseSize(canvas: HTMLElement) {
 function getGraphViewportSize(scroller: HTMLElement) {
   const rect = scroller.getBoundingClientRect();
   return {
-    width: Math.max(1, Math.floor(rect.width || scroller.clientWidth || 1)),
-    height: Math.max(1, Math.floor(rect.height || scroller.clientHeight || 1))
+    width: Math.max(1, rect.width || scroller.clientWidth || 1),
+    height: Math.max(1, rect.height || scroller.clientHeight || 1)
   };
 }
 
@@ -1302,7 +1353,21 @@ function getGraphRequiredSize(pane: HTMLElement, base: { width: number; height: 
 function saveGraphTransforms() {
   const workspaceTransforms = { ...graphTransforms };
   delete workspaceTransforms.__legacy__;
-  saveWebviewState({ graphTransforms: workspaceTransforms });
+  graphTransforms = workspaceTransforms;
+  const nextState = { ...vscode.getState() };
+  delete nextState.graphZoom;
+  delete nextState.graphPan;
+  vscode.setState({ ...nextState, graphTransforms: workspaceTransforms });
+}
+
+function scheduleGraphTransformSave() {
+  if (graphTransformSaveTimer !== null) {
+    window.clearTimeout(graphTransformSaveTimer);
+  }
+  graphTransformSaveTimer = window.setTimeout(() => {
+    graphTransformSaveTimer = null;
+    saveGraphTransforms();
+  }, 100);
 }
 
 function clampGraphPanForPane(pane: HTMLElement, pan: GraphPanState, zoom: number) {
@@ -1316,15 +1381,12 @@ function clampGraphPanForPane(pane: HTMLElement, pan: GraphPanState, zoom: numbe
   const requiredSize = getGraphRequiredSize(pane, getGraphBaseSize(canvas));
   const scaledWidth = requiredSize.width * zoom;
   const scaledHeight = requiredSize.height * zoom;
-  const minX = Math.min(0, viewport.width - scaledWidth);
-  const minY = Math.min(0, viewport.height - scaledHeight);
-  const maxX = scaledWidth <= viewport.width ? (viewport.width - scaledWidth) / 2 : 0;
-  const maxY = scaledHeight <= viewport.height ? (viewport.height - scaledHeight) / 2 : 0;
-
-  return {
-    x: Math.min(maxX, Math.max(minX, pan.x)),
-    y: Math.min(maxY, Math.max(minY, pan.y))
-  };
+  return clampGraphPanForVisibility(
+    pan,
+    viewport,
+    { width: scaledWidth, height: scaledHeight },
+    GRAPH_MINIMUM_VISIBLE_SIZE
+  );
 }
 
 function saveGraphScroll(pane: HTMLElement) {
@@ -1356,9 +1418,9 @@ function applyGraphZoomToPane(pane: HTMLElement) {
   content.style.height = `${base.height}px`;
   canvas.style.width = `${viewport.width}px`;
   canvas.style.height = `${viewport.height}px`;
-  content.style.setProperty("--graph-zoom", transform.zoom.toFixed(2));
-  content.style.setProperty("--graph-pan-x", `${transform.pan.x.toFixed(1)}px`);
-  content.style.setProperty("--graph-pan-y", `${transform.pan.y.toFixed(1)}px`);
+  content.style.setProperty("--graph-zoom", String(transform.zoom));
+  content.style.setProperty("--graph-pan-x", `${transform.pan.x}px`);
+  content.style.setProperty("--graph-pan-y", `${transform.pan.y}px`);
   const zoomValue = pane.querySelector<HTMLElement>(".graphZoomValue");
   if (zoomValue !== null) {
     zoomValue.textContent = `${Math.round(transform.zoom * 100)}%`;
@@ -1396,10 +1458,24 @@ function getGraphFitZoomForPane(pane: HTMLElement) {
 
 function fitGraphToPane(pane: HTMLElement, persist: boolean = true) {
   const nextZoom = getGraphFitZoomForPane(pane);
-  const nextPan = clampGraphPanForPane(pane, { x: 0, y: 0 }, nextZoom);
+  const scroller = getGraphScroller(pane);
+  const canvas = getGraphCanvas(pane);
+  let nextPan = { x: 0, y: 0 };
+  if (scroller !== null && canvas !== null) {
+    const viewport = getGraphViewportSize(scroller);
+    const requiredSize = getGraphRequiredSize(pane, getGraphBaseSize(canvas));
+    nextPan = clampGraphPanForPane(
+      pane,
+      computeCenteredGraphPan(viewport, {
+        width: requiredSize.width * nextZoom,
+        height: requiredSize.height * nextZoom
+      }),
+      nextZoom
+    );
+  }
+  initializedGraphPanes.add(pane);
   setGraphTransform(pane, { zoom: nextZoom, pan: nextPan });
   applyGraphZoomToPane(pane);
-  const scroller = getGraphScroller(pane);
   if (scroller !== null) {
     scroller.scrollLeft = 0;
     scroller.scrollTop = 0;
@@ -1410,20 +1486,56 @@ function fitGraphToPane(pane: HTMLElement, persist: boolean = true) {
   }
 }
 
-function fitGraphToViewport() {
+function hasPersistedGraphTransform(pane: HTMLElement) {
+  return (
+    Object.prototype.hasOwnProperty.call(graphTransforms, getGraphWorkspaceKey(pane)) ||
+    Object.prototype.hasOwnProperty.call(graphTransforms, "__legacy__")
+  );
+}
+
+function updateGraphViewportPreservingTransform() {
   for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
-    if (pane.offsetParent !== null) {
+    if (pane.offsetParent === null) {
+      continue;
+    }
+    if (!initializedGraphPanes.has(pane) && !hasPersistedGraphTransform(pane)) {
       fitGraphToPane(pane, false);
+    } else {
+      const transform = getGraphTransform(pane);
+      setGraphTransform(pane, {
+        ...transform,
+        pan: clampGraphPanForPane(pane, transform.pan, transform.zoom)
+      });
+      applyGraphZoomToPane(pane);
+      initializedGraphPanes.add(pane);
     }
   }
   saveGraphTransforms();
+}
+
+function rememberGraphZoomAnchor(
+  pane: HTMLElement,
+  clientX: number,
+  clientY: number
+): GraphZoomAnchor | null {
+  const scroller = getGraphScroller(pane);
+  if (scroller === null) {
+    return null;
+  }
+  const rect = scroller.getBoundingClientRect();
+  const anchor = {
+    x: Math.min(rect.width, Math.max(0, clientX - rect.left)),
+    y: Math.min(rect.height, Math.max(0, clientY - rect.top))
+  };
+  graphZoomAnchors.set(pane, anchor);
+  return anchor;
 }
 
 function setGraphZoom(pane: HTMLElement, nextZoom: number, anchor?: GraphZoomAnchor) {
   const currentTransform = getGraphTransform(pane);
   const previousZoom = currentTransform.zoom;
   const nextNormalizedZoom = normalizeGraphZoom(nextZoom);
-  if (Math.abs(previousZoom - nextNormalizedZoom) < 0.001) {
+  if (previousZoom === nextNormalizedZoom) {
     return false;
   }
 
@@ -1431,14 +1543,17 @@ function setGraphZoom(pane: HTMLElement, nextZoom: number, anchor?: GraphZoomAnc
   let nextPan = currentTransform.pan;
   if (scroller !== null) {
     const rect = scroller.getBoundingClientRect();
-    const offsetX = anchor === undefined ? rect.width / 2 : anchor.clientX - rect.left;
-    const offsetY = anchor === undefined ? rect.height / 2 : anchor.clientY - rect.top;
-    const contentX = (offsetX - currentTransform.pan.x) / previousZoom;
-    const contentY = (offsetY - currentTransform.pan.y) / previousZoom;
-    nextPan = {
-      x: offsetX - contentX * nextNormalizedZoom,
-      y: offsetY - contentY * nextNormalizedZoom
-    };
+    const effectiveAnchor = anchor ??
+      graphZoomAnchors.get(pane) ?? {
+        x: rect.width / 2,
+        y: rect.height / 2
+      };
+    nextPan = computeAnchoredGraphPan(
+      currentTransform.pan,
+      previousZoom,
+      nextNormalizedZoom,
+      effectiveAnchor
+    );
   }
 
   setGraphTransform(pane, {
@@ -1446,31 +1561,28 @@ function setGraphZoom(pane: HTMLElement, nextZoom: number, anchor?: GraphZoomAnc
     pan: clampGraphPanForPane(pane, nextPan, nextNormalizedZoom)
   });
   applyGraphZoomToPane(pane);
-  saveGraphTransforms();
-  renderDependencyGraphOverlays();
+  scheduleGraphTransformSave();
   return true;
 }
 
 function zoomGraphFromWheel(pane: HTMLElement, event: WheelEvent) {
   const scroller = getGraphScroller(pane);
-  if (
-    scroller === null ||
-    (document.activeElement !== scroller && !event.ctrlKey && !event.metaKey)
-  ) {
+  if (scroller === null) {
     return;
   }
   const transform = getGraphTransform(pane);
-  const zoomFactor = Math.exp(-event.deltaY * 0.002);
+  const deltaPixels =
+    event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? event.deltaY * 16
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? event.deltaY * Math.max(1, scroller.clientHeight)
+        : event.deltaY;
+  const boundedDeltaPixels = Math.min(240, Math.max(-240, deltaPixels));
+  const zoomFactor = Math.exp(-boundedDeltaPixels * 0.002);
   const nextZoom = normalizeGraphZoom(transform.zoom * zoomFactor);
-  if (Math.abs(transform.zoom - nextZoom) < 0.001) {
-    return;
-  }
+  const anchor = rememberGraphZoomAnchor(pane, event.clientX, event.clientY);
   event.preventDefault();
-  setGraphZoom(pane, nextZoom, {
-    pane,
-    clientX: event.clientX,
-    clientY: event.clientY
-  });
+  setGraphZoom(pane, nextZoom, anchor ?? undefined);
 }
 
 function isGraphInteractiveTarget(target: EventTarget | null) {
@@ -1552,11 +1664,15 @@ function zoomGraphToSelection(selection: GraphSelectionState) {
     )
   );
 
+  const selectedOffset = computeCenteredGraphPan(viewport, {
+    width: selectedWidth * nextZoom,
+    height: selectedHeight * nextZoom
+  });
   const nextPan = clampGraphPanForPane(
     selection.pane,
     {
-      x: GRAPH_FIT_PADDING - selectedX * nextZoom,
-      y: GRAPH_FIT_PADDING - selectedY * nextZoom
+      x: selectedOffset.x - selectedX * nextZoom,
+      y: selectedOffset.y - selectedY * nextZoom
     },
     nextZoom
   );
@@ -1689,12 +1805,14 @@ function finishGraphPan(pane: HTMLElement, event: PointerEvent) {
 }
 
 function handleGraphPointerDown(pane: HTMLElement, event: PointerEvent) {
+  rememberGraphZoomAnchor(pane, event.clientX, event.clientY);
   if (!beginGraphPan(pane, event)) {
     beginGraphSelection(pane, event);
   }
 }
 
 function handleGraphPointerMove(pane: HTMLElement, event: PointerEvent) {
+  rememberGraphZoomAnchor(pane, event.clientX, event.clientY);
   if (!updateGraphPan(pane, event)) {
     updateGraphSelection(pane, event);
   }
@@ -1851,6 +1969,12 @@ document.addEventListener("click", (event) => {
   if (!(target instanceof Element)) {
     return;
   }
+  const artifactButton = target.closest(".openAgentArtifact") as HTMLButtonElement | null;
+  if (artifactButton !== null) {
+    event.preventDefault();
+    postOpenAgentArtifact(artifactButton);
+    return;
+  }
   const graphDetailsButton = target.closest(".graphDetailsBead") as HTMLButtonElement | null;
   if (graphDetailsButton !== null) {
     event.preventDefault();
@@ -1924,7 +2048,7 @@ closeBeadAction.addEventListener("click", () => {
 window.addEventListener("resize", () => {
   if (activeViewMode === "graph") {
     refreshGraphPresentation();
-    fitGraphToViewport();
+    updateGraphViewportPreservingTransform();
   } else {
     applyGraphZoomToAll();
   }
@@ -2000,6 +2124,7 @@ for (const button of Array.from(
       Array<{
         issueId: string;
         title?: string;
+        provider?: AgentProviderId;
         model?: string;
         ssot?: string;
         worktree?: string;

@@ -13,6 +13,8 @@ const packageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf
   devDependencies?: Record<string, string>;
 };
 const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
+const extensionSource = readFileSync(join(repoRoot, "src", "extension.ts"), "utf8");
+const beadsViewSource = readFileSync(join(repoRoot, "src", "beadsView.ts"), "utf8");
 
 describe("privacy and security posture", () => {
   it("does not expose avatar-fetch settings or commands in the extension manifest", () => {
@@ -32,6 +34,28 @@ describe("privacy and security posture", () => {
 
     expect(names).not.toContain("vscode-extension-telemetry");
     expect(names).not.toContain("applicationinsights");
+  });
+
+  it("keeps provider credentials out of settings and gates execution on Workspace Trust", () => {
+    const configKeys = Object.keys(packageJson.contributes?.configuration?.properties ?? {});
+    expect(
+      configKeys.some((key) => /api.?key|credential|secret|hf.?token|access.?token/i.test(key))
+    ).toBe(false);
+    expect(extensionSource).toContain("context.secrets");
+    expect(beadsViewSource).toContain("vscode.workspace.isTrusted");
+    expect(beadsViewSource).not.toContain("OPENAI_API_KEY");
+    expect(beadsViewSource).not.toContain("ANTHROPIC_API_KEY");
+    expect(beadsViewSource).not.toContain("HF_TOKEN");
+  });
+
+  it("checks Beads write safety before provider preparation and persists with one update", () => {
+    expect(beadsViewSource).toContain("probeBeadsAgentWriteCapability(");
+    expect(beadsViewSource).toContain(
+      "preflight: () => this.assertAgentWriteCapability(values.workspacePath)"
+    );
+    expect(beadsViewSource).toContain("persistGeneratedAgentResponse({");
+    expect(beadsViewSource).toContain("buildAgentBeadUpdateArgs({");
+    expect(beadsViewSource).not.toContain('this.runBdCommand(["assign"');
   });
 
   it("documents no-telemetry, privacy-first, and security-first positioning", () => {

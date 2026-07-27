@@ -37,8 +37,10 @@ function makeBead(overrides: Partial<BeadItem>): BeadItem {
     parallelizableSource: "",
     parallelizableSuppressed: false,
     agent: "",
+    provider: "copilot",
     model: "",
     ssot: "",
+    artifact: "",
     worktree: "",
     branch: "",
     pullRequest: "",
@@ -102,8 +104,10 @@ describe("Agent Project Manager webview", () => {
               readyByBd: true,
               parallelizable: true,
               parallelizableSource: "ready",
+              provider: "openai",
               model: "small-model",
               ssot: "AGENTS.md",
+              artifact: "beads-response:12345678-1234-4234-8234-123456789abc",
               worktree: "../mission-queue-1"
             }),
             makeBead({
@@ -151,6 +155,21 @@ describe("Agent Project Manager webview", () => {
     expect(html).toContain(
       'data-assign-start-title="Start &lt;unsafe&gt; &amp; &quot;quoted&quot; work"'
     );
+    expect(html).toContain('data-assign-start-provider="openai"');
+    expect(
+      getTagContaining(getAgentCard(html, "queue-1"), "button", 'data-assign-start-id="queue-1"')
+    ).toContain('data-assign-start-worktree=""');
+    expect(getAgentCard(html, "queue-1")).toContain("Provider OpenAI API");
+    const artifactButton = getTagContaining(
+      getAgentCard(html, "queue-1"),
+      "button",
+      'data-artifact-uri="beads-response:12345678-1234-4234-8234-123456789abc"'
+    );
+    expect(artifactButton).toContain('class="openAgentArtifact executionBadge artifactBadge"');
+    expect(getAgentCard(html, "queue-1")).toContain(">Open response</button>");
+    expect(
+      html.match(/data-artifact-uri="beads-response:12345678-1234-4234-8234-123456789abc"/g)
+    ).toHaveLength(3);
     for (const issueId of ["attention-1", "review-1", "running-1", "done-1"]) {
       expect(getAgentCard(html, issueId)).not.toContain('class="assignStartBead"');
     }
@@ -240,14 +259,109 @@ describe("Agent Project Manager webview", () => {
     const parallelButton = getTagContaining(html, "button", 'class="startParallelBeads');
     const encodedTargets = parallelButton.match(/data-start-parallel-items="([^"]+)"/)?.[1];
     expect(encodedTargets).toBeDefined();
-    const targetIds = JSON.parse(decodeURIComponent(encodedTargets ?? "[]")).map(
-      (target: { issueId: string }) => target.issueId
-    );
-    expect(targetIds).toEqual(["ready-1", "ready-explicit"]);
+    const targets = JSON.parse(decodeURIComponent(encodedTargets ?? "[]")) as Array<{
+      issueId: string;
+      provider: string;
+    }>;
+    expect(targets).toMatchObject([
+      { issueId: "ready-1", provider: "copilot" },
+      { issueId: "ready-explicit", provider: "copilot" }
+    ]);
 
     const waitingCard = getAgentCard(html, "waiting-1");
     expect(waitingCard).toContain("Status &quot;waiting&quot; is not recognized");
     expect(getTagContaining(html, "tr", 'data-id="waiting-1"')).not.toContain("display:none");
+  });
+
+  it("disables provider calls when the Beads schema cannot be updated safely", () => {
+    const workspacePath = "/tmp/schema-mismatch";
+    const result: BeadLoadResult = {
+      groups: [
+        {
+          workspace: "Schema mismatch",
+          workspacePath,
+          items: [
+            makeBead({ id: "ready-1", readyByBd: true }),
+            makeBead({ id: "ready-2", readyByBd: true })
+          ]
+        }
+      ],
+      emptyWorkspaces: [],
+      unavailableWorkspaces: [],
+      bdExecutableStatus: { available: true, command: "bd", message: null },
+      agentWriteCapabilities: [
+        {
+          workspace: "Schema mismatch",
+          workspacePath,
+          capability: {
+            supported: false,
+            state: "schema-mismatch",
+            reason: "Beads schema v49 is incompatible with v53."
+          }
+        }
+      ],
+      errors: [],
+      warnings: []
+    };
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      result
+    );
+
+    expect(html).toContain("<strong>AI actions disabled</strong>");
+    expect(html).toContain("Beads schema v49 is incompatible with v53.");
+    const startButton = getTagContaining(
+      getAgentCard(html, "ready-1"),
+      "button",
+      'data-assign-start-id="ready-1"'
+    );
+    expect(startButton).toContain(" disabled");
+    expect(startButton).toContain("AI actions are disabled because Beads cannot be updated safely");
+    expect(getTagContaining(html, "button", 'class="startParallelBeads')).toContain(" disabled");
+  });
+
+  it("shows a completed direct-provider artifact as review, not live running work", () => {
+    const result: BeadLoadResult = {
+      groups: [
+        {
+          workspace: "Mission Control",
+          workspacePath: "/tmp/mission-control",
+          items: [
+            makeBead({
+              id: "response-1",
+              status: "in_progress",
+              provider: "anthropic",
+              model: "review-model",
+              artifact: "beads-response:87654321-4321-4321-8321-cba987654321"
+            })
+          ]
+        }
+      ],
+      emptyWorkspaces: [],
+      unavailableWorkspaces: [],
+      bdExecutableStatus: { available: true, command: "bd", message: null },
+      errors: [],
+      warnings: []
+    };
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      result
+    );
+
+    expect(html).toContain('data-work-summary="review">1</strong>');
+    expect(html).toContain('data-work-summary="running">0</strong>');
+    expect(html).toContain("Response ready");
+    expect(html).toContain(
+      "A direct-provider response artifact is ready for review; no live agent is implied"
+    );
   });
 
   it("does not offer Start Parallel for a single ready task", () => {
@@ -318,6 +432,7 @@ describe("Agent Project Manager webview", () => {
       id: "research",
       title: "Research the decision",
       readyByBd: true,
+      provider: "huggingface",
       model: "reasoning-model",
       ssot: "docs/decision.md"
     });
@@ -325,6 +440,7 @@ describe("Agent Project Manager webview", () => {
       id: "implement",
       title: "Implement the decision",
       dependencyIds: ["research"],
+      provider: "ollama",
       model: "coding-model",
       ssot: "docs/decision.md"
     });
@@ -343,6 +459,7 @@ describe("Agent Project Manager webview", () => {
       'data-assign-start-id="implement"'
     );
     expect(blockedHandoff).toContain(" disabled");
+    expect(blockedHandoff).toContain('data-assign-start-provider="ollama"');
     expect(blockedHandoff).toContain('data-assign-start-model="coding-model"');
     expect(blockedHandoff).toContain('data-assign-start-ssot="docs/decision.md"');
     const blockedGraphHandoff = getTagContaining(
@@ -354,6 +471,8 @@ describe("Agent Project Manager webview", () => {
     expect(blockedGraphHandoff).toContain(
       "Start is unavailable until bd ready confirms this task and its dependencies."
     );
+    expect(getAgentCard(before, "research")).toContain("Provider Hugging Face Inference");
+    expect(getAgentCard(before, "implement")).toContain("Provider Ollama");
     expect(before).not.toContain('class="startParallelBeads');
 
     const after = render([

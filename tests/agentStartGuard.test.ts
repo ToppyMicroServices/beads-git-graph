@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { requestAgentProviderResponse } from "../src/agentProviderClient";
 import { runReadinessGuardedStart } from "../src/agentStartGuard";
 import { buildAgentWorkPrompt } from "../src/agentWorkPrompt";
 
@@ -91,6 +92,68 @@ describe("readiness-guarded agent start", () => {
     expect(mutateAndLaunch).not.toHaveBeenCalled();
   });
 
+  it("preserves a generated response when final readiness changes", async () => {
+    const calls: string[] = [];
+    const readyResults = [new Set(["research"]), new Set<string>()];
+    const mutateAndLaunch = vi.fn(async () => "response-opened");
+
+    const result = await runReadinessGuardedStart({
+      issueId: "research",
+      queryReadyItemIds: async () => {
+        calls.push("ready");
+        return readyResults.shift() ?? new Set<string>();
+      },
+      queryDependencyIds: async () => {
+        calls.push("show");
+        return [];
+      },
+      prepare: async () => {
+        calls.push("provider", "artifact");
+        return { response: "paid result", artifact: "beads-response:run" };
+      },
+      preservePreparedOnAbort: async () => {
+        calls.push("open");
+      },
+      mutateAndLaunch
+    });
+
+    expect(result).toEqual({ status: "not-ready", phase: "before-mutation" });
+    expect(calls).toEqual(["show", "ready", "provider", "artifact", "show", "ready", "open"]);
+    expect(mutateAndLaunch).not.toHaveBeenCalled();
+  });
+
+  it("preserves a generated response when dependency handoffs change", async () => {
+    const calls: string[] = [];
+    const dependencyResults = [["research-a"], ["research-b"]];
+    const mutateAndLaunch = vi.fn(async () => "response-opened");
+
+    const result = await runReadinessGuardedStart({
+      issueId: "implement",
+      queryReadyItemIds: async () => {
+        calls.push("ready");
+        return new Set(["implement"]);
+      },
+      queryDependencyIds: async () => {
+        calls.push("show");
+        return dependencyResults.shift() ?? [];
+      },
+      prepare: async (dependencyIds) => {
+        calls.push("provider", "artifact");
+        return { dependencyIds: [...dependencyIds], artifact: "beads-response:run" };
+      },
+      preservePreparedOnAbort: async () => {
+        calls.push("open");
+      },
+      isPreparedStillValid: (prepared, dependencyIds) =>
+        prepared.dependencyIds.join("\n") === dependencyIds.join("\n"),
+      mutateAndLaunch
+    });
+
+    expect(result).toEqual({ status: "not-ready", phase: "dependencies-changed" });
+    expect(calls).toEqual(["show", "ready", "provider", "artifact", "show", "ready", "open"]);
+    expect(mutateAndLaunch).not.toHaveBeenCalled();
+  });
+
   it("stops before Beads mutation and launch when the final dependency inspection fails", async () => {
     const calls: string[] = [];
     let showCount = 0;
@@ -115,11 +178,86 @@ describe("readiness-guarded agent start", () => {
           calls.push("worktree");
           return "prepared";
         },
+        preservePreparedOnAbort: async () => {
+          calls.push("preserve");
+        },
         mutateAndLaunch
       })
     ).rejects.toThrow("final bd show failed");
 
-    expect(calls).toEqual(["show", "ready", "worktree", "show"]);
+    expect(calls).toEqual(["show", "ready", "worktree", "show", "preserve"]);
+    expect(mutateAndLaunch).not.toHaveBeenCalled();
+  });
+
+  it("performs no Beads mutation when provider preparation fails", async () => {
+    const calls: string[] = [];
+    const mutateAndLaunch = vi.fn(async () => "response-opened");
+    const fetchMock = vi.fn<typeof fetch>();
+
+    await expect(
+      runReadinessGuardedStart({
+        issueId: "research",
+        queryReadyItemIds: async () => {
+          calls.push("ready");
+          return new Set(["research"]);
+        },
+        queryDependencyIds: async () => {
+          calls.push("show");
+          return [];
+        },
+        prepare: async () => {
+          calls.push("provider");
+          return requestAgentProviderResponse(
+            {
+              provider: "openai",
+              model: "research-model",
+              prompt: "Research",
+              apiKey: undefined,
+              maxOutputTokens: 128,
+              timeoutMs: 1_000
+            },
+            fetchMock
+          );
+        },
+        mutateAndLaunch
+      })
+    ).rejects.toThrow("No credential is available");
+
+    expect(calls).toEqual(["show", "ready", "provider"]);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mutateAndLaunch).not.toHaveBeenCalled();
+  });
+
+  it("does not call a provider when the Beads write preflight fails", async () => {
+    const calls: string[] = [];
+    const prepare = vi.fn(async () => {
+      calls.push("provider");
+      return "response";
+    });
+    const mutateAndLaunch = vi.fn(async () => "response-opened");
+
+    await expect(
+      runReadinessGuardedStart({
+        issueId: "research",
+        queryReadyItemIds: async () => {
+          calls.push("ready");
+          return new Set(["research"]);
+        },
+        queryDependencyIds: async () => {
+          calls.push("show");
+          return [];
+        },
+        preflight: async () => {
+          calls.push("write-capability");
+          throw new Error("Beads schema v49 is incompatible with v53");
+        },
+        prepare,
+        mutateAndLaunch
+      })
+    ).rejects.toThrow("schema v49");
+
+    expect(calls).toEqual(["show", "ready", "write-capability"]);
+    expect(prepare).not.toHaveBeenCalled();
     expect(mutateAndLaunch).not.toHaveBeenCalled();
   });
 

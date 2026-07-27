@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AGENT_UPDATE_CAPABILITY_PROBE_ARGS,
   type BeadsCapabilityCommandResult,
   PLAN_CREATE_CAPABILITY_PROBE_ARGS,
   PLAN_DEPENDENCY_CAPABILITY_PROBE_ARGS,
   PLAN_UPDATE_CAPABILITY_PROBE_ARGS,
+  probeBeadsAgentWriteCapability,
   probeBeadsWriteCapability
 } from "../src/beadsWriteCapability";
 
@@ -86,5 +88,64 @@ describe("Beads plan write capability", () => {
       state: "schema-mismatch",
       reason: "Beads schema v49 is incompatible with v53; migration coordination is required."
     });
+  });
+});
+
+describe("Beads agent write capability", () => {
+  it("accepts a non-mutating schema probe and the single-update contract", async () => {
+    const calls: string[][] = [];
+    const capability = await probeBeadsAgentWriteCapability(true, null, async (args) => {
+      calls.push([...args]);
+      return args[0] === "update"
+        ? result(
+            0,
+            "Flags:\n  --assignee string\n  --append-notes string\n  --set-metadata stringArray\n  --status string"
+          )
+        : result(0, '{"title":"probe"}');
+    });
+
+    expect(capability).toEqual({
+      supported: true,
+      state: "supported",
+      reason: "Compatible dry-run and agent update commands were observed."
+    });
+    expect(calls).toEqual([
+      [...PLAN_CREATE_CAPABILITY_PROBE_ARGS],
+      [...AGENT_UPDATE_CAPABILITY_PROBE_ARGS]
+    ]);
+  });
+
+  it("blocks agent work when the dry-run observes schema skew", async () => {
+    const capability = await probeBeadsAgentWriteCapability(true, null, async () =>
+      result(
+        1,
+        JSON.stringify({
+          remote_migrate_gate: {
+            current_version: 49,
+            latest_version: 53,
+            human_decision_required: true
+          }
+        })
+      )
+    );
+
+    expect(capability).toEqual({
+      supported: false,
+      state: "schema-mismatch",
+      reason: "Beads schema v49 is incompatible with v53; migration coordination is required."
+    });
+  });
+
+  it("blocks agent work when one-command persistence flags are unavailable", async () => {
+    const capability = await probeBeadsAgentWriteCapability(true, null, async (args) =>
+      args[0] === "update"
+        ? result(0, "Flags:\n  --assignee string\n  --status string")
+        : result(0, '{"title":"probe"}')
+    );
+
+    expect(capability.supported).toBe(false);
+    expect(capability.state).toBe("unsupported-command");
+    expect(capability.reason).toContain("--append-notes");
+    expect(capability.reason).toContain("--set-metadata");
   });
 });

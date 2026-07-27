@@ -49,7 +49,30 @@ describe("parsePlanDraft", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.draft).toEqual(input);
+    expect(result.draft?.tasks[0]).not.toHaveProperty("provider");
     expect(result.draft?.tasks[0]).not.toHaveProperty("model");
+  });
+
+  it("normalizes a known provider ID and rejects an unknown provider", () => {
+    const known = validDraft();
+    (known.tasks[1] as { provider?: string }).provider = " OpenAI ";
+    const parsedKnown = parsePlanDraft(JSON.parse(JSON.stringify(known)) as unknown);
+
+    expect(parsedKnown.errors).toEqual([]);
+    expect(parsedKnown.draft?.tasks[1].provider).toBe("openai");
+
+    const unknown = validDraft();
+    (unknown.tasks[1] as { provider?: string }).provider = "unknown-provider";
+    const parsedUnknown = parsePlanDraft(JSON.parse(JSON.stringify(unknown)) as unknown);
+
+    expect(parsedUnknown.draft).toBeNull();
+    expect(parsedUnknown.errors).toEqual([
+      expect.objectContaining({
+        code: "invalid-field",
+        path: "tasks[1].provider",
+        taskId: "pm-102"
+      })
+    ]);
   });
 });
 
@@ -113,6 +136,17 @@ describe("validatePlanDraft", () => {
       expected: {
         code: "invalid-field",
         path: "tasks[1].model",
+        taskId: "pm-102"
+      }
+    },
+    {
+      name: "rejects an unknown requested provider",
+      mutate: (draft: PlanDraft) => {
+        (draft.tasks[1] as { provider?: string }).provider = "unknown-provider";
+      },
+      expected: {
+        code: "invalid-field",
+        path: "tasks[1].provider",
         taskId: "pm-102"
       }
     },
