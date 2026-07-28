@@ -370,9 +370,25 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("reconcileRenderRegion(beadsWorkspaceViews, nextWorkspaceViews)");
     expect(beadsMain).toContain("reconcileRenderChildren");
     expect(beadsMain).toContain("dynamicallyBoundElements");
+    expect(beadsMain).toContain("lastWorkspaceRenderHtml");
+    expect(beadsMain).toContain("nextWorkspaceRenderHtml !== lastWorkspaceRenderHtml");
+    expect(beadsMain).toContain("captureRenderViewportAnchor");
+    expect(beadsMain).toContain("restoreRenderViewportAnchor");
+    expect(beadsMain).toContain("sortRowsAndUpdateIcons");
+    expect(beadsMain).toContain("updateGraphViewportPreservingTransform(false)");
+    expect(beadsMain).toContain("scrollIntoView: false");
+    expect(beadsMain).toContain("hasClientOwnedStyle");
     expect(beadsMain).not.toContain("beadsWorkspaceViews.innerHTML = nextWorkspaceViews.innerHTML");
     expect(beadsWebview).not.toContain("syncPulse");
-    expect(beadsMain).toContain("restoreSelectedIssue(selectedIssue)");
+    expect(beadsWebview).toContain("#beadsWorkspaceViews{overflow-anchor:none;}");
+    const renderUpdateSource = beadsMain.slice(
+      beadsMain.indexOf("function applyBeadsRenderUpdate"),
+      beadsMain.indexOf("function closeContextMenu")
+    );
+    expect(renderUpdateSource).not.toContain("requestAnimationFrame");
+    expect(renderUpdateSource).not.toContain("applySort()");
+    expect(renderUpdateSource).not.toContain("applyFilters()");
+    expect(renderUpdateSource).not.toContain("applyViewMode(activeViewMode)");
     expect(beadsMain).toContain("activeFilters?: StatusFilter[]");
     expect(beadsMain).toContain("collapsedEpicIds?: string[]");
     expect(beadsMain).toContain("sortState?: { key: SortKey; desc: boolean }");

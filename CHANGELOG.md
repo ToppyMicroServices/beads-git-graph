@@ -23,6 +23,8 @@
 
 ### Fixed
 
+- Keep the visible Table or Graph viewport fixed during live updates, avoid re-running Graph layout
+  for warning-only changes, and preserve runtime zoom, pan, node, and relationship geometry.
 - Stop animating the Sync warning button and preserve existing controls during in-place task
   updates so buttons do not flash, move, or lose focus.
 - Make normal Graph dragging pan the zoomed canvas, keep box zoom on Option/Alt-drag, and render

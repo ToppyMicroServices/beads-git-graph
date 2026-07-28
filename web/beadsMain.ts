@@ -62,6 +62,13 @@ type GraphPanGestureState = {
   startPan: GraphPanState;
 };
 type SelectedIssueState = { workspacePath: string; issueId: string };
+type RenderViewportAnchor = {
+  element: HTMLElement | null;
+  elementTop: number;
+  fallbackScrollX: number;
+  fallbackScrollY: number;
+  graphDetailsScrollTop: number | null;
+};
 type BeadsWebviewState = {
   viewMode?: ViewMode;
   activeFilters?: StatusFilter[];
@@ -237,6 +244,7 @@ const parallelBatchResult = queryElement<HTMLElement>("#parallelBatchResult");
 const beadsWorkspaceViews = queryElement<HTMLDivElement>("#beadsWorkspaceViews");
 const beadsWarnings = queryElement<HTMLDivElement>("#beadsWarnings");
 const beadsErrors = queryElement<HTMLDivElement>("#beadsErrors");
+let lastWorkspaceRenderHtml = beadsWorkspaceViews.innerHTML;
 let bdAvailable = document.body.dataset.bdAvailable === "1";
 let hasSyncWarnings = document.body.dataset.hasSyncWarnings === "1";
 const planDraftController = createPlanDraftController((message) => vscode.postMessage(message));
@@ -621,7 +629,10 @@ function findSectionRows(button: HTMLElement) {
   return section === null ? [] : getVisibleBeadRows(section);
 }
 
-function openGraphBeadDetails(button: HTMLButtonElement) {
+function openGraphBeadDetails(
+  button: HTMLButtonElement,
+  options: { saveState?: boolean; scrollIntoView?: boolean } = {}
+) {
   const issueId = button.dataset.graphDetailsId || "";
   const workspacePath = button.dataset.graphDetailsWorkspace || "";
   const section = Array.from(document.querySelectorAll<BeadSection>("section")).find(
@@ -668,8 +679,12 @@ function openGraphBeadDetails(button: HTMLButtonElement) {
   details.insertAdjacentHTML("beforeend", renderDetailsMarkup(item));
   bindCommitLinks(details);
   issueStack.prepend(details);
-  saveInteractionState();
-  details.scrollIntoView({ block: "nearest" });
+  if (options.saveState !== false) {
+    saveInteractionState();
+  }
+  if (options.scrollIntoView !== false) {
+    details.scrollIntoView({ block: "nearest" });
+  }
 }
 
 function findIssueRow(issue: SelectedIssueState) {
@@ -678,7 +693,10 @@ function findIssueRow(issue: SelectedIssueState) {
   );
 }
 
-function restoreSelectedIssue(issue: SelectedIssueState | null) {
+function restoreSelectedIssue(
+  issue: SelectedIssueState | null,
+  options: { saveState?: boolean; scrollIntoView?: boolean } = {}
+) {
   if (issue === null) {
     return;
   }
@@ -703,10 +721,12 @@ function restoreSelectedIssue(issue: SelectedIssueState | null) {
         button.dataset.graphDetailsId === issue.issueId
     );
     if (graphButton !== undefined) {
-      openGraphBeadDetails(graphButton);
+      openGraphBeadDetails(graphButton, options);
     }
   }
-  saveInteractionState();
+  if (options.saveState !== false) {
+    saveInteractionState();
+  }
 }
 
 function updatePlanWorkspaceOptions(nextSelect: HTMLSelectElement) {
@@ -751,6 +771,18 @@ const STABLE_RENDER_CLASSES = new Set([
   "graphNodes",
   "agentWorkQueue"
 ]);
+
+const CLIENT_OWNED_STYLE_CLASSES = [
+  "beadRow",
+  "graphCanvas",
+  "graphContent",
+  "graphNode",
+  "graphLevelGuide"
+];
+
+function hasClientOwnedStyle(element: Element) {
+  return CLIENT_OWNED_STYLE_CLASSES.some((className) => element.classList.contains(className));
+}
 
 function getStableRenderKey(node: Node) {
   if (!(node instanceof Element)) {
@@ -802,11 +834,17 @@ function canReconcileRenderNode(currentNode: Node, nextNode: Node) {
 
 function reconcileRenderAttributes(currentElement: Element, nextElement: Element) {
   for (const attribute of Array.from(currentElement.attributes)) {
+    if (attribute.name === "style" && hasClientOwnedStyle(currentElement)) {
+      continue;
+    }
     if (!nextElement.hasAttribute(attribute.name)) {
       currentElement.removeAttribute(attribute.name);
     }
   }
   for (const attribute of Array.from(nextElement.attributes)) {
+    if (attribute.name === "style" && hasClientOwnedStyle(currentElement)) {
+      continue;
+    }
     if (currentElement.getAttribute(attribute.name) !== attribute.value) {
       currentElement.setAttribute(attribute.name, attribute.value);
     }
@@ -824,6 +862,13 @@ function reconcileRenderNode(currentNode: Node, nextNode: Node) {
     return;
   }
   reconcileRenderAttributes(currentNode, nextNode);
+  if (
+    currentNode.classList.contains("dependencyOverlay") ||
+    currentNode.classList.contains("hierarchyOverlay") ||
+    currentNode.classList.contains("graphZoomValue")
+  ) {
+    return;
+  }
   reconcileRenderChildren(currentNode, nextNode);
 }
 
@@ -879,6 +924,88 @@ function reconcileRenderRegion(currentRegion: Element, nextRegion: Element) {
   return true;
 }
 
+function getNearestViewportElement(candidates: HTMLElement[]) {
+  const connected = candidates.filter(
+    (element) => element.isConnected && element.offsetParent !== null
+  );
+  const visible = connected.filter((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.bottom > 0 && rect.top < window.innerHeight;
+  });
+  const pool = visible.length > 0 ? visible : connected;
+  return (
+    pool.sort(
+      (left, right) =>
+        Math.abs(left.getBoundingClientRect().top) - Math.abs(right.getBoundingClientRect().top)
+    )[0] ?? null
+  );
+}
+
+function getRenderViewportElement() {
+  if (activeViewMode === "graph") {
+    return getNearestViewportElement(
+      Array.from(document.querySelectorAll<HTMLElement>(".graphScroller"))
+    );
+  }
+  if (activeViewMode === "table") {
+    return getNearestViewportElement([
+      ...(selectedRow?.isConnected ? [selectedRow] : []),
+      ...Array.from(document.querySelectorAll<HTMLElement>(".tableWrap"))
+    ]);
+  }
+  if (activeViewMode === "control") {
+    return getNearestViewportElement(
+      Array.from(document.querySelectorAll<HTMLElement>(".agentWorkQueue"))
+    );
+  }
+  return document.querySelector<HTMLElement>("#planDraftView");
+}
+
+function captureRenderViewportAnchor(): RenderViewportAnchor {
+  const element = getRenderViewportElement();
+  return {
+    element,
+    elementTop: element?.getBoundingClientRect().top ?? 0,
+    fallbackScrollX: window.scrollX,
+    fallbackScrollY: window.scrollY,
+    graphDetailsScrollTop:
+      document.querySelector<HTMLElement>(".graphSelectedDetails")?.scrollTop ?? null
+  };
+}
+
+function restoreRenderViewportAnchor(anchor: RenderViewportAnchor) {
+  const details = document.querySelector<HTMLElement>(".graphSelectedDetails");
+  if (details !== null && anchor.graphDetailsScrollTop !== null) {
+    details.scrollTop = anchor.graphDetailsScrollTop;
+  }
+
+  if (anchor.element !== null && anchor.element.isConnected) {
+    const topDelta = anchor.element.getBoundingClientRect().top - anchor.elementTop;
+    const targetScrollY = window.scrollY + topDelta;
+    if (
+      Math.abs(window.scrollX - anchor.fallbackScrollX) > 0.5 ||
+      Math.abs(window.scrollY - targetScrollY) > 0.5
+    ) {
+      window.scrollTo({
+        left: anchor.fallbackScrollX,
+        top: targetScrollY,
+        behavior: "auto"
+      });
+    }
+    return;
+  }
+  if (
+    Math.abs(window.scrollX - anchor.fallbackScrollX) > 0.5 ||
+    Math.abs(window.scrollY - anchor.fallbackScrollY) > 0.5
+  ) {
+    window.scrollTo({
+      left: anchor.fallbackScrollX,
+      top: anchor.fallbackScrollY,
+      behavior: "auto"
+    });
+  }
+}
+
 function applyBeadsRenderUpdate(
   message: Extract<BeadsHostMessage, { command: "beadsRenderUpdate" }>
 ) {
@@ -901,18 +1028,23 @@ function applyBeadsRenderUpdate(
   }
 
   lastRenderGeneration = message.generation;
+  const viewportAnchor = captureRenderViewportAnchor();
   const selectedIssue = getSelectedIssue();
-  const scrollY = window.scrollY;
-  clearRowClickTimer();
-  closeContextMenu();
-  removeExpandedDetails();
-  removeGraphSelectedDetails();
-  selectedRow = null;
-  expandedDetailsRow = null;
-  graphSelection = null;
-  graphPanGesture = null;
+  const nextWorkspaceRenderHtml = nextWorkspaceViews.innerHTML;
+  const workspaceChanged = nextWorkspaceRenderHtml !== lastWorkspaceRenderHtml;
+  lastWorkspaceRenderHtml = nextWorkspaceRenderHtml;
 
-  reconcileRenderRegion(beadsWorkspaceViews, nextWorkspaceViews);
+  if (workspaceChanged) {
+    clearRowClickTimer();
+    closeContextMenu();
+    removeExpandedDetails();
+    removeGraphSelectedDetails();
+    selectedRow = null;
+    expandedDetailsRow = null;
+    graphSelection = null;
+    graphPanGesture = null;
+    reconcileRenderRegion(beadsWorkspaceViews, nextWorkspaceViews);
+  }
   reconcileRenderRegion(beadsWarnings, nextWarnings);
   reconcileRenderRegion(beadsErrors, nextErrors);
   bdAvailable = parsed.body.dataset.bdAvailable === "1";
@@ -923,25 +1055,27 @@ function applyBeadsRenderUpdate(
   const planWorkspaceOptionsChanged = updatePlanWorkspaceOptions(nextPlanWorkspace);
 
   bindDynamicContent();
-  for (const row of getVisibleBeadRows()) {
-    updateCollapseButton(row);
+  if (workspaceChanged) {
+    sortRowsAndUpdateIcons();
+    for (const row of getVisibleBeadRows()) {
+      updateCollapseButton(row);
+    }
+    refreshRowVisibility({ refreshGraph: false, renderHierarchy: false });
+    restoreSelectedIssue(selectedIssue, { saveState: false, scrollIntoView: false });
+    updateViewModeControls(activeViewMode, false);
+
+    if (activeViewMode === "graph") {
+      refreshGraphPresentation();
+      updateGraphViewportPreservingTransform(false);
+    }
+    renderHierarchyOverlays();
+    renderDependencyGraphOverlays();
   }
-  restoreSelectedIssue(selectedIssue);
-  applySort();
-  applyFilters();
   if (planWorkspaceOptionsChanged) {
     renderCurrentPlanPreview();
   }
-  applyViewMode(activeViewMode);
-
-  window.requestAnimationFrame(() => {
-    window.scrollTo({ top: scrollY });
-    if (activeViewMode === "graph") {
-      refreshGraphPresentation();
-      updateGraphViewportPreservingTransform();
-      renderDependencyGraphOverlays();
-    }
-  });
+  restoreRenderViewportAnchor(viewportAnchor);
+  saveInteractionState();
 }
 
 function closeContextMenu() {
@@ -1340,7 +1474,9 @@ function rowHasCollapsedAncestor(row: BeadRow, rowsById: Map<string, BeadRow>) {
   return false;
 }
 
-function refreshRowVisibility() {
+function refreshRowVisibility(options: { refreshGraph?: boolean; renderHierarchy?: boolean } = {}) {
+  const shouldRefreshGraph = options.refreshGraph !== false;
+  const shouldRenderHierarchy = options.renderHierarchy !== false;
   const rows = getVisibleBeadRows();
   const rowsById = getRowsById(rows);
   let visibleCount = 0;
@@ -1372,21 +1508,27 @@ function refreshRowVisibility() {
   stats.title = `${rows.length} total beads`;
   refreshGraphNodeVisibility();
   refreshAgentWorkQueueVisibility();
-  renderHierarchyOverlays();
-  if (activeViewMode === "graph") {
+  if (shouldRenderHierarchy) {
+    renderHierarchyOverlays();
+  }
+  if (activeViewMode === "graph" && shouldRefreshGraph) {
     refreshGraphPresentation();
     updateGraphViewportPreservingTransform();
   }
-  renderDependencyGraphOverlays();
+  if (shouldRefreshGraph) {
+    renderDependencyGraphOverlays();
+  }
 }
 
 function applyFilters() {
   refreshRowVisibility();
 }
 
-function applyViewMode(mode: ViewMode) {
+function updateViewModeControls(mode: ViewMode, persist: boolean = true) {
   activeViewMode = mode;
-  saveViewMode(mode);
+  if (persist) {
+    saveViewMode(mode);
+  }
   document.body.dataset.viewMode = mode;
   tableViewButton.classList.toggle("active", mode === "table");
   graphViewButton.classList.toggle("active", mode === "graph");
@@ -1396,6 +1538,10 @@ function applyViewMode(mode: ViewMode) {
   graphViewButton.setAttribute("aria-pressed", mode === "graph" ? "true" : "false");
   controlViewButton.setAttribute("aria-pressed", mode === "control" ? "true" : "false");
   planViewButton.setAttribute("aria-pressed", mode === "plan" ? "true" : "false");
+}
+
+function applyViewMode(mode: ViewMode) {
+  updateViewModeControls(mode);
   if (mode === "graph") {
     const selectedIssue =
       selectedRow === null
@@ -1518,7 +1664,7 @@ function compareRows(a: BeadRow, b: BeadRow) {
   return aOrder - bOrder;
 }
 
-function applySort() {
+function sortRowsAndUpdateIcons() {
   for (const tbody of Array.from(document.querySelectorAll<HTMLTableSectionElement>("tbody"))) {
     const rows = Array.from(tbody.querySelectorAll<BeadRow>(".beadRow"));
     const rowById = new Map(rows.map((row) => [row.dataset.id || "", row]));
@@ -1534,20 +1680,18 @@ function applySort() {
     }
 
     const visited = new Set<string>();
-    const appendRow = (row: BeadRow) => {
+    const orderedRows: BeadRow[] = [];
+    const collectRow = (row: BeadRow) => {
       const id = row.dataset.id || "";
       if (visited.has(id)) {
         return;
       }
       visited.add(id);
-      tbody.appendChild(row);
-      if (selectedRow === row && expandedDetailsRow !== null) {
-        tbody.appendChild(expandedDetailsRow);
-      }
+      orderedRows.push(row);
 
       const children = [...(childrenByParent.get(id) ?? [])].sort(compareRows);
       for (const child of children) {
-        appendRow(child);
+        collectRow(child);
       }
     };
 
@@ -1559,10 +1703,25 @@ function applySort() {
       .sort(compareRows);
 
     for (const root of roots) {
-      appendRow(root);
+      collectRow(root);
     }
     for (const row of rows) {
-      appendRow(row);
+      collectRow(row);
+    }
+
+    const currentRows = Array.from(tbody.children).filter((child): child is BeadRow =>
+      child.classList.contains("beadRow")
+    );
+    if (
+      currentRows.length !== orderedRows.length ||
+      orderedRows.some((row, index) => currentRows[index] !== row)
+    ) {
+      for (const row of orderedRows) {
+        tbody.appendChild(row);
+      }
+      if (selectedRow !== null && expandedDetailsRow !== null) {
+        selectedRow.insertAdjacentElement("afterend", expandedDetailsRow);
+      }
     }
   }
 
@@ -1570,7 +1729,10 @@ function applySort() {
     const key = icon.dataset.sortKey as SortKey | undefined;
     icon.textContent = key === sortState.key ? (sortState.desc ? "▼" : "▲") : " ";
   }
+}
 
+function applySort() {
+  sortRowsAndUpdateIcons();
   refreshRowVisibility();
   saveInteractionState();
 }
@@ -2072,7 +2234,7 @@ function hasPersistedGraphTransform(pane: HTMLElement) {
   );
 }
 
-function updateGraphViewportPreservingTransform() {
+function updateGraphViewportPreservingTransform(clampPan: boolean = true) {
   for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
     if (pane.offsetParent === null) {
       continue;
@@ -2081,10 +2243,12 @@ function updateGraphViewportPreservingTransform() {
       fitGraphToPane(pane, false);
     } else {
       const transform = getGraphTransform(pane);
-      setGraphTransform(pane, {
-        ...transform,
-        pan: clampGraphPanForPane(pane, transform.pan, transform.zoom)
-      });
+      if (clampPan) {
+        setGraphTransform(pane, {
+          ...transform,
+          pan: clampGraphPanForPane(pane, transform.pan, transform.zoom)
+        });
+      }
       applyGraphZoomToPane(pane);
       initializedGraphPanes.add(pane);
     }

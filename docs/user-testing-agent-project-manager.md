@@ -267,7 +267,7 @@ browser page. It verifies user-visible source behavior, but it does not exercise
 ## Packaged VSIX result — 2026-07-24; rebuilt 2026-07-28
 
 - **Artifact:** `beads-git-graph-0.4.20260710.vsix`, SHA-256
-  `60d90d6bef3df4b89ccf2a62eacb5a2bb6f3eb2fc815b4e423aebd014b063e6d`.
+  `38585cdf4257d84f9e9316e326940a989cc2e0b3a28295ff173522504e42bd10`.
 - **Package inspection:** the current artifact contains provider/model selection, Host-side
   readiness/schema/dependency checks, response-artifact preservation, bounded parallel requests,
   pointer-centered Graph zoom, normal-drag pan, dependency and parent-child line rendering, static
@@ -334,6 +334,20 @@ browser page. It verifies user-visible source behavior, but it does not exercise
   drag remains pan, and interactive controls do not start a graph gesture.
 - **Evidence level:** compiled-source browser interaction plus pure gesture/transform tests and
   source assertions. Installed-VSIX repetition remains part of PM-006D/MAN-14.
+
+## Stable viewport during live update result — 2026-07-28
+
+- **Observed:** with Graph at `173%`, manually panned, task Details open, and the page scrolled to
+  `40 px`, a warning-only update kept the page position, Graph top, zoom, horizontal/vertical pan,
+  open Details state, and Fit-button identity identical before the update, synchronously after it,
+  and after each of the next two animation frames.
+- **Observed:** an update that changed the selected task title produced the same frame-by-frame
+  invariants while the refreshed title appeared.
+- **Additional checks:** warning-only updates bypass workspace reconciliation; task-content updates
+  restore details without `scrollIntoView`, preserve client-owned Graph geometry, and execute one
+  final Graph presentation pass without re-clamping the saved pan.
+- **Evidence level:** compiled-source browser interaction plus Vitest/source assertions.
+  Installed-VSIX repetition remains part of PM-006D/MAN-14.
 
 ## Extension Host and manual checks
 

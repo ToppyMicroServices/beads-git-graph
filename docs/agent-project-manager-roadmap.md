@@ -259,6 +259,17 @@ workspace.
     recorded.
   - **Depends:** PM-006A through PM-006C.
   - **Tier:** capable.
+- [x] **PM-006F — Keep the visible viewport fixed throughout a live update**
+  - **Input:** warning-only and task-content updates while Graph is zoomed, panned, and showing
+    task Details.
+  - **Edit target:** update reconciliation, viewport anchoring, and client-owned Graph geometry in
+    `web/beadsMain.ts`.
+  - **Done/test:** a compiled-source browser check records identical page position, Graph top,
+    `173%` zoom, pan, open Details state, and control identity before the update, synchronously
+    after it, and after each of the next two animation frames. Warning-only updates skip workspace
+    reconciliation, and task-content updates run the Graph presentation pass once.
+  - **Depends:** PM-006A through PM-006E.
+  - **Tier:** capable.
 - [ ] **PM-006D — Repeat refresh continuity in an installed VSIX**
   - **Input:** a freshly packaged VSIX and a disposable workspace whose issue fixture changes while
     Graph/Table details are open.

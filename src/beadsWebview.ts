@@ -973,6 +973,7 @@ body[data-bd-available="1"][data-has-sync-warnings="1"] #syncBeads .toolbarActio
 .parallelSummary{border-color:rgba(34,197,94,.45);color:var(--vscode-testing-iconPassed,#22c55e);}
 .modelSummary{border-color:rgba(234,179,8,.5);color:var(--vscode-charts-yellow,#d97706);}
 section{margin-bottom:12px;}
+#beadsWorkspaceViews{overflow-anchor:none;}
 .tableWrap{position:relative;border:1px solid var(--vscode-panel-border);border-radius:8px;overflow:hidden;background:var(--vscode-editor-background);}
 body[data-view-mode="graph"] .tableWrap,body[data-view-mode="control"] .tableWrap{display:none;}
 body[data-view-mode="table"] .graphPane,body[data-view-mode="control"] .graphPane{display:none;}
