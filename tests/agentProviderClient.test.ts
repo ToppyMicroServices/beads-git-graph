@@ -249,6 +249,48 @@ describe("agent provider HTTP adapters", () => {
     expect((thrown as AgentProviderError).code).toBe("timeout");
   });
 
+  it("does not send a provider request when it was already cancelled", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchMock = vi.fn<typeof fetch>();
+
+    const thrown = await requestAgentProviderResponse(
+      { ...baseRequest, provider: "openai", signal: controller.signal },
+      fetchMock
+    ).catch((error: unknown) => error);
+
+    expect((thrown as AgentProviderError).code).toBe("cancelled");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("maps external cancellation during a request and removes its listener", async () => {
+    const controller = new AbortController();
+    const addEventListener = vi.spyOn(controller.signal, "addEventListener");
+    const removeEventListener = vi.spyOn(controller.signal, "removeEventListener");
+    let requestSignal: AbortSignal | null | undefined;
+    const fetchMock = vi.fn<typeof fetch>(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          requestSignal = init?.signal;
+          init?.signal?.addEventListener("abort", () => {
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+          });
+          controller.abort();
+        })
+    );
+
+    const thrown = await requestAgentProviderResponse(
+      { ...baseRequest, provider: "openai", signal: controller.signal },
+      fetchMock
+    ).catch((error: unknown) => error);
+
+    expect((thrown as AgentProviderError).code).toBe("cancelled");
+    expect(requestSignal).not.toBe(controller.signal);
+    expect(requestSignal?.aborted).toBe(true);
+    expect(addEventListener).toHaveBeenCalledWith("abort", expect.any(Function), { once: true });
+    expect(removeEventListener).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+
   it("accepts only loopback Ollama endpoints", () => {
     expect(normalizeOllamaBaseUrl("http://127.12.34.56:11434/")).toBe("http://127.12.34.56:11434");
     expect(() => normalizeOllamaBaseUrl("https://example.com")).toThrow(

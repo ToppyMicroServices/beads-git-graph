@@ -16,6 +16,7 @@ export interface AgentProviderRequest {
   ollamaBaseUrl?: string;
   maxOutputTokens: number;
   timeoutMs: number;
+  signal?: AbortSignal;
 }
 
 export interface AgentProviderResponse {
@@ -31,6 +32,7 @@ export type AgentProviderErrorCode =
   | "model-not-found"
   | "provider-unavailable"
   | "rate-limited"
+  | "cancelled"
   | "timeout"
   | "unexpected-response";
 
@@ -326,17 +328,42 @@ async function readResponseText(response: Response, controller: AbortController)
   }
 }
 
+type RequestAbortSource = "external" | "timeout";
+
+function abortedRequestError(source: RequestAbortSource) {
+  return source === "external"
+    ? new AgentProviderError("cancelled", "The provider request was cancelled.")
+    : new AgentProviderError("timeout", "The provider request timed out.");
+}
+
 export async function requestAgentProviderResponse(
   request: AgentProviderRequest,
   fetchImpl: FetchLike = fetch
 ): Promise<AgentProviderResponse> {
+  if (request.signal?.aborted) {
+    throw abortedRequestError("external");
+  }
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), request.timeoutMs);
+  let abortSource: RequestAbortSource | undefined;
+  const abort = (source: RequestAbortSource) => {
+    if (controller.signal.aborted) {
+      return;
+    }
+    abortSource = source;
+    controller.abort();
+  };
+  const handleExternalAbort = () => abort("external");
+  request.signal?.addEventListener("abort", handleExternalAbort, { once: true });
+  const timeout = setTimeout(() => abort("timeout"), request.timeoutMs);
   try {
     const response = await fetchImpl(
       endpointFor(request),
       requestInitFor(request, controller.signal)
     );
+    if (abortSource) {
+      throw abortedRequestError(abortSource);
+    }
     if (!response.ok) {
       throw statusError(response.status);
     }
@@ -352,6 +379,9 @@ export async function requestAgentProviderResponse(
         "unexpected-response",
         "The provider response could not be read."
       );
+    }
+    if (abortSource) {
+      throw abortedRequestError(abortSource);
     }
 
     let parsed: unknown;
@@ -380,11 +410,15 @@ export async function requestAgentProviderResponse(
     if (error instanceof AgentProviderError) {
       throw error;
     }
+    if (abortSource) {
+      throw abortedRequestError(abortSource);
+    }
     if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
-      throw new AgentProviderError("timeout", "The provider request timed out.");
+      throw abortedRequestError("timeout");
     }
     throw new AgentProviderError("provider-unavailable", "The provider could not be reached.");
   } finally {
     clearTimeout(timeout);
+    request.signal?.removeEventListener("abort", handleExternalAbort);
   }
 }

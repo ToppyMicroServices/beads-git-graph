@@ -144,7 +144,7 @@ function getExecutionStateLabel(item: BeadItem, normalizedStatus: string, derive
     return "Response ready";
   }
   if (normalizedStatus === "in_progress") {
-    return "Running";
+    return "Recorded in progress";
   }
   if (normalizedStatus === "closed") {
     return "Done";
@@ -260,7 +260,7 @@ function buildMergeRiskWarnings(items: BeadItem[]) {
 const AGENT_WORK_LANE_LABELS: Record<AgentWorkLane, string> = {
   attention: "Needs attention",
   review: "Review",
-  running: "Running",
+  running: "Recorded in progress",
   queue: "Queue",
   done: "Done"
 };
@@ -365,7 +365,7 @@ function renderAgentWorkQueue(
     return `<div class="agentWorkLane" data-work-lane="${lane}"><div class="agentWorkLaneHeader"><span>${AGENT_WORK_LANE_LABELS[lane]}</span><span class="agentWorkLaneCount">${queue.counts[lane]}</span></div><div class="agentWorkLaneCards">${cards}<div class="agentWorkLaneEmpty"${queue.counts[lane] === 0 ? "" : " hidden"}>No matching work</div></div></div>`;
   }).join("");
 
-  return `<div class="agentWorkQueue" data-workspace-path="${escapeHtml(workspacePath)}"><div class="agentWorkQueueHeader"><div><div class="agentWorkQueueTitle">Agent Work Queue</div><div class="agentWorkQueueHint">Derived from Beads status and recorded Git/PR metadata. “Running” does not confirm live agent activity.</div></div><div class="agentWorkOverview">${overview}</div></div><div class="agentWorkLanes">${lanes}</div></div>`;
+  return `<div class="agentWorkQueue" data-workspace-path="${escapeHtml(workspacePath)}"><div class="agentWorkQueueHeader"><div><div class="agentWorkQueueTitle">Agent Work Queue</div><div class="agentWorkQueueHint">Derived from Beads status and recorded Git/PR metadata. “Recorded in progress” is not live-agent monitoring.</div></div><div class="agentWorkOverview">${overview}</div></div><div class="agentWorkLanes">${lanes}</div></div>`;
 }
 
 function renderBeadsDependencyGraph(
@@ -908,7 +908,7 @@ export function renderBeadsWebviewHtml(
               `<option value="${escapeHtml(workspacePath)}" data-plan-capability="${escapeHtml(encodeURIComponent(JSON.stringify(capability)))}">${escapeHtml(workspace)}</option>`
           )
           .join("");
-  const planDraftHtml = `<section id="planDraftView" aria-label="Plan Draft"><div class="planDraftHeader"><div><div class="workspaceName">Plan Draft</div><p>Validate dependencies, requested provider/model handoffs, and every Beads mutation before approval.</p></div><label>Target workspace<select id="planDraftWorkspace"${planImportCapabilities.length === 0 ? " disabled" : ""}>${planWorkspaceOptions}</select></label></div><div class="planDraftEditor"><label for="planDraftText">Draft JSON</label><textarea id="planDraftText" spellcheck="false" placeholder="Paste a version 1 Plan Draft, or load the example."></textarea><div class="planDraftEditorActions"><button id="loadPlanDraftExample" type="button">Load example</button><button id="previewPlanDraft" type="button">Preview Plan</button></div></div><div id="planDraftPreview" aria-live="polite"><div class="empty">Preview a draft to see tasks, validation errors, dependency levels, Critical Path, parallel candidates, requested provider/model transitions, and pending mutations.</div></div></section>`;
+  const planDraftHtml = `<section id="planDraftView" aria-label="AI task planning"><div class="planDraftHeader"><div><div class="workspaceName">AI Plan &amp; Parallel Run</div><p>Turn one goal into dependency-linked tasks, review the draft, then import and run only ready work.</p></div><label>Target workspace<select id="planDraftWorkspace"${planImportCapabilities.length === 0 ? " disabled" : ""}>${planWorkspaceOptions}</select></label></div><ol class="planFlow" aria-label="Planning workflow"><li><strong>1</strong><span>Describe goal</span></li><li><strong>2</strong><span>Review AI draft</span></li><li><strong>3</strong><span>Import to Beads</span></li><li><strong>4</strong><span>Run ready tasks</span></li></ol><div class="planGoalComposer"><label for="planGoalText">What should this project accomplish?</label><textarea id="planGoalText" maxlength="4000" placeholder="Example: Compare three implementation approaches, build the selected one, and have a separate AI review the result."></textarea><div class="planGoalActions"><button id="generatePlanDraftWithAi" type="button"${planImportCapabilities.length === 0 ? ' title="Open an initialized Beads workspace first." disabled' : ""}>Generate task plan with AI</button><span id="planGenerationStatus" role="status" aria-live="polite">Nothing is sent until you choose Generate and approve the provider request.</span></div><p class="planPrivacyHint">AI generation creates an editable local draft only. It never imports tasks or writes Beads automatically.</p></div><details class="planAdvanced"><summary>Advanced: view or edit Plan Draft JSON</summary><div class="planDraftEditor"><label for="planDraftText">Draft JSON</label><textarea id="planDraftText" spellcheck="false" placeholder="Generate a draft, paste version 1 JSON, or load the example."></textarea><div class="planDraftEditorActions"><button id="loadPlanDraftExample" type="button">Load example</button><button id="previewPlanDraft" type="button">Preview edited JSON</button></div></div></details><div id="planDraftPreview" aria-live="polite"><div class="empty">Generate or preview a draft to see tasks, validation errors, dependency levels, Critical Path, parallel candidates, provider/model transitions, and pending mutations.</div></div></section>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -918,6 +918,7 @@ export function renderBeadsWebviewHtml(
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:6px;background:var(--vscode-editor-background);font-size:13px;}
+body[data-view-mode="loading"]>*{visibility:hidden;}
 [hidden]{display:none!important;}
 .toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px;margin-bottom:6px;padding:6px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));box-shadow:0 1px 4px rgba(0,0,0,.12);}
 .toolbarMain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;}
@@ -979,6 +980,7 @@ body[data-view-mode="table"] .graphPane,body[data-view-mode="control"] .graphPan
 body[data-view-mode="table"] .agentWorkQueue,body[data-view-mode="graph"] .agentWorkQueue{display:none;}
 body[data-view-mode="plan"] #beadsWorkspaceViews{display:none;}
 body:not([data-view-mode="plan"]) #planDraftView{display:none;}
+body:not([data-view-mode="control"]) #parallelBatchResult{display:none;}
 body[data-view-mode="plan"] .toolbarStatsRow{display:none;}
 body[data-view-mode="plan"] .preset,body[data-view-mode="plan"] #chips,body[data-view-mode="plan"] .toolbarMain>.menu,body[data-view-mode="plan"] #clearFilters{display:none;}
 .hierarchyOverlay{position:absolute;inset:0;z-index:0;width:100%;height:100%;pointer-events:none;overflow:visible;}
@@ -1096,6 +1098,20 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .agentWorkReason{color:var(--vscode-descriptionForeground);font-size:10px;line-height:1.35;overflow-wrap:anywhere;}
 .agentWorkCardActions{justify-content:flex-end;margin-top:2px;}
 .agentWorkLaneEmpty{padding:10px 8px;color:var(--vscode-descriptionForeground);font-size:10px;text-align:center;}
+.parallelBatchResult{display:grid;gap:9px;margin:0 0 10px;padding:11px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);}
+.parallelBatchHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
+.parallelBatchHeader h2{margin:0;font-size:13px;}
+.parallelBatchHeader p{margin:3px 0 0;color:var(--vscode-descriptionForeground);font-size:10px;}
+.parallelBatchSummary{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;}
+.parallelBatchList{display:grid;gap:6px;margin:0;padding:0;list-style:none;}
+.parallelBatchItem{display:grid;grid-template-columns:minmax(120px,.7fr) minmax(100px,.45fr) minmax(180px,1.4fr) auto;align-items:center;gap:8px;padding:7px 8px;border:1px solid var(--vscode-panel-border);border-radius:7px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));}
+.parallelBatchTask{min-width:0;font-size:11px;font-weight:750;overflow-wrap:anywhere;}
+.parallelBatchStatus{font-size:10px;font-weight:800;text-transform:uppercase;}
+.parallelBatchStatus[data-status="response-ready"],.parallelBatchStatus[data-status="session-started"],.parallelBatchStatus[data-status="prompt-prepared"]{color:var(--vscode-testing-iconPassed,#22c55e);}
+.parallelBatchStatus[data-status="failed"]{color:var(--vscode-errorForeground,#ef4444);}
+.parallelBatchStatus[data-status="cancelled"],.parallelBatchStatus[data-status="skipped"]{color:var(--vscode-editorWarning-foreground,#f59e0b);}
+.parallelBatchMessage{min-width:0;color:var(--vscode-descriptionForeground);font-size:10px;line-height:1.35;overflow-wrap:anywhere;}
+.parallelBatchRetry{white-space:nowrap;background:transparent;color:var(--vscode-foreground);border-color:var(--vscode-panel-border);}
 .graphPane{position:relative;display:flex;flex-direction:column;height:clamp(360px,calc(100vh - 132px),900px);border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);overflow:hidden;padding:0;}
 .graphHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0;position:sticky;top:0;left:0;z-index:5;background:var(--vscode-editor-background);padding:10px 12px 8px;border-bottom:1px solid var(--vscode-panel-border);}
 .graphHeaderActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
@@ -1108,6 +1124,9 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .dependencyWarningSummary{border-color:rgba(245,158,11,.55);color:var(--vscode-editorWarning-foreground,#f59e0b);}
 .mergeRiskSummary{border-color:rgba(239,68,68,.55);color:var(--vscode-errorForeground,#ef4444);}
 .graphIssueStack{display:grid;gap:6px;padding:8px 12px 0;}
+.graphSelectedDetails{position:relative;max-height:min(300px,38vh);overflow:auto;border:1px solid var(--vscode-focusBorder,var(--vscode-panel-border));border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 4px 14px rgba(0,0,0,.18);}
+.graphSelectedDetails .details{border:0;border-radius:0;}
+.graphSelectedDetailsClose{position:sticky;z-index:2;top:6px;float:right;margin:6px 6px -32px 0;width:26px;height:26px;padding:0;border-radius:999px;background:var(--vscode-button-secondaryBackground,var(--vscode-button-background));color:var(--vscode-button-secondaryForeground,var(--vscode-button-foreground));}
 .graphIssueDrawer{border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));}
 .graphIssueDrawer summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:28px;padding:4px 8px;cursor:pointer;list-style:none;font-size:11px;font-weight:750;color:var(--vscode-descriptionForeground);}
 .graphIssueDrawer summary::-webkit-details-marker{display:none;}
@@ -1177,6 +1196,22 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .planDraftHeader p{margin:4px 0 0;color:var(--vscode-descriptionForeground);}
 .planDraftHeader label{display:grid;gap:4px;min-width:min(320px,45%);font-size:11px;font-weight:700;}
 .planDraftHeader select{min-width:0;height:28px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border,var(--vscode-panel-border));border-radius:6px;padding:0 7px;}
+.planFlow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 10px;padding:0;list-style:none;}
+.planFlow li{display:flex;align-items:center;gap:7px;min-width:0;padding:8px;border:1px solid var(--vscode-panel-border);border-radius:7px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));}
+.planFlow strong{display:grid;place-items:center;flex:0 0 22px;width:22px;height:22px;border-radius:999px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-size:11px;}
+.planFlow span{font-size:11px;font-weight:700;}
+.planGoalComposer{display:grid;gap:7px;padding:12px;border:1px solid var(--vscode-focusBorder,var(--vscode-panel-border));border-radius:8px;background:var(--vscode-editor-background);}
+.planGoalComposer>label{font-size:14px;font-weight:750;}
+.planGoalComposer textarea{box-sizing:border-box;width:100%;min-height:100px;resize:vertical;padding:10px;border:1px solid var(--vscode-input-border,var(--vscode-panel-border));border-radius:6px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);font-family:var(--vscode-font-family);line-height:1.45;}
+.planGoalActions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.planGoalActions button{font-weight:750;}
+#planGenerationStatus{min-width:180px;flex:1;color:var(--vscode-descriptionForeground);font-size:11px;}
+#planGenerationStatus[data-status="error"]{color:var(--vscode-errorForeground);}
+#planGenerationStatus[data-status="success"]{color:var(--vscode-testing-iconPassed,#3fb950);}
+.planPrivacyHint{margin:0;color:var(--vscode-descriptionForeground);font-size:11px;}
+.planAdvanced{margin-top:10px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);}
+.planAdvanced>summary{cursor:pointer;padding:9px 12px;font-weight:700;}
+.planAdvanced .planDraftEditor{border:0;border-top:1px solid var(--vscode-panel-border);border-radius:0;}
 .planDraftEditor{display:grid;gap:6px;padding:12px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);}
 .planDraftEditor>label{font-weight:700;}
 .planDraftEditor textarea{box-sizing:border-box;width:100%;min-height:220px;resize:vertical;padding:10px;border:1px solid var(--vscode-input-border,var(--vscode-panel-border));border-radius:6px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);font-family:var(--vscode-editor-font-family);line-height:1.45;}
@@ -1237,6 +1272,10 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
   .agentWorkOverview{justify-content:flex-start;}
   .agentWorkLanes{grid-template-columns:1fr;}
   .agentWorkLaneCards{max-height:none;}
+  .parallelBatchHeader{display:grid;}
+  .parallelBatchSummary{justify-content:flex-start;}
+  .parallelBatchItem{grid-template-columns:1fr auto;}
+  .parallelBatchMessage{grid-column:1/-1;}
   .graphPane{height:clamp(320px,calc(100vh - 118px),820px);padding:8px;}
   .graphHeader{position:relative;padding:8px;margin:-8px -8px 0;}
   .graphHeaderActions{justify-content:flex-start;}
@@ -1247,17 +1286,19 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
   .graphCanvas{min-height:100%;}
   .planDraftHeader{display:grid;}
   .planDraftHeader label{min-width:0;}
+  .planFlow{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .planGoalActions{align-items:stretch;}
   .planPathSummary,.planParallelSummary,.planModelTransitionSummary{grid-template-columns:1fr;gap:2px;}
   .planDraftEditor textarea{min-height:180px;}
 }
 code{font-family:var(--vscode-editor-font-family);}
 </style>
 </head>
-<body data-bd-available="${result.bdExecutableStatus.available ? "1" : "0"}" data-has-sync-warnings="${result.warnings.length > 0 ? "1" : "0"}" data-view-mode="table">
+<body data-bd-available="${result.bdExecutableStatus.available ? "1" : "0"}" data-has-sync-warnings="${result.warnings.length > 0 ? "1" : "0"}" data-view-mode="loading">
 <div class="toolbar">
   <div class="toolbarMain">
     <div class="viewToggle" role="group" aria-label="Beads view mode">
-      <button id="tableView" class="active" type="button">Table</button>
+      <button id="tableView" type="button">Table</button>
       <button id="graphView" type="button">Graph</button>
       <button id="controlView" type="button">Manage</button>
       <button id="planView" type="button">Plan</button>
@@ -1299,10 +1340,11 @@ code{font-family:var(--vscode-editor-font-family);}
 </div>
 <div class="toolbarStatsRow"><div class="stats" id="stats"></div></div>
 <div id="rowContextMenu" class="contextMenu" role="menu"><button id="createBeadAction" type="button" role="menuitem">Create</button><button id="closeBeadAction" type="button" role="menuitem">Close</button></div>
+<section id="parallelBatchResult" class="parallelBatchResult" aria-label="Latest AI task batch" aria-live="polite" hidden></section>
 <div id="beadsWorkspaceViews">${bodyHtml}</div>
 ${planDraftHtml}
-${warningHtml}
-${errorHtml}
+<div id="beadsWarnings">${warningHtml}</div>
+<div id="beadsErrors">${errorHtml}</div>
 <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

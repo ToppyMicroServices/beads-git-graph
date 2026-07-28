@@ -38,8 +38,9 @@ Every child task states:
 
 - [x] **BASE-001 — Dependency planning view:** table and graph views show task hierarchy,
       dependency edges, parallel-ready hints, and Critical Path.
-- [x] **BASE-002 — Agent launch:** Start AI and Start Parallel assign model/SSOT/worktree metadata,
-      create isolated worktrees, and open or prepare a Copilot session.
+- [x] **BASE-002 — Agent execution:** Start AI and Start Parallel select a provider/model, preserve
+      model/SSOT metadata, create isolated worktrees for Copilot sessions, or retain direct-provider
+      text responses as local artifacts.
 - [x] **BASE-003 — Execution metadata:** task details can show agent, model, SSOT, worktree, branch,
       PR, check, progress, and sync-risk fields.
 - [x] **BASE-004 — Merge safety:** derived parallel merge tasks check worktrees, branches, PRs, and
@@ -47,11 +48,12 @@ Every child task states:
 - [x] **BASE-005 — Local-first boundary:** Beads and Git data remain local by default; no telemetry
       is declared.
 
-Current limits: execution hints are recorded metadata rather than verified live session state;
-progress can come from issue fields or notes; there is no evidence freshness model or structured
-allocation suggestion workflow. Plan Draft is implemented, but its complete approval interaction
-and the full Manage scenario still need packaged Extension Host verification in a trusted,
-compatible disposable workspace.
+Current limits: execution hints and batch results are recorded outcomes rather than verified live
+session state; progress can come from issue fields or notes; there is no evidence freshness model
+or structured allocation suggestion workflow. AI Plan Draft generation and explicit review/import
+are implemented at source level, but their complete approval interaction and the full Manage
+scenario still need packaged Extension Host verification in a trusted, compatible disposable
+workspace.
 
 ## P0 — Agent Work Queue MVP
 
@@ -220,6 +222,41 @@ compatible disposable workspace.
   - **Depends:** PM-005E and a CLI version that supports the observed flag.
   - **Tier:** low-cost.
 
+### PM-006 — Refresh continuity — completed at source-browser level
+
+- [x] **PM-006A — Replace normal full-page reloads with incremental data updates**
+  - **Input:** the existing render signature, Beads file watchers, and compiled webview.
+  - **Edit target:** `src/beadsView.ts`, `src/beadsProtocol.ts`, and `web/beadsMain.ts`.
+  - **Done/test:** an initial render still loads the complete document; later data changes replace
+    only generated workspace/warning content, and oversized or undeliverable updates use a safe
+    full-render fallback.
+  - **Depends:** BASE-001.
+  - **Tier:** capable.
+- [x] **PM-006B — Make concurrent refreshes latest-wins**
+  - **Input:** overlapping asynchronous `loadBeads` operations and ordered render generations.
+  - **Edit target:** refresh coordination in `src/beadsView.ts` and the webview host-message guard.
+  - **Done/test:** a superseded host load cannot publish over a newer load, and the webview ignores
+    a render generation it has already applied.
+  - **Depends:** PM-006A.
+  - **Tier:** low-cost.
+- [x] **PM-006C — Preserve user interaction state across refresh**
+  - **Input:** Graph/Table/Manage/Plan mode, selected details, filters, sort, collapse, scroll, and
+    per-workspace graph transforms.
+  - **Edit target:** persisted state and dynamic rebinding in `web/beadsMain.ts`.
+  - **Done/test:** a compiled-source browser check keeps Graph, a WIP filter, `120%` zoom, and an
+    open task drawer while updating the drawer to the refreshed task title; no new browser error is
+    recorded.
+  - **Depends:** PM-006A.
+  - **Tier:** capable.
+- [ ] **PM-006D — Repeat refresh continuity in an installed VSIX**
+  - **Input:** a freshly packaged VSIX and a disposable workspace whose issue fixture changes while
+    Graph/Table details are open.
+  - **Edit target:** MAN-14 evidence only unless a reproducible packaged-only defect is found.
+  - **Done/test:** repeated watcher and manual refreshes do not flash Table, rewind the selected
+    view, close details, reset filters, or reset the graph transform.
+  - **Depends:** PM-006A through PM-006C.
+  - **Tier:** capable.
+
 ## P1 — Plan
 
 ### PM-101 — Define and validate a Plan Draft
@@ -308,6 +345,43 @@ compatible disposable workspace.
     preview, Cancel, keyboard, and 640 px checks.
   - **Remaining:** exercise the packaged approval dialog and its final/partial result UI in a
     trusted, initialized disposable workspace. No accepted database was migrated or bootstrapped.
+
+### PM-105 — Decompose one goal with a selected AI
+
+- [x] **PM-105A — Build and validate a bounded planning request**
+  - **Input:** one user goal, a workspace display name, existing relative SSOT candidates, and the
+    configured task provider/model catalog.
+  - **Edit target:** one pure prompt/response boundary in `src/planDraftGeneration.ts`.
+  - **Done/test:** the prompt treats the goal as untrusted data, requests 1–20 atomic tasks and a
+    DAG, excludes file contents and absolute paths, accepts only one JSON object, restores the
+    original goal, and returns the existing Plan Draft validation errors; the focused generation
+    tests cover valid, malformed, fenced, injected, and oversized responses.
+  - **Depends:** PM-101B, PM-200C.
+  - **Tier:** low-cost.
+- [x] **PM-105B — Connect direct-response generation to Plan**
+  - **Input:** PM-105A plus Ollama, Hugging Face, OpenAI, and Anthropic response providers.
+  - **Edit target:** the Plan webview protocol and Extension Host request boundary.
+  - **Done/test:** a user enters one goal, explicitly selects and approves one direct-response
+    provider request, receives an editable draft, and can open the retained raw response artifact.
+    Copilot is not offered because this path requires a synchronous text response.
+  - **Depends:** PM-105A, PM-203D.
+  - **Tier:** capable.
+- [x] **PM-105C — Keep generation, review, and import as separate decisions**
+  - **Input:** a generated or pasted Plan Draft plus the existing capability-gated import.
+  - **Edit target:** Plan workflow copy, editor, preview, and import action boundaries.
+  - **Done/test:** generation writes no Beads state; the user can review or edit the draft and see
+    exact validation/mutation output; import still requires compatible Beads capability and a
+    separate explicit approval.
+  - **Depends:** PM-103B, PM-104A, PM-105A.
+  - **Tier:** human-decision.
+- [ ] **PM-105D — Package-test goal decomposition**
+  - **Input:** a packaged VSIX, trusted disposable workspace, fake local/cloud response fixtures,
+    and incompatible Beads fixtures.
+  - **Edit target:** acceptance evidence only.
+  - **Done/test:** provider selection, Cancel, valid/invalid response, artifact access, draft edit,
+    schema-mismatch read-only generation, and explicit import separation pass in an Extension Host.
+  - **Depends:** PM-105B, PM-104C.
+  - **Tier:** capable.
 
 ## P2 — Allocate
 
@@ -442,6 +516,45 @@ compatible disposable workspace.
   - **Done/test:** picker, Cancel, missing credential, successful response, failure, artifact,
     parallel confirmation, and no-secret-leak checks pass in the packaged extension.
   - **Depends:** PM-203E.
+  - **Tier:** capable.
+
+### PM-204 — Execute ready work with bounded parallelism
+
+- [x] **PM-204A — Add a bounded all-settled response scheduler**
+  - **Input:** an ordered direct-response task list, concurrency limit, progress callback, and
+    cancellation signal.
+  - **Edit target:** `src/agentExecutionCoordinator.ts`.
+  - **Done/test:** at most the configured number of workers run at once; one failure does not stop
+    unrelated tasks; input order is preserved; cancellation prevents unstarted requests; the
+    focused coordinator tests prove each case.
+  - **Depends:** PM-203D.
+  - **Tier:** low-cost.
+- [x] **PM-204B — Serialize Beads and Git mutation boundaries per workspace**
+  - **Input:** concurrent direct-provider responses plus final readiness checks, Beads assignment,
+    and worktree preparation.
+  - **Edit target:** one per-workspace serial queue and the guarded launch finalization boundary.
+  - **Done/test:** provider network waits may overlap, but final `bd show`/`bd ready`, Beads updates,
+    and Git/worktree mutations do not overlap within one workspace; Copilot worktree/session
+    launches remain sequential; queue and readiness-guard tests prove ordering and rejection
+    recovery.
+  - **Depends:** PM-005F, PM-204A.
+  - **Tier:** capable.
+- [x] **PM-204C — Show persistent per-task batch outcomes**
+  - **Input:** fulfilled, failed, skipped, and cancelled task outcomes from one Start Parallel
+    request.
+  - **Edit target:** the provider-neutral host message plus one Manage result panel.
+  - **Done/test:** response ready, session started, prompt prepared, failed, skipped, and cancelled
+    remain distinct; successful tasks are not rerun when failed/cancelled tasks are retried; wording
+    describes recorded outcomes rather than live monitoring.
+  - **Depends:** PM-203A, PM-204B.
+  - **Tier:** capable.
+- [ ] **PM-204D — Package-test mixed-provider parallel execution**
+  - **Input:** a packaged VSIX, fake direct providers, sequential Copilot fixture, fake Beads/Git
+    logs, cancellation, and one partial failure.
+  - **Edit target:** acceptance evidence only.
+  - **Done/test:** the bound, per-workspace serialization, cancellation, outcome list, retry subset,
+    and absence of duplicate successful calls are verified in a disposable Extension Host.
+  - **Depends:** PM-203G, PM-204C.
   - **Tier:** capable.
 
 ## P3 — Monitor
@@ -583,5 +696,7 @@ compatible disposable workspace.
   levels. They do not count as Extension Host or installed-VSIX evidence.
 - The Agent Work Queue milestone is not packaged-extension verified until PM-004D passes.
 - Plan Import is not fully packaged-extension verified until PM-104C passes.
+- AI Plan Draft generation is not packaged-extension verified until PM-105D passes.
+- Mixed-provider parallel execution is not packaged-extension verified until PM-204D passes.
 - A future milestone is complete only after its named source tests and packaged-extension user test
   both pass.

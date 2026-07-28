@@ -36,7 +36,7 @@ and any unexpected behavior. Capture screenshots for visible state and command l
 Run the focused current-behavior suite:
 
 ```bash
-pnpm exec vitest run tests/beadsData.test.ts tests/beadsGraphModel.test.ts tests/beadsProjectState.test.ts tests/beadsWebviewMetadata.test.ts tests/beadsMissionControlWebview.test.ts tests/beadsProtocol.test.ts tests/beadsRowVisibility.test.ts tests/worktreeSyncGuard.test.ts tests/agentReadiness.test.ts tests/agentStartGuard.test.ts tests/agentWorkPrompt.test.ts tests/crossModelTaskChain.test.ts tests/planDraft.test.ts tests/planGraph.test.ts tests/planPreview.test.ts tests/planDraftController.test.ts tests/planImport.test.ts tests/beadsWriteCapability.test.ts
+pnpm exec vitest run tests/beadsData.test.ts tests/beadsGraphModel.test.ts tests/beadsProjectState.test.ts tests/beadsWebviewMetadata.test.ts tests/beadsMissionControlWebview.test.ts tests/beadsProtocol.test.ts tests/beadsRowVisibility.test.ts tests/worktreeSyncGuard.test.ts tests/agentReadiness.test.ts tests/agentStartGuard.test.ts tests/agentWorkPrompt.test.ts tests/agentProviderClient.test.ts tests/agentExecutionCoordinator.test.ts tests/crossModelTaskChain.test.ts tests/planDraft.test.ts tests/planDraftGeneration.test.ts tests/planGraph.test.ts tests/planPreview.test.ts tests/planDraftController.test.ts tests/planImport.test.ts tests/beadsWriteCapability.test.ts
 ```
 
 Then run the complete quality gate:
@@ -106,8 +106,8 @@ pnpm run compile
 
 ### AUTO-08 — Agent Work Queue state projection — Current
 
-- **Given:** Attention, review, running, confirmed-ready, readiness-unknown, done, and synthetic merge
-  tasks.
+- **Given:** Attention, review, recorded-in-progress, confirmed-ready, readiness-unknown, done, and
+  synthetic merge tasks.
 - **When:** `buildAgentWorkQueue` projects the fixture.
 - **Then:** Every task appears in one lane; precedence and counts are stable; missing evidence is not
   reported as success or failure.
@@ -136,13 +136,15 @@ pnpm run compile
   `beadsRowVisibility.test.ts`, and `beadsMissionControlWebview.test.ts`, naming each fixture and
   received control state.
 
-### AUTO-11 — Partial parallel-start result — Future-only
+### AUTO-11 — Preserve partial parallel-start outcomes — Current
 
-- **Given:** Three startable tasks where the second launch fails.
+- **Given:** Direct-response, Copilot, failed, skipped, and cancelled task results in one batch.
 - **When:** Start Parallel runs.
-- **Then:** The result explicitly lists started, failed, skipped, and not-attempted tasks; it does not
-  report complete success.
-- **Evidence:** Per-task result object and fake `bd`/session-launch call order.
+- **Then:** Response ready, session started, prompt prepared, failed, skipped, and cancelled remain
+  distinct per task; the result does not report complete success or claim live activity.
+- **Evidence:** `agentExecutionCoordinator.test.ts`, `agentProviderClient.test.ts`,
+  `agentStartGuard.test.ts`, and the source typecheck. Exercise the visible result/retry interaction
+  in MAN-05 and MAN-13.
 
 ### AUTO-12 — Validate and preview a Plan Draft — Current
 
@@ -203,6 +205,42 @@ pnpm run compile
   `agentStartGuard.test.ts`, `agentWorkPrompt.test.ts`, and
   `beadsMissionControlWebview.test.ts`.
 
+### AUTO-18 — Generate a safe editable Plan Draft — Current
+
+- **Given:** A bounded user goal, workspace display name, relative SSOT candidates, configured
+  task provider/model choices, malformed responses, and prompt-injection-shaped input.
+- **When:** The planning prompt is built and the provider response is parsed.
+- **Then:** The goal is treated as untrusted data; the prompt requests 1–20 atomic DAG tasks with
+  observable acceptance criteria; absolute paths and unlisted SSOT are rejected; only one raw JSON
+  object or one complete JSON fence is accepted; the original goal is restored; existing Plan Draft
+  validation errors remain visible.
+- **Evidence:** `planDraftGeneration.test.ts`, `planDraft.test.ts`, and the source typecheck. The
+  provider picker, artifact, and editable webview handoff remain part of PLAN-04.
+
+### AUTO-19 — Bound provider concurrency and serialize workspace mutation — Current
+
+- **Given:** More direct-response tasks than the configured concurrency limit, one provider failure,
+  one cancellation, two operations in the same workspace, and one operation in another workspace.
+- **When:** The execution coordinator runs the batch and the guarded start reaches final readiness
+  and mutation.
+- **Then:** Direct-provider waits overlap only up to the bound; one failure does not stop unrelated
+  work; unstarted work is cancelled; result order stays task order; final Beads/Git operations do not
+  overlap within a workspace; a rejected operation does not block the queue permanently.
+- **Evidence:** `agentExecutionCoordinator.test.ts`, `agentProviderClient.test.ts`, and
+  `agentStartGuard.test.ts`.
+
+### AUTO-20 — Keep refreshes incremental and latest-wins — Current
+
+- **Given:** an already initialized webview, a changed Beads render, overlapping load generations,
+  persisted Table/Graph interaction state, and unrelated `.beads` JSON/JSONL files.
+- **When:** a watched issue source or manual refresh changes the rendered data.
+- **Then:** normal updates use a bounded `beadsRenderUpdate` message instead of replacing the full
+  document; superseded loads and stale client generations are ignored; only config, metadata, and
+  issue sources are watched; view, selection/details, filters, sort, collapse, scroll, and graph
+  transforms remain restorable.
+- **Evidence:** `beadsProtocol.test.ts`, `beadsWebviewMetadata.test.ts`, source typecheck, and the
+  refresh-continuity browser result below.
+
 ## Completed source-preview check
 
 The following check used the compiled current webview script, synthetic fixture data, and a local
@@ -211,9 +249,9 @@ browser page. It verifies user-visible source behavior, but it does not exercise
 
 ### PREVIEW-01 — Manage, Details, Start AI, and narrow layout — Source-preview completed
 
-- **Given:** A mixed fixture with blocked attention, unrecognized status, PR review, recorded running
-  progress, two confirmed-ready tasks, explicit-parallel but unready work, synthetic merge, and done
-  tasks.
+- **Given:** A mixed fixture with blocked attention, unrecognized status, PR review, recorded
+  in-progress work, two confirmed-ready tasks, explicit-parallel but unready work, synthetic merge,
+  and done tasks.
 - **When:** Open the preview, select **Manage**, inspect the lanes, open blocked-task **Details**,
   return to **Manage**, inspect both Start AI states and synthetic merge, invoke **Start Parallel**,
   select the **All** filter, invoke **Start AI** on a confirmed-ready task, and resize to 640 px.
@@ -226,17 +264,20 @@ browser page. It verifies user-visible source behavior, but it does not exercise
   horizontal `scrollWidth` overflow.
 - **Evidence level:** compiled-source browser preview only. PM-004D/MAN-10 remains pending.
 
-## Packaged VSIX result — 2026-07-24; rebuilt 2026-07-27
+## Packaged VSIX result — 2026-07-24; rebuilt 2026-07-28
 
 - **Artifact:** `beads-git-graph-0.4.20260710.vsix`, SHA-256
-  `3c466d29c9e1a313c54265b19ba1d210b957c0a622b31daf5401dfc8519dc010`.
+  `ad2b3fc74ced00c9c523214c078dc1f1d9aef12ee251a4fbc216f9c9ac338df9`.
 - **Package inspection:** the current artifact contains provider/model selection, Host-side
-  readiness/schema/dependency checks, response-artifact preservation, and pointer-centered Graph
-  zoom. VSCE rewrote the README screenshot to the repository asset URL.
+  readiness/schema/dependency checks, response-artifact preservation, bounded parallel requests,
+  pointer-centered Graph zoom, and incremental refresh handling. VSCE rewrote the README screenshot
+  to the repository asset URL.
 - **Install/activation boundary:** a package built immediately before the final Host safety changes
   installed as `ToppyMicroServices.beads-git-graph@0.4.20260710` in an isolated extension directory
   and opened the Beads webview in an isolated VS Code profile. The final artifact above was rebuilt
-  and inspected, but not reinstalled.
+  and installed into a new isolated extension/profile directory; `code --list-extensions
+--show-versions` confirmed `toppymicroservices.beads-git-graph@0.4.20260710`. A new GUI Extension
+  Host launch was not completed in this run.
 - **Plan observation:** in an empty workspace, **Load example** rendered three tasks, two
   dependencies, two requested-model transitions, `research -> implement -> review` as Critical
   Path, and eight ordered mutations. Import remained disabled because no initialized Beads
@@ -248,8 +289,9 @@ browser page. It verifies user-visible source behavior, but it does not exercise
   dependency in a compatible disposable Beads database. The current repository database was not
   migrated, initialized, bootstrapped, synchronized, or written.
 - **Boundary:** this passes packaged activation and the named Plan preview/Cancel/keyboard/narrow
-  checks. It does not pass the complete MAN-10 Manage workflow or the packaged Plan approval,
-  success-result, and partial-failure UI.
+  checks for the earlier installed artifact, plus final-package inspection and isolated
+  install/list verification. It does not pass PM-006D/MAN-14, the complete MAN-10 Manage workflow,
+  or the packaged Plan approval, success-result, and partial-failure UI.
 
 ## Graph zoom source-browser result — 2026-07-27
 
@@ -263,6 +305,19 @@ browser page. It verifies user-visible source behavior, but it does not exercise
   deltas are normalized and bounded, and continuous wheel persistence is debounced.
 - **Evidence level:** compiled-source browser preview plus pure transform tests. The freshly
   packaged VSIX was inspected, but this graph scenario was not rerun in an installed Extension Host.
+
+## Refresh continuity source-browser result — 2026-07-28
+
+- **Observed:** after selecting Graph, the WIP filter, `120%` zoom, and task `smoke-2` details, a
+  host render update preserved all four states.
+- **Observed:** the open drawer changed from `Implement update` to
+  `Implement update (refreshed)`, and the new sync warning appeared without switching to Table or
+  closing details.
+- **Additional checks:** the compiled page recorded no new browser warning/error after the valid
+  fixture loaded; source tests cover generation ordering, bounded messages, watcher narrowing,
+  persisted interaction fields, and the full-render fallback.
+- **Evidence level:** compiled-source browser preview plus Vitest/source assertions. PM-006D remains
+  pending because this scenario was not rerun in an installed Extension Host.
 
 ## Extension Host and manual checks
 
@@ -309,14 +364,18 @@ fixture between state-changing scenarios.
 - **Evidence:** Error screenshot, fake `bd` log showing no assign/update call, and unchanged Git
   status.
 
-### MAN-05 — Start ready work in parallel — Current
+### MAN-05 — Start ready work in parallel — Current, pending packaged verification
 
-- **Setup:** Provide two ready open tasks, one blocked task, one in-progress task, and one explicitly
-  serial task.
+- **Setup:** Provide ready Ollama, Hugging Face, OpenAI, Anthropic, and Copilot tasks plus one blocked
+  task, one in-progress task, and one explicitly serial task. Use fake providers and a fake
+  Beads/Git recorder.
 - **Steps:** Select **Start Parallel**.
-- **Expected:** Only the two ready open tasks start in separate worktrees. The completion message
-  reports skipped active tasks with reasons.
-- **Evidence:** Notification screenshot, worktree list, and per-task fake `bd` log.
+- **Expected:** Only ready, non-serial tasks are attempted. Direct-provider requests overlap only up
+  to the configured bound; final Beads readiness checks and Beads/Git mutations are serialized per
+  workspace; Copilot worktree/session launches are sequential. The result lists a recorded outcome
+  for every task and does not describe the batch as live monitoring.
+- **Evidence:** Progress/result screenshots, timestamped provider calls, worktree list, per-task fake
+  `bd`/Git log, and the observed maximum concurrency.
 
 ### MAN-06 — Refresh progress and blocked state — Current
 
@@ -359,7 +418,7 @@ fixture between state-changing scenarios.
 
 - **Setup:** Package the current extension and install/open it in an Extension Development Host with
   a disposable mixed-status fixture: blocked attention, failing check, unrecognized status, PR
-  review, recorded running progress, confirmed-ready, readiness-unknown, synthetic merge, and done.
+  review, recorded in-progress work, confirmed-ready, readiness-unknown, synthetic merge, and done.
 - **Steps:** Select **Manage**; compare counts with the fixture; open every attention **Details** item
   by mouse and keyboard; start the confirmed-ready task; confirm the readiness-unknown task cannot be
   started; inspect synthetic merge; make `bd` unavailable and refresh; repeat at 640 px width.
@@ -367,21 +426,22 @@ fixture between state-changing scenarios.
   unknown status stays visible under the default filter; Details selects the correct workspace/task;
   only confirmed readiness enables Start AI; synthetic merge says `Readiness N/A`; all
   `bd`-dependent actions disable when `bd` is unavailable; keyboard focus and cards remain usable at
-  640 px. Running is described as recorded state, not verified live activity.
+  640 px. Recorded in progress is described as recorded state, not verified live activity.
 - **Evidence:** Packaged version/commit, fixture, before/after screenshots, keyboard recording,
   captured webview messages, fake `bd` log, and pass/fail per expected statement.
 - **Status:** Partially verified. Packaged activation and Plan interactions passed, but the complete
   Manage fixture and state-changing path remain pending.
 
-### MAN-11 — Choose a model before agent work — Pending packaged verification
+### MAN-11 — Choose a provider and model before agent work — Pending packaged verification
 
 - **Setup:** Use a packaged extension, a confirmed-ready synthetic task, and a fake `bd` recorder in
   a disposable workspace.
 - **Steps:** Select **Start AI**, inspect the model picker, cancel once, then repeat and choose a
   model. Repeat **Start Parallel** with per-task models and an override.
-- **Expected:** the picker states that the value is a Copilot model preference; Cancel records no
-  worktree or Beads mutation; single selection is recorded as requested; parallel preserves each
-  task model or overrides all only when explicitly selected.
+- **Expected:** the picker distinguishes Copilot coding sessions from direct text responses and
+  offers only models scoped to the selected provider; Cancel records no provider call, worktree, or
+  Beads mutation; single selection is recorded as requested; parallel preserves each task choice or
+  overrides all only when explicitly selected.
 - **Evidence:** picker screenshot, fake `bd` log, worktree list, and pass/fail for each branch.
 
 ### MAN-12 — Follow a cross-model task handoff — Partially verified
@@ -401,10 +461,38 @@ fixture between state-changing scenarios.
   Path, and eight ordered mutations without horizontal overflow. The packaged readiness transition
   and downstream prompt inspection still require a trusted disposable workspace.
 
+### MAN-13 — Cancel and retry a mixed-provider batch — Pending packaged verification
+
+- **Setup:** Use a packaged extension with four ready direct-response tasks, two sequential Copilot
+  tasks, a concurrency limit below four, one delayed response, and one provider failure. Use fake
+  providers and fake Beads/Git logs.
+- **Steps:** Start the batch, cancel while direct requests are active, inspect every recorded
+  outcome, then retry only failed or cancelled tasks.
+- **Expected:** unstarted direct requests are cancelled, an in-flight request receives the abort
+  signal, successful tasks remain successful and are not rerun, failed/cancelled tasks alone are
+  retried, Copilot launches remain sequential, and no Beads/Git mutation overlaps within the
+  workspace. The UI does not claim a still-running process.
+- **Evidence:** Before/after result screenshots, timestamped provider and mutation logs, retry
+  payload, and per-task call counts.
+
+### MAN-14 — Preserve interaction state during live refresh — Pending packaged verification
+
+- **Setup:** Install a freshly packaged VSIX in a disposable workspace with at least one
+  in-progress task, dependencies, and a controllable issue-source writer.
+- **Steps:** Select Graph, WIP, a non-default zoom/pan, and task Details; update the issue title
+  through the fixture writer; repeat with Table details, sorting, collapsed hierarchy, and manual
+  Refresh.
+- **Expected:** data updates without a Table flash or full-page flicker; the active mode, filter,
+  details, graph transform, sorting, collapse, and scroll remain stable; the open details show the
+  updated title; a superseded refresh cannot restore older task data.
+- **Evidence:** before/after screenshots or recording, fixture revisions with timestamps, and the
+  Extension Host console log.
+
 ## Plan user acceptance
 
-Plan Draft is implemented. Source tests and the packaged observations below do not replace the
-remaining packaged approval-path checks.
+AI Plan Draft generation, local review/edit, and capability-gated import are implemented at source
+level. Source tests and the packaged observations below do not replace the remaining packaged
+provider, artifact, and approval-path checks.
 
 ### PLAN-01 — Draft, preview, and cancel a plan — Packaged partially verified
 
@@ -440,6 +528,20 @@ remaining packaged approval-path checks.
 - **Evidence:** Capability result, disabled-control screenshots, and an executable call log with no
   mutation or migration command.
 
+### PLAN-04 — Generate tasks from one goal — Current, pending packaged verification
+
+- **Setup:** Use a packaged extension with fake Ollama, Hugging Face, OpenAI, and Anthropic
+  responses. Provide one valid response, one schema-invalid response, one prose-wrapped response,
+  one cancellation, and an incompatible Beads database that remains readable.
+- **Steps:** Enter a goal, select **Generate task plan with AI**, inspect and cancel the confirmation,
+  repeat with each response fixture, edit the valid result, preview it, and leave import unapproved.
+- **Expected:** only direct-response providers are offered; cancellation makes no provider call;
+  valid JSON becomes an editable local draft; validation errors identify the affected path; unsafe
+  response text is not executed; the raw response artifact remains available; generation performs
+  no Beads write and still remains separate from schema-gated import.
+- **Evidence:** Provider/confirmation screenshots, captured request metadata with secrets and full
+  paths excluded, artifact reference, preview screenshots, and an empty Beads mutation log.
+
 ## Remaining roadmap-only user acceptance
 
 These tests describe intended behavior and must not be used as evidence that the feature exists.
@@ -463,6 +565,7 @@ These tests describe intended behavior and must not be used as evidence that the
 ## Result summary
 
 Report automated and manual results separately. A source-level or Vitest pass does not count as an
-Extension Host pass. Do not describe live agent monitoring as verified until evidence collection and
-freshness scenarios pass, and do not describe plan import as verified until capability detection,
-preview, approval, and partial-failure tests pass.
+Extension Host pass. Do not describe recorded batch outcomes as live agent monitoring until evidence
+collection and freshness scenarios pass. Do not describe AI plan generation, mixed-provider
+parallel execution, or plan import as packaged-verified until their provider, cancellation,
+capability, preview, approval, and partial-failure scenarios pass.

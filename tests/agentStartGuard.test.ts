@@ -303,4 +303,59 @@ describe("readiness-guarded agent start", () => {
     expect(prompt).toContain('Upstream bead handoff IDs: "current-research".');
     expect(prompt).not.toContain("old-research");
   });
+
+  it("runs final readiness checks and mutation inside the finalization wrapper", async () => {
+    const calls: string[] = [];
+    let insideFinalization = false;
+    let dependencyQueryCount = 0;
+    let readyQueryCount = 0;
+
+    const result = await runReadinessGuardedStart({
+      issueId: "implement",
+      queryReadyItemIds: async () => {
+        readyQueryCount += 1;
+        calls.push(`ready:${insideFinalization}`);
+        expect(insideFinalization).toBe(readyQueryCount === 2);
+        return new Set(["implement"]);
+      },
+      queryDependencyIds: async () => {
+        dependencyQueryCount += 1;
+        calls.push(`show:${insideFinalization}`);
+        expect(insideFinalization).toBe(dependencyQueryCount === 2);
+        return ["research"];
+      },
+      prepare: async () => {
+        calls.push(`prepare:${insideFinalization}`);
+        expect(insideFinalization).toBe(false);
+        return "prepared";
+      },
+      mutateAndLaunch: async () => {
+        calls.push(`mutation:${insideFinalization}`);
+        expect(insideFinalization).toBe(true);
+        return "opened";
+      },
+      runFinalization: async (operation) => {
+        calls.push("finalization:start");
+        insideFinalization = true;
+        try {
+          return await operation();
+        } finally {
+          insideFinalization = false;
+          calls.push("finalization:end");
+        }
+      }
+    });
+
+    expect(result).toEqual({ status: "started", result: "opened" });
+    expect(calls).toEqual([
+      "show:false",
+      "ready:false",
+      "prepare:false",
+      "finalization:start",
+      "show:true",
+      "ready:true",
+      "mutation:true",
+      "finalization:end"
+    ]);
+  });
 });

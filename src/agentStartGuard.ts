@@ -14,6 +14,9 @@ export async function runReadinessGuardedStart<TPrepared, TResult>(values: {
   preservePreparedOnAbort?: (prepared: TPrepared) => Promise<void>;
   isPreparedStillValid?: (prepared: TPrepared, dependencyIds: readonly string[]) => boolean;
   mutateAndLaunch: (prepared: TPrepared, dependencyIds: readonly string[]) => Promise<TResult>;
+  runFinalization?: (
+    operation: () => Promise<GuardedAgentStartResult<TResult>>
+  ) => Promise<GuardedAgentStartResult<TResult>>;
 }): Promise<GuardedAgentStartResult<TResult>> {
   const dependenciesBeforePreparation = await values.queryDependencyIds();
   const readyBeforePreparation = await values.queryReadyItemIds();
@@ -24,29 +27,33 @@ export async function runReadinessGuardedStart<TPrepared, TResult>(values: {
   await values.preflight?.();
   const prepared = await values.prepare(dependenciesBeforePreparation);
 
-  let dependencyIds: readonly string[];
-  let readyBeforeMutation: ReadonlySet<string>;
-  try {
-    dependencyIds = await values.queryDependencyIds();
-    readyBeforeMutation = await values.queryReadyItemIds();
-  } catch (error) {
-    await values.preservePreparedOnAbort?.(prepared);
-    throw error;
-  }
-  if (!readyBeforeMutation.has(values.issueId)) {
-    await values.preservePreparedOnAbort?.(prepared);
-    return { status: "not-ready", phase: "before-mutation" };
-  }
-  if (
-    values.isPreparedStillValid !== undefined &&
-    !values.isPreparedStillValid(prepared, dependencyIds)
-  ) {
-    await values.preservePreparedOnAbort?.(prepared);
-    return { status: "not-ready", phase: "dependencies-changed" };
-  }
+  const finalize = async (): Promise<GuardedAgentStartResult<TResult>> => {
+    let dependencyIds: readonly string[];
+    let readyBeforeMutation: ReadonlySet<string>;
+    try {
+      dependencyIds = await values.queryDependencyIds();
+      readyBeforeMutation = await values.queryReadyItemIds();
+    } catch (error) {
+      await values.preservePreparedOnAbort?.(prepared);
+      throw error;
+    }
+    if (!readyBeforeMutation.has(values.issueId)) {
+      await values.preservePreparedOnAbort?.(prepared);
+      return { status: "not-ready", phase: "before-mutation" };
+    }
+    if (
+      values.isPreparedStillValid !== undefined &&
+      !values.isPreparedStillValid(prepared, dependencyIds)
+    ) {
+      await values.preservePreparedOnAbort?.(prepared);
+      return { status: "not-ready", phase: "dependencies-changed" };
+    }
 
-  return {
-    status: "started",
-    result: await values.mutateAndLaunch(prepared, dependencyIds)
+    return {
+      status: "started",
+      result: await values.mutateAndLaunch(prepared, dependencyIds)
+    };
   };
+
+  return values.runFinalization === undefined ? finalize() : values.runFinalization(finalize);
 }

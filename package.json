@@ -428,6 +428,13 @@
           "default": 2048,
           "description": "Maximum requested output tokens for remote text-response APIs. Ollama uses its runtime defaults."
         },
+        "beads-git-graph.agentParallelConcurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8,
+          "default": 4,
+          "description": "Maximum number of direct Ollama, Hugging Face, OpenAI, or Anthropic requests run concurrently. Beads and Git mutations remain serialized per workspace."
+        },
         "beads-git-graph.tabIconColourTheme": {
           "type": "string",
           "enum": [

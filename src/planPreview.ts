@@ -33,7 +33,7 @@ export function renderPlanDraftPreview(input: PlanDraftPreviewInput) {
   const capabilityHtml = `<div class="planCapability ${capability.supported ? "supported" : "disabled"}"><strong>${capability.supported ? "Import available" : "Import disabled"}</strong><span>${escapeHtml(capability.reason)}</span></div>`;
 
   if (input.draft === null || input.errors.length > 0) {
-    return `<div class="planPreviewResult">${validationHtml}${capabilityHtml}<div class="planPreviewActions"><button id="cancelPlanDraft" type="button">Cancel</button><button id="importPlanDraft" type="button" title="Fix validation errors before import." disabled>Import Plan</button></div></div>`;
+    return `<div class="planPreviewResult">${validationHtml}${capabilityHtml}<div class="planPreviewActions"><button id="cancelPlanDraft" type="button">Discard draft</button><button id="importPlanDraft" type="button" title="Fix validation errors before import." disabled>Import Plan</button></div></div>`;
   }
 
   const graph = projectPlanDraftToGraph(input.draft);
@@ -82,5 +82,5 @@ export function renderPlanDraftPreview(input: PlanDraftPreviewInput) {
     ? "Review and approve the exact Beads mutations."
     : capability.reason;
 
-  return `<div class="planPreviewResult">${validationHtml}<section class="planDraftSummary"><h2>${escapeHtml(input.draft.goal)}</h2><div class="planDraftStats"><span>${input.draft.tasks.length} tasks</span><span>${graph.edges.length} dependencies</span></div>${criticalPathHtml}${parallelHtml}${modelTransitionHtml}${providerTransitionHtml}${graphHtml}<div class="planDraftTasks">${taskHtml}</div></section><details class="planMutationPreview" open><summary>Pending Beads mutations (${projectPlanDraftMutations(input.draft).length})</summary><ol>${mutationHtml}</ol></details>${capabilityHtml}<div class="planPreviewActions"><button id="cancelPlanDraft" type="button">Cancel</button><button id="importPlanDraft" type="button" title="${escapeHtml(importTitle)}"${capability.supported ? "" : " disabled"}>Import Plan</button></div></div>`;
+  return `<div class="planPreviewResult">${validationHtml}<section class="planDraftSummary"><h2>${escapeHtml(input.draft.goal)}</h2><div class="planDraftStats"><span>${input.draft.tasks.length} tasks</span><span>${graph.edges.length} dependencies</span></div>${criticalPathHtml}${parallelHtml}${modelTransitionHtml}${providerTransitionHtml}${graphHtml}<div class="planDraftTasks">${taskHtml}</div></section><details class="planMutationPreview" open><summary>Pending Beads mutations (${projectPlanDraftMutations(input.draft).length})</summary><ol>${mutationHtml}</ol></details>${capabilityHtml}<div class="planPreviewActions"><button id="cancelPlanDraft" type="button">Discard draft</button><button id="importPlanDraft" type="button" title="${escapeHtml(importTitle)}"${capability.supported ? "" : " disabled"}>Import Plan</button></div></div>`;
 }

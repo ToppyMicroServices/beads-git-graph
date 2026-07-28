@@ -183,6 +183,11 @@ class Config {
     return Math.round(Math.min(32_768, Math.max(64, tokens)));
   }
 
+  public agentParallelConcurrency() {
+    const concurrency = this.workspaceConfiguration.get("agentParallelConcurrency", 4);
+    return Math.round(Math.min(8, Math.max(1, concurrency)));
+  }
+
   public gitPath(): string {
     const path = vscode.workspace.getConfiguration("git").get("path", null);
     return path !== null ? path : "git";

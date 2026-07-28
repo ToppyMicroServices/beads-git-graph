@@ -10,7 +10,8 @@ No telemetry. Privacy-first. Security-first.
 
 ![Plan Draft preview showing dependency-linked requested AI model transitions](./docs/assets/plan-draft-preview.png)
 
-Plan and review requested-model handoffs before approving an import.
+Describe a goal, generate dependency-linked tasks with a selected AI, and review every handoff
+before approving an import or starting work.
 
 ## What It Does
 
@@ -22,8 +23,9 @@ Plan and review requested-model handoffs before approving an import.
 - Shows optional parallel, AI provider/model, response artifact, SSOT/context, worktree, branch, PR, check, and sync-risk hints on Beads items
 - Shows a Beads execution map with Critical Path, dependency edges, parent context, merge/worktree risk, Start AI, Start Parallel, and merge actions
 - Zooms the execution map around the location under the pointer and preserves manual zoom when switching views or resizing
-- Adds a Manage view that groups recorded work into Needs attention, Review, Running, Queue, and Done
-- Adds a Plan Draft workflow that validates and previews tasks, dependencies, Critical Path, parallel groups, requested provider/model transitions, and exact Beads mutations before import
+- Refreshes task data in place while preserving the selected view, open details, filters, sorting, collapsed groups, scroll position, and graph transform
+- Adds a Manage view that groups recorded work into Needs attention, Review, Recorded in progress, Queue, and Done
+- Adds an AI Plan Draft workflow that turns a goal into editable tasks, then validates and previews dependencies, Critical Path, parallel groups, requested provider/model transitions, and exact Beads mutations before import
 
 ## Use It
 
@@ -39,26 +41,44 @@ Open **Manage** in the Beads view to see the Agent Work Queue. It derives each l
 
 - **Needs attention**: explicitly blocked work, known failing checks, dangerous sync risk, or an unrecognized status
 - **Review**: a pull request is recorded and no supported failure signal is present
-- **Running**: Beads reports the task as in progress
+- **Recorded in progress**: Beads reports the task as in progress
 - **Queue**: open work, with confirmed readiness distinguished from readiness not yet confirmed by `bd ready`
 - **Done**: Beads reports the task as closed
 
-The Manage view does not claim live agent monitoring. “Running” reflects recorded Beads status, and unavailable evidence remains unconfirmed. In Manage, **Start AI** is enabled only when `bd ready` confirms readiness. Use **Details**, **Start AI**, and **Merge PRs** to continue through the existing workflow.
+The Manage view does not claim live agent monitoring. “Recorded in progress” reflects Beads status,
+and unavailable evidence remains unconfirmed. In Manage, **Start AI** is enabled only when
+`bd ready` confirms readiness. Use **Details**, **Start AI**, and **Merge PRs** to continue through
+the existing workflow.
 
 ## Plan Agent Work
 
-Open **Plan** in the Beads view, paste a version 1 Plan Draft or select **Load example**, and then
-select **Preview**. The preview is local and read-only. It shows the goal, tasks, dependencies,
-acceptance criteria, SSOT/provider/model hints, Critical Path, parallel groups, and the exact ordered
-Beads mutations that an import would request. When dependency-linked tasks declare different
-providers or models, the preview shows the planned requested provider/model transitions between
-them.
+Open **Plan** in the Beads view and follow the explicit four-step flow:
+
+1. Describe the project goal and select **Generate task plan with AI**.
+2. Choose an Ollama, Hugging Face, OpenAI, or Anthropic direct-response provider and model, review
+   the one-request confirmation, and approve it.
+3. Review and edit the returned Plan Draft. The local preview shows tasks, dependencies, acceptance
+   criteria, SSOT/provider/model hints, Critical Path, parallel groups, requested provider/model
+   transitions, validation errors, and the exact ordered Beads mutations.
+4. Select **Import Plan** only after the draft is correct, then move to **Manage** to run work that
+   Beads currently reports as ready.
+
+AI generation creates an editable draft only. It does not import tasks, mutate Beads, execute the
+response, or start an agent. The planning request contains the goal, workspace display name,
+available relative SSOT references, and configured provider/model choices; it does not include file
+contents, an absolute workspace path, or credentials. The raw provider response is retained as a
+local untrusted artifact for review. GitHub Copilot is not used for draft generation because its
+integration opens a coding session rather than returning a synchronous text response.
+
+You can also open **Advanced: view or edit Plan Draft JSON** to paste a version 1 draft, load the
+example, or edit the generated JSON directly. Preview remains local and read-only. When
+dependency-linked tasks declare different providers or models, it shows the planned requested
+provider/model transitions between them.
 
 **Import Plan** is enabled only when the active workspace has a Beads database and the installed
 `bd` executable demonstrates the required create, update, and dependency commands. The Extension
 Host parses and validates the draft again, repeats the capability check, shows the mutation list,
-and asks for explicit approval before executing it. **Cancel** discards the draft without a Beads
-write.
+and asks for explicit approval before executing it. Discarding the draft performs no Beads write.
 
 A missing executable, unsupported command, or schema mismatch keeps import disabled and shows the
 observed reason. The extension does not initialize, bootstrap, or migrate a Beads database. If an
@@ -111,13 +131,15 @@ Anthropic credentials in VS Code SecretStorage. `HF_TOKEN`, `OPENAI_API_KEY`, an
 settings. Cloud endpoints are fixed, Ollama is restricted to loopback URLs, and all AI execution and
 credential management require a trusted workspace.
 
-Configure model choices with:
+Configure provider/model choices and the direct-response request bound with:
 
 - `beads-git-graph.agentModelOptions` for Copilot
 - `beads-git-graph.agentOllamaModelOptions`
 - `beads-git-graph.agentHuggingFaceModelOptions`
 - `beads-git-graph.agentOpenAIModelOptions`
 - `beads-git-graph.agentAnthropicModelOptions`
+- `beads-git-graph.agentParallelConcurrency` for the direct-response request bound (default `4`,
+  range `1`–`8`)
 
 Exact model availability remains provider/account-specific, so every picker also accepts a custom
 model ID. A Hugging Face repository model run by Ollama should be represented as
@@ -134,10 +156,17 @@ artifact-production contract.
 
 When multiple ready tasks can run in parallel, **Start Parallel** asks whether to preserve each
 task's provider/model handoff or override every selected task. It preflights every required
-credential before execution, confirms the number of text-response calls, and limits one batch to 20
-direct-provider requests. Copilot tasks receive isolated worktrees; direct API tasks receive local
-response artifacts and are not presented as worktree-editing agents. Active tasks that are skipped
-are reported with the reason.
+credential before execution, confirms the number of text-response calls, and keeps one batch to at
+most 20 direct-provider requests. Direct Ollama, Hugging Face, OpenAI, and Anthropic requests use a
+bounded concurrency limit. Beads readiness checks, Beads updates, and Git/worktree mutations remain
+serialized per workspace, so concurrent responses cannot race those state changes. Copilot coding
+sessions are launched sequentially into isolated worktrees; they are not counted as concurrent
+direct-response calls.
+
+The batch result records a per-task outcome such as response ready, session started, prompt
+prepared, failed, skipped, or cancelled. These are completed or recorded outcomes, not live process
+monitoring. Failed or cancelled tasks can be retried without rerunning successful tasks. Direct API
+tasks receive local response artifacts and are not presented as worktree-editing agents.
 
 These hints are visual metadata. Beads ready/blocking behavior still comes from issue status and dependencies.
 

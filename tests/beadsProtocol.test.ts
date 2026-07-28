@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isBeadsRequestMessage } from "../src/beadsProtocol";
+import { isBeadsHostMessage, isBeadsRequestMessage } from "../src/beadsProtocol";
 
 describe("isBeadsRequestMessage", () => {
   it("accepts known commands with their required payload", () => {
@@ -153,5 +153,41 @@ describe("isBeadsRequestMessage", () => {
       })
     ).toBe(false);
     expect(isBeadsRequestMessage({ command: "unknown" })).toBe(false);
+  });
+});
+
+describe("isBeadsHostMessage", () => {
+  it("accepts bounded incremental render updates", () => {
+    expect(
+      isBeadsHostMessage({
+        command: "beadsRenderUpdate",
+        generation: 4,
+        html: "<!DOCTYPE html><html><body></body></html>"
+      })
+    ).toBe(true);
+  });
+
+  it("rejects stale-shaped or unbounded render updates", () => {
+    expect(
+      isBeadsHostMessage({
+        command: "beadsRenderUpdate",
+        generation: 0,
+        html: "<html></html>"
+      })
+    ).toBe(false);
+    expect(
+      isBeadsHostMessage({
+        command: "beadsRenderUpdate",
+        generation: 1.5,
+        html: "<html></html>"
+      })
+    ).toBe(false);
+    expect(
+      isBeadsHostMessage({
+        command: "beadsRenderUpdate",
+        generation: 1,
+        html: "x".repeat(5 * 1024 * 1024 + 1)
+      })
+    ).toBe(false);
   });
 });

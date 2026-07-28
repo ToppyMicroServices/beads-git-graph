@@ -144,7 +144,7 @@ describe("Agent Project Manager webview", () => {
     expect(html).toContain("Sync risk is reported as &quot;dirty&quot;");
     expect(html).toContain("Checks are reported as &quot;failed&quot;");
     expect(html).toContain(
-      "Derived from Beads status and recorded Git/PR metadata. “Running” does not confirm live agent activity."
+      "Derived from Beads status and recorded Git/PR metadata. “Recorded in progress” is not live-agent monitoring."
     );
     expect(html).toContain("Status is in progress; live agent activity is not confirmed");
 

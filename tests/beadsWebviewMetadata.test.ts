@@ -23,15 +23,17 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("Agent Work Queue");
     expect(beadsWebview).toContain("Needs attention");
     expect(beadsWebview).toContain("Readiness unknown");
-    expect(beadsWebview).toContain("does not confirm live agent activity");
+    expect(beadsWebview).toContain("is not live-agent monitoring");
     expect(beadsWebview).toContain("agentWorkOverview");
     expect(beadsWebview).toContain("agentWorkLane");
     expect(beadsWebview).toContain("agentWorkCard");
     expect(beadsWebview).toContain("buildAgentWorkQueue");
-    expect(beadsMain).toContain('type ViewMode = "table" | "graph" | "control"');
+    expect(beadsMain).toContain('type ViewMode = "table" | "graph" | "control" | "plan"');
     expect(beadsMain).toContain("controlViewButton");
     expect(beadsMain).toContain("refreshAgentWorkQueueVisibility");
-    expect(beadsMain).toContain('applyViewMode("control")');
+    expect(beadsMain).not.toContain(
+      'renderParallelExecutionResult(message);\n  applyViewMode("control")'
+    );
     expect(beadsMain).toContain("!bdAvailable || item === null");
     expect(beadsMain).toContain('syncBeadsButton.addEventListener("click"');
     expect(beadsMain).toContain("if (!bdAvailable)");
@@ -166,8 +168,8 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain('key === "order"');
     expect(beadsMain).toContain("getState(): BeadsWebviewState | undefined");
     expect(beadsMain).toContain("setState(state: BeadsWebviewState): void");
-    expect(beadsMain).toContain("normalizeViewMode(vscode.getState()?.viewMode)");
-    expect(beadsMain).toContain("normalizeGraphTransforms(vscode.getState())");
+    expect(beadsMain).toContain("normalizeViewMode(initialWebviewState?.viewMode)");
+    expect(beadsMain).toContain("normalizeGraphTransforms(initialWebviewState)");
     expect(beadsMain).toContain("graphTransforms");
     expect(beadsMain).toContain("getGraphTransform");
     expect(beadsMain).toContain("saveGraphTransforms");
@@ -321,7 +323,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("vscode.env.clipboard.writeText(prompt)");
     expect(beadsView).toContain("Copilot agent prompt copied to clipboard");
     expect(beadsView).toContain("with requested model");
-    expect(beadsView).toContain("generated $" + "{responseCount} local response artifact(s)");
+    expect(beadsView).toContain("AI task batch completed:");
     expect(beadsView).toContain("confirmTextProviderRequests");
     expect(beadsView).toContain("Cloud providers may charge for each request.");
     expect(beadsView).toContain("MAX_PARALLEL_TEXT_PROVIDER_REQUESTS = 20");
@@ -343,12 +345,28 @@ describe("beads webview presentation metadata", () => {
 
   it("avoids redundant Beads webview reloads", () => {
     expect(beadsView).not.toContain('createFileSystemWatcher("**/.beads/beads.db*")');
+    expect(beadsView).not.toContain('createFileSystemWatcher("**/.beads/*.json")');
+    expect(beadsView).not.toContain('createFileSystemWatcher("**/.beads/*.jsonl")');
+    expect(beadsView).toContain('createFileSystemWatcher("**/.beads/issues.json")');
+    expect(beadsView).toContain('createFileSystemWatcher("**/.beads/issues.jsonl")');
     expect(beadsView).toContain("webviewViewRenderSignature");
     expect(beadsView).toContain("panelRenderSignature");
     expect(beadsView).toContain("getRenderSignature");
     expect(beadsView).toContain("refreshWebviewHtml");
-    expect(beadsView).toContain("this.webviewViewRenderSignature === signature");
-    expect(beadsView).toContain("this.panelRenderSignature === signature");
+    expect(beadsView).toContain("currentSignature === signature");
+    expect(beadsView).toContain('command: "beadsRenderUpdate"');
+    expect(beadsView).toContain("html.length > MAX_BEADS_RENDER_UPDATE_LENGTH");
+    expect(beadsView).toContain("generation !== this.refreshGeneration");
+    expect(beadsMain).toContain("applyBeadsRenderUpdate");
+    expect(beadsMain).toContain("message.generation <= lastRenderGeneration");
+    expect(beadsMain).toContain("beadsWorkspaceViews.innerHTML = nextWorkspaceViews.innerHTML");
+    expect(beadsMain).toContain("restoreSelectedIssue(selectedIssue)");
+    expect(beadsMain).toContain("activeFilters?: StatusFilter[]");
+    expect(beadsMain).toContain("collapsedEpicIds?: string[]");
+    expect(beadsMain).toContain("sortState?: { key: SortKey; desc: boolean }");
+    expect(beadsMain).not.toContain('openGraphBeadDetails(button) {\n  applyViewMode("table")');
+    expect(beadsWebview).toContain('data-view-mode="loading"');
+    expect(beadsWebview).toContain('body[data-view-mode="loading"]>*{visibility:hidden;}');
     expect(beadsView).not.toContain("onDidChangeVisibility");
     expect(beadsView).not.toContain("onDidChangeViewState");
   });

@@ -50,8 +50,9 @@ describe("privacy and security posture", () => {
 
   it("checks Beads write safety before provider preparation and persists with one update", () => {
     expect(beadsViewSource).toContain("probeBeadsAgentWriteCapability(");
+    expect(beadsViewSource).toContain("preflight: values.writeCapabilityAlreadyChecked");
     expect(beadsViewSource).toContain(
-      "preflight: () => this.assertAgentWriteCapability(values.workspacePath)"
+      ": () => this.assertAgentWriteCapability(values.workspacePath)"
     );
     expect(beadsViewSource).toContain("persistGeneratedAgentResponse({");
     expect(beadsViewSource).toContain("buildAgentBeadUpdateArgs({");

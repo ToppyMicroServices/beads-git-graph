@@ -4,7 +4,12 @@ import {
   getAgentProviderDefinition,
   resolveAgentProviderId
 } from "../src/agentProvider";
-import type { BeadsRequestMessage } from "../src/beadsProtocol";
+import {
+  type BeadsHostMessage,
+  type BeadsRequestMessage,
+  isBeadsHostMessage,
+  type ParallelExecutionOutcome
+} from "../src/beadsProtocol";
 import type { BeadsWriteCapability } from "../src/beadsWriteCapability";
 import { renderPlanDraftPreview } from "../src/planPreview";
 import {
@@ -55,14 +60,23 @@ type GraphPanGestureState = {
   startClientY: number;
   startPan: GraphPanState;
 };
+type SelectedIssueState = { workspacePath: string; issueId: string };
 type BeadsWebviewState = {
   viewMode?: ViewMode;
+  activeFilters?: StatusFilter[];
+  sortState?: { key: SortKey; desc: boolean };
+  selectedIssue?: SelectedIssueState | null;
+  collapsedIds?: string[];
+  collapsedEpicIds?: string[];
+  windowScrollY?: number;
   graphZoom?: number;
   graphPan?: GraphPanState;
   graphTransforms?: Record<string, GraphTransformState>;
   graphScroll?: Record<string, GraphScrollState>;
   planDraftText?: string;
+  planGoalText?: string;
   planWorkspacePath?: string;
+  parallelExecutionResult?: Extract<BeadsHostMessage, { command: "parallelExecutionResult" }>;
   [key: string]: unknown;
 };
 
@@ -174,22 +188,27 @@ const PRESET_FILTERS: Record<string, StatusFilter[]> = {
   all: ALL_FILTERS
 };
 
-let activeFilters = new Set<StatusFilter>(PRESET_FILTERS.default);
+const initialWebviewState = vscode.getState();
+let activeFilters = new Set<StatusFilter>(
+  normalizeStatusFilters(initialWebviewState?.activeFilters)
+);
 let selectedRow: BeadRow | null = null;
 let expandedDetailsRow: HTMLTableRowElement | null = null;
 let contextMenuRow: BeadRow | null = null;
 let contextMenuWorkspacePath = "";
-let sortState: { key: SortKey; desc: boolean } = { key: "order", desc: false };
-let activeViewMode: ViewMode = normalizeViewMode(vscode.getState()?.viewMode);
-let graphTransforms = normalizeGraphTransforms(vscode.getState());
+let sortState = normalizeSortState(initialWebviewState?.sortState);
+let activeViewMode: ViewMode = normalizeViewMode(initialWebviewState?.viewMode);
+let graphTransforms = normalizeGraphTransforms(initialWebviewState);
 let graphSelection: GraphSelectionState | null = null;
 let graphPanGesture: GraphPanGestureState | null = null;
 let graphTransformSaveTimer: number | null = null;
+let scrollStateSaveTimer: number | null = null;
 const graphZoomAnchors = new WeakMap<HTMLElement, GraphZoomAnchor>();
 const initializedGraphPanes = new WeakSet<HTMLElement>();
 let rowClickTimer: number | null = null;
-const collapsedIds = new Set<string>();
-const collapsedEpicIds = new Set<string>();
+const collapsedIds = new Set(normalizeStringList(initialWebviewState?.collapsedIds));
+const collapsedEpicIds = new Set(normalizeStringList(initialWebviewState?.collapsedEpicIds));
+let lastRenderGeneration = 0;
 
 const chips = queryElement<HTMLDivElement>("#chips");
 const preset = queryElement<HTMLSelectElement>("#preset");
@@ -205,19 +224,24 @@ const graphViewButton = queryElement<HTMLButtonElement>("#graphView");
 const controlViewButton = queryElement<HTMLButtonElement>("#controlView");
 const planViewButton = queryElement<HTMLButtonElement>("#planView");
 const planDraftWorkspace = queryElement<HTMLSelectElement>("#planDraftWorkspace");
+const planGoalText = queryElement<HTMLTextAreaElement>("#planGoalText");
+const generatePlanDraftWithAi = queryElement<HTMLButtonElement>("#generatePlanDraftWithAi");
+const planGenerationStatus = queryElement<HTMLSpanElement>("#planGenerationStatus");
 const planDraftText = queryElement<HTMLTextAreaElement>("#planDraftText");
 const loadPlanDraftExample = queryElement<HTMLButtonElement>("#loadPlanDraftExample");
 const previewPlanDraft = queryElement<HTMLButtonElement>("#previewPlanDraft");
 const planDraftPreview = queryElement<HTMLDivElement>("#planDraftPreview");
-const bdAvailable = document.body.dataset.bdAvailable === "1";
-const hasSyncWarnings = document.body.dataset.hasSyncWarnings === "1";
+const parallelBatchResult = queryElement<HTMLElement>("#parallelBatchResult");
+const beadsWorkspaceViews = queryElement<HTMLDivElement>("#beadsWorkspaceViews");
+const beadsWarnings = queryElement<HTMLDivElement>("#beadsWarnings");
+const beadsErrors = queryElement<HTMLDivElement>("#beadsErrors");
+let bdAvailable = document.body.dataset.bdAvailable === "1";
+let hasSyncWarnings = document.body.dataset.hasSyncWarnings === "1";
 const planDraftController = createPlanDraftController((message) => vscode.postMessage(message));
 let currentPlanPreview: PlanDraftPreviewState | null = null;
+let activePlanGenerationRequestId: string | null = null;
 
-if (hasSyncWarnings && bdAvailable) {
-  syncBeadsButton.title = "Sync Beads (differences detected)";
-  syncBeadsButton.setAttribute("aria-label", "Sync Beads, differences detected");
-}
+updateSyncButtonState();
 
 function queryElement<T extends Element>(selector: string) {
   const element = document.querySelector<T>(selector);
@@ -229,6 +253,53 @@ function queryElement<T extends Element>(selector: string) {
 
 function normalizeViewMode(value: unknown): ViewMode {
   return value === "graph" || value === "control" || value === "plan" ? value : "table";
+}
+
+function normalizeStatusFilters(value: unknown): StatusFilter[] {
+  if (!Array.isArray(value)) {
+    return [...PRESET_FILTERS.default];
+  }
+  const filters = value.filter(
+    (candidate): candidate is StatusFilter =>
+      typeof candidate === "string" && ALL_FILTERS.includes(candidate as StatusFilter)
+  );
+  return Array.from(new Set(filters));
+}
+
+function normalizeSortState(value: unknown): { key: SortKey; desc: boolean } {
+  if (typeof value !== "object" || value === null) {
+    return { key: "order", desc: false };
+  }
+  const candidate = value as { key?: unknown; desc?: unknown };
+  const key =
+    candidate.key === "updated" ||
+    candidate.key === "type" ||
+    candidate.key === "priority" ||
+    candidate.key === "order"
+      ? candidate.key
+      : "order";
+  return { key, desc: typeof candidate.desc === "boolean" ? candidate.desc : false };
+}
+
+function normalizeStringList(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter(
+        (candidate): candidate is string => typeof candidate === "string" && candidate.trim() !== ""
+      )
+    : [];
+}
+
+function normalizeSelectedIssue(value: unknown): SelectedIssueState | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const candidate = value as { workspacePath?: unknown; issueId?: unknown };
+  return typeof candidate.workspacePath === "string" &&
+    candidate.workspacePath !== "" &&
+    typeof candidate.issueId === "string" &&
+    candidate.issueId !== ""
+    ? { workspacePath: candidate.workspacePath, issueId: candidate.issueId }
+    : null;
 }
 
 function normalizeGraphZoom(value: unknown) {
@@ -281,6 +352,172 @@ function saveWebviewState(patch: Partial<BeadsWebviewState>) {
 
 function saveViewMode(mode: ViewMode) {
   saveWebviewState({ viewMode: mode });
+}
+
+function getSelectedIssue(): SelectedIssueState | null {
+  if (selectedRow === null) {
+    return null;
+  }
+  const workspacePath = selectedRow.dataset.workspacePath || "";
+  const issueId = selectedRow.dataset.id || "";
+  return workspacePath !== "" && issueId !== "" ? { workspacePath, issueId } : null;
+}
+
+function saveInteractionState() {
+  saveWebviewState({
+    activeFilters: Array.from(activeFilters),
+    sortState,
+    selectedIssue: getSelectedIssue(),
+    collapsedIds: Array.from(collapsedIds),
+    collapsedEpicIds: Array.from(collapsedEpicIds),
+    windowScrollY: window.scrollY
+  });
+}
+
+function updateSyncButtonState() {
+  syncBeadsButton.disabled = !bdAvailable;
+  syncBeadsButton.title = !bdAvailable
+    ? "The Beads CLI is unavailable; configure bd before syncing."
+    : hasSyncWarnings
+      ? "Sync Beads (differences detected)"
+      : "Sync Beads";
+  syncBeadsButton.setAttribute(
+    "aria-label",
+    hasSyncWarnings && bdAvailable ? "Sync Beads, differences detected" : "Sync Beads"
+  );
+}
+
+function createRequestId() {
+  return typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function setPlanGenerationStatus(
+  status: "idle" | "pending" | "success" | "error",
+  message: string,
+  artifactUri?: string
+) {
+  planGenerationStatus.dataset.status = status;
+  planGenerationStatus.replaceChildren(document.createTextNode(message));
+  if (artifactUri !== undefined) {
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "openAgentArtifact";
+    openButton.dataset.artifactUri = artifactUri;
+    openButton.textContent = "Open raw response";
+    planGenerationStatus.append(document.createTextNode(" "), openButton);
+  }
+}
+
+function finishPlanGenerationRequest() {
+  activePlanGenerationRequestId = null;
+  generatePlanDraftWithAi.disabled = planDraftWorkspace.value === "";
+  generatePlanDraftWithAi.removeAttribute("aria-busy");
+  planDraftWorkspace.disabled = planDraftWorkspace.value === "";
+}
+
+const PARALLEL_STATUS_LABELS: Record<ParallelExecutionOutcome["status"], string> = {
+  "response-ready": "Response ready",
+  "session-started": "Session started",
+  "prompt-prepared": "Prompt prepared",
+  failed: "Failed",
+  skipped: "Skipped",
+  cancelled: "Cancelled"
+};
+
+function renderParallelExecutionResult(
+  result: Extract<BeadsHostMessage, { command: "parallelExecutionResult" }> | undefined
+) {
+  parallelBatchResult.replaceChildren();
+  if (result === undefined) {
+    parallelBatchResult.hidden = true;
+    return;
+  }
+
+  parallelBatchResult.hidden = false;
+  const header = document.createElement("div");
+  header.className = "parallelBatchHeader";
+  const headingGroup = document.createElement("div");
+  const heading = document.createElement("h2");
+  heading.textContent = "Latest AI task batch";
+  const description = document.createElement("p");
+  const completedAt = new Date(result.completedAt);
+  description.textContent = Number.isNaN(completedAt.getTime())
+    ? "Recorded outcomes; this is not live-agent monitoring."
+    : `${completedAt.toLocaleString()} · Recorded outcomes; this is not live-agent monitoring.`;
+  headingGroup.append(heading, description);
+
+  const summary = document.createElement("div");
+  summary.className = "parallelBatchSummary";
+  for (const status of [
+    "response-ready",
+    "session-started",
+    "prompt-prepared",
+    "failed",
+    "cancelled",
+    "skipped"
+  ] as const) {
+    const count = result.outcomes.filter((outcome) => outcome.status === status).length;
+    if (count === 0) {
+      continue;
+    }
+    const badge = document.createElement("span");
+    badge.className = "summaryPill";
+    badge.textContent = `${count} ${PARALLEL_STATUS_LABELS[status]}`;
+    summary.append(badge);
+  }
+  header.append(headingGroup, summary);
+
+  const list = document.createElement("ul");
+  list.className = "parallelBatchList";
+  for (const outcome of result.outcomes) {
+    const item = document.createElement("li");
+    item.className = "parallelBatchItem";
+    const task = document.createElement("span");
+    task.className = "parallelBatchTask";
+    task.textContent = outcome.title?.trim()
+      ? `${outcome.issueId} · ${outcome.title.trim()}`
+      : outcome.issueId;
+    const status = document.createElement("span");
+    status.className = "parallelBatchStatus";
+    status.dataset.status = outcome.status;
+    status.textContent = PARALLEL_STATUS_LABELS[outcome.status];
+    const message = document.createElement("span");
+    message.className = "parallelBatchMessage";
+    message.textContent = outcome.message;
+    item.append(task, status, message);
+
+    if (outcome.status === "failed" || outcome.status === "cancelled") {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "parallelBatchRetry";
+      retry.textContent = "Retry task";
+      retry.addEventListener("click", () => {
+        retry.disabled = true;
+        retry.textContent = "Retrying…";
+        vscode.postMessage({
+          command: "startParallelBeads",
+          requestId: createRequestId(),
+          workspacePath: result.workspacePath,
+          items: [
+            {
+              issueId: outcome.issueId,
+              title: outcome.title,
+              provider: outcome.provider,
+              model: outcome.model,
+              ssot: outcome.ssot,
+              worktree: outcome.worktree
+            }
+          ],
+          skipped: []
+        });
+      });
+      item.append(retry);
+    }
+    list.append(item);
+  }
+  parallelBatchResult.append(header, list);
 }
 
 function normalizeOptionalDatasetValue(value: string | undefined) {
@@ -394,12 +631,157 @@ function openGraphBeadDetails(button: HTMLButtonElement) {
   if (row === undefined) {
     return;
   }
-  applyViewMode("table");
-  if (selectedRow !== row || expandedDetailsRow === null) {
-    toggleRowDetails(row);
+  const pane = button.closest<HTMLElement>(".graphPane");
+  const item = decodeRowItem(row);
+  const issueStack = pane?.querySelector<HTMLElement>(".graphIssueStack");
+  if (pane === null || item === null || issueStack === null || issueStack === undefined) {
+    return;
   }
-  row.scrollIntoView({ block: "nearest" });
-  row.querySelector<HTMLButtonElement>(".beadDetailsButton")?.focus();
+
+  removeExpandedDetails();
+  removeGraphSelectedDetails();
+  selectedRow?.classList.remove("selected");
+  if (selectedRow !== null) {
+    setRowDetailsExpanded(selectedRow, false);
+  }
+  selectedRow = row;
+  row.classList.add("selected");
+  setRowDetailsExpanded(row, true);
+  expandDetailsRow(row, item);
+
+  const details = document.createElement("article");
+  details.className = "graphSelectedDetails";
+  details.dataset.issueId = issueId;
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "graphSelectedDetailsClose";
+  closeButton.title = "Close details";
+  closeButton.setAttribute("aria-label", "Close details");
+  closeButton.textContent = "×";
+  closeButton.addEventListener("click", () => {
+    clearSelectedRow();
+    button.focus();
+  });
+  details.append(closeButton);
+  details.insertAdjacentHTML("beforeend", renderDetailsMarkup(item));
+  bindCommitLinks(details);
+  issueStack.prepend(details);
+  saveInteractionState();
+  details.scrollIntoView({ block: "nearest" });
+}
+
+function findIssueRow(issue: SelectedIssueState) {
+  return Array.from(document.querySelectorAll<BeadRow>("tbody .beadRow")).find(
+    (row) => row.dataset.workspacePath === issue.workspacePath && row.dataset.id === issue.issueId
+  );
+}
+
+function restoreSelectedIssue(issue: SelectedIssueState | null) {
+  if (issue === null) {
+    return;
+  }
+  const row = findIssueRow(issue);
+  const item = row === undefined ? null : decodeRowItem(row);
+  if (row === undefined || item === null || row.style.display === "none") {
+    saveWebviewState({ selectedIssue: null });
+    return;
+  }
+
+  selectedRow = row;
+  row.classList.add("selected");
+  setRowDetailsExpanded(row, true);
+  expandDetailsRow(row, item);
+
+  if (activeViewMode === "graph") {
+    const graphButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".graphDetailsBead")
+    ).find(
+      (button) =>
+        button.dataset.graphDetailsWorkspace === issue.workspacePath &&
+        button.dataset.graphDetailsId === issue.issueId
+    );
+    if (graphButton !== undefined) {
+      openGraphBeadDetails(graphButton);
+    }
+  }
+  saveInteractionState();
+}
+
+function updatePlanWorkspaceOptions(nextSelect: HTMLSelectElement) {
+  const preferredWorkspace = planDraftWorkspace.value || vscode.getState()?.planWorkspacePath || "";
+  planDraftWorkspace.replaceChildren(
+    ...Array.from(nextSelect.options).map((option) => option.cloneNode(true))
+  );
+  if (
+    typeof preferredWorkspace === "string" &&
+    Array.from(planDraftWorkspace.options).some((option) => option.value === preferredWorkspace)
+  ) {
+    planDraftWorkspace.value = preferredWorkspace;
+  }
+  planDraftWorkspace.disabled =
+    activePlanGenerationRequestId !== null || planDraftWorkspace.value === "";
+  generatePlanDraftWithAi.disabled =
+    activePlanGenerationRequestId !== null || planDraftWorkspace.value === "";
+}
+
+function applyBeadsRenderUpdate(
+  message: Extract<BeadsHostMessage, { command: "beadsRenderUpdate" }>
+) {
+  if (message.generation <= lastRenderGeneration) {
+    return;
+  }
+
+  const parsed = new DOMParser().parseFromString(message.html, "text/html");
+  const nextWorkspaceViews = parsed.querySelector<HTMLDivElement>("#beadsWorkspaceViews");
+  const nextWarnings = parsed.querySelector<HTMLDivElement>("#beadsWarnings");
+  const nextErrors = parsed.querySelector<HTMLDivElement>("#beadsErrors");
+  const nextPlanWorkspace = parsed.querySelector<HTMLSelectElement>("#planDraftWorkspace");
+  if (
+    nextWorkspaceViews === null ||
+    nextWarnings === null ||
+    nextErrors === null ||
+    nextPlanWorkspace === null
+  ) {
+    return;
+  }
+
+  lastRenderGeneration = message.generation;
+  const selectedIssue = getSelectedIssue();
+  const scrollY = window.scrollY;
+  clearRowClickTimer();
+  closeContextMenu();
+  selectedRow = null;
+  expandedDetailsRow = null;
+  graphSelection = null;
+  graphPanGesture = null;
+
+  beadsWorkspaceViews.innerHTML = nextWorkspaceViews.innerHTML;
+  beadsWarnings.innerHTML = nextWarnings.innerHTML;
+  beadsErrors.innerHTML = nextErrors.innerHTML;
+  bdAvailable = parsed.body.dataset.bdAvailable === "1";
+  hasSyncWarnings = parsed.body.dataset.hasSyncWarnings === "1";
+  document.body.dataset.bdAvailable = bdAvailable ? "1" : "0";
+  document.body.dataset.hasSyncWarnings = hasSyncWarnings ? "1" : "0";
+  updateSyncButtonState();
+  updatePlanWorkspaceOptions(nextPlanWorkspace);
+
+  bindDynamicContent();
+  for (const row of getVisibleBeadRows()) {
+    updateCollapseButton(row);
+  }
+  restoreSelectedIssue(selectedIssue);
+  applySort();
+  applyFilters();
+  renderCurrentPlanPreview();
+  applyViewMode(activeViewMode);
+
+  window.requestAnimationFrame(() => {
+    window.scrollTo({ top: scrollY });
+    if (activeViewMode === "graph") {
+      refreshGraphPresentation();
+      updateGraphViewportPreservingTransform();
+    }
+  });
 }
 
 function closeContextMenu() {
@@ -509,6 +891,7 @@ function renderFilterMenu() {
       filterMenu.classList.remove("open");
       renderFilterChips();
       applyFilters();
+      saveInteractionState();
     });
   }
 }
@@ -542,6 +925,7 @@ function renderFilterChips() {
       preset.value = "";
       renderFilterChips();
       applyFilters();
+      saveInteractionState();
     });
   }
 
@@ -552,6 +936,7 @@ function applyPreset(value: string) {
   activeFilters = new Set(PRESET_FILTERS[value] ?? PRESET_FILTERS.default);
   renderFilterChips();
   applyFilters();
+  saveInteractionState();
 }
 
 function escapeHtml(value: string) {
@@ -686,6 +1071,14 @@ function removeExpandedDetails() {
   expandedDetailsRow = null;
 }
 
+function removeGraphSelectedDetails() {
+  for (const details of Array.from(
+    document.querySelectorAll<HTMLElement>(".graphSelectedDetails")
+  )) {
+    details.remove();
+  }
+}
+
 function setRowDetailsExpanded(row: BeadRow, expanded: boolean) {
   row
     .querySelector<HTMLButtonElement>(".beadDetailsButton")
@@ -699,6 +1092,8 @@ function clearSelectedRow() {
   selectedRow?.classList.remove("selected");
   selectedRow = null;
   removeExpandedDetails();
+  removeGraphSelectedDetails();
+  saveInteractionState();
 }
 
 function expandDetailsRow(row: BeadRow, item: BeadRowItem) {
@@ -726,6 +1121,7 @@ function toggleRowDetails(row: BeadRow) {
     setRowDetailsExpanded(selectedRow, false);
   }
   removeExpandedDetails();
+  removeGraphSelectedDetails();
   selectedRow = row;
   row.classList.add("selected");
   setRowDetailsExpanded(row, true);
@@ -734,6 +1130,7 @@ function toggleRowDetails(row: BeadRow) {
   if (item !== null) {
     expandDetailsRow(row, item);
   }
+  saveInteractionState();
   renderHierarchyOverlays();
 }
 
@@ -840,6 +1237,25 @@ function applyViewMode(mode: ViewMode) {
   controlViewButton.setAttribute("aria-pressed", mode === "control" ? "true" : "false");
   planViewButton.setAttribute("aria-pressed", mode === "plan" ? "true" : "false");
   if (mode === "graph") {
+    const selectedIssue =
+      selectedRow === null
+        ? null
+        : {
+            workspacePath: selectedRow.dataset.workspacePath || "",
+            issueId: selectedRow.dataset.id || ""
+          };
+    if (selectedIssue !== null && document.querySelector(".graphSelectedDetails") === null) {
+      const graphButton = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(".graphDetailsBead")
+      ).find(
+        (button) =>
+          button.dataset.graphDetailsWorkspace === selectedIssue.workspacePath &&
+          button.dataset.graphDetailsId === selectedIssue.issueId
+      );
+      if (graphButton !== undefined) {
+        openGraphBeadDetails(graphButton);
+      }
+    }
     refreshGraphPresentation();
     updateGraphViewportPreservingTransform();
   }
@@ -874,6 +1290,7 @@ function toggleRowCollapse(row: BeadRow) {
   }
   updateCollapseButton(row);
   refreshRowVisibility();
+  saveInteractionState();
   return true;
 }
 
@@ -912,6 +1329,7 @@ function toggleEpicSubprojects(row: BeadRow) {
   }
 
   applyFilters();
+  saveInteractionState();
   return true;
 }
 
@@ -994,6 +1412,7 @@ function applySort() {
   }
 
   refreshRowVisibility();
+  saveInteractionState();
 }
 
 function renderHierarchyOverlays() {
@@ -1935,6 +2354,39 @@ controlViewButton.addEventListener("click", () => {
 planViewButton.addEventListener("click", () => {
   applyViewMode("plan");
 });
+generatePlanDraftWithAi.addEventListener("click", () => {
+  const goal = planGoalText.value.trim();
+  const workspacePath = planDraftWorkspace.value;
+  if (goal === "") {
+    setPlanGenerationStatus("error", "Describe the project goal before generating a plan.");
+    planGoalText.focus();
+    return;
+  }
+  if (workspacePath === "") {
+    setPlanGenerationStatus("error", "Choose an initialized Beads workspace first.");
+    return;
+  }
+
+  const requestId = createRequestId();
+  activePlanGenerationRequestId = requestId;
+  generatePlanDraftWithAi.disabled = true;
+  generatePlanDraftWithAi.setAttribute("aria-busy", "true");
+  planDraftWorkspace.disabled = true;
+  saveWebviewState({ planGoalText: planGoalText.value });
+  setPlanGenerationStatus(
+    "pending",
+    "Waiting for provider/model selection and your send confirmation…"
+  );
+  vscode.postMessage({
+    command: "generatePlanDraft",
+    requestId,
+    workspacePath,
+    goal
+  });
+});
+planGoalText.addEventListener("input", () => {
+  saveWebviewState({ planGoalText: planGoalText.value });
+});
 loadPlanDraftExample.addEventListener("click", () => {
   planDraftText.value = PLAN_DRAFT_EXAMPLE;
   planDraftController.setText(PLAN_DRAFT_EXAMPLE);
@@ -1956,7 +2408,56 @@ planDraftText.addEventListener("input", () => {
 });
 planDraftWorkspace.addEventListener("change", () => {
   saveWebviewState({ planWorkspacePath: planDraftWorkspace.value });
+  generatePlanDraftWithAi.disabled =
+    activePlanGenerationRequestId !== null || planDraftWorkspace.value === "";
   renderCurrentPlanPreview();
+});
+window.addEventListener("message", (event: MessageEvent<unknown>) => {
+  if (!isBeadsHostMessage(event.data)) {
+    return;
+  }
+  const message = event.data;
+  if (message.command === "beadsRenderUpdate") {
+    applyBeadsRenderUpdate(message);
+    return;
+  }
+  if (message.command === "planDraftGenerationResult") {
+    if (message.requestId !== activePlanGenerationRequestId) {
+      return;
+    }
+    finishPlanGenerationRequest();
+    if (message.status === "generated") {
+      planDraftText.value = message.draftText;
+      planDraftController.setText(message.draftText);
+      currentPlanPreview = planDraftController.preview();
+      saveWebviewState({ planDraftText: message.draftText });
+      renderCurrentPlanPreview();
+      if (message.validationErrorCount > 0) {
+        document.querySelector<HTMLDetailsElement>(".planAdvanced")?.setAttribute("open", "");
+        setPlanGenerationStatus(
+          "error",
+          `AI returned an editable draft with ${message.validationErrorCount} validation issue${message.validationErrorCount === 1 ? "" : "s"}. Fix them before import.`,
+          message.artifactUri
+        );
+      } else {
+        setPlanGenerationStatus(
+          "success",
+          `Draft generated with ${getAgentProviderDefinition(message.provider).label} / ${message.confirmedModel}. Review it before import.`,
+          message.artifactUri
+        );
+      }
+      return;
+    }
+    setPlanGenerationStatus(
+      message.status === "error" ? "error" : "idle",
+      message.message,
+      message.artifactUri
+    );
+    return;
+  }
+
+  saveWebviewState({ parallelExecutionResult: message });
+  renderParallelExecutionResult(message);
 });
 clearFilters.addEventListener("click", () => {
   applyPreset("default");
@@ -2055,43 +2556,55 @@ window.addEventListener("resize", () => {
   renderHierarchyOverlays();
   renderDependencyGraphOverlays();
 });
-for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
-  const scroller = getGraphScroller(pane);
-  scroller?.addEventListener("scroll", () => {
-    saveGraphScroll(pane);
-  });
-  scroller?.addEventListener("wheel", (event) => zoomGraphFromWheel(pane, event), {
-    passive: false
-  });
-  scroller?.addEventListener("pointerdown", (event) => handleGraphPointerDown(pane, event));
-  scroller?.addEventListener("pointermove", (event) => handleGraphPointerMove(pane, event));
-  scroller?.addEventListener("pointerup", (event) => handleGraphPointerEnd(pane, event));
-  scroller?.addEventListener("pointercancel", (event) => handleGraphPointerEnd(pane, event));
-  scroller?.addEventListener("keydown", (event) => handleGraphKeydown(pane, event));
-  scroller?.addEventListener("dblclick", (event) => {
-    if (isGraphInteractiveTarget(event.target)) {
-      return;
-    }
-    event.preventDefault();
-    fitGraphToPane(pane);
-    renderDependencyGraphOverlays();
-  });
-  for (const button of Array.from(
-    pane.querySelectorAll<HTMLButtonElement>("button[data-graph-action]")
-  )) {
-    button.addEventListener("click", () => {
-      const action = button.dataset.graphAction;
-      if (action === "in") {
-        setGraphZoom(pane, getGraphTransform(pane).zoom * 1.2);
-      } else if (action === "out") {
-        setGraphZoom(pane, getGraphTransform(pane).zoom / 1.2);
-      } else if (action === "fit") {
-        fitGraphToPane(pane);
-        renderDependencyGraphOverlays();
-      }
+window.addEventListener("scroll", () => {
+  if (scrollStateSaveTimer !== null) {
+    window.clearTimeout(scrollStateSaveTimer);
+  }
+  scrollStateSaveTimer = window.setTimeout(() => {
+    scrollStateSaveTimer = null;
+    saveInteractionState();
+  }, 120);
+});
+function bindGraphPanes() {
+  for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
+    const scroller = getGraphScroller(pane);
+    scroller?.addEventListener("scroll", () => {
+      saveGraphScroll(pane);
     });
+    scroller?.addEventListener("wheel", (event) => zoomGraphFromWheel(pane, event), {
+      passive: false
+    });
+    scroller?.addEventListener("pointerdown", (event) => handleGraphPointerDown(pane, event));
+    scroller?.addEventListener("pointermove", (event) => handleGraphPointerMove(pane, event));
+    scroller?.addEventListener("pointerup", (event) => handleGraphPointerEnd(pane, event));
+    scroller?.addEventListener("pointercancel", (event) => handleGraphPointerEnd(pane, event));
+    scroller?.addEventListener("keydown", (event) => handleGraphKeydown(pane, event));
+    scroller?.addEventListener("dblclick", (event) => {
+      if (isGraphInteractiveTarget(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      fitGraphToPane(pane);
+      renderDependencyGraphOverlays();
+    });
+    for (const button of Array.from(
+      pane.querySelectorAll<HTMLButtonElement>("button[data-graph-action]")
+    )) {
+      button.addEventListener("click", () => {
+        const action = button.dataset.graphAction;
+        if (action === "in") {
+          setGraphZoom(pane, getGraphTransform(pane).zoom * 1.2);
+        } else if (action === "out") {
+          setGraphZoom(pane, getGraphTransform(pane).zoom / 1.2);
+        } else if (action === "fit") {
+          fitGraphToPane(pane);
+          renderDependencyGraphOverlays();
+        }
+      });
+    }
   }
 }
+
 queryElement<HTMLButtonElement>("#refresh").addEventListener("click", () => {
   vscode.postMessage({ command: "refresh" });
 });
@@ -2104,149 +2617,158 @@ syncBeadsButton.addEventListener("click", () => {
 queryElement<HTMLButtonElement>("#openGitGraph").addEventListener("click", () => {
   vscode.postMessage({ command: "openGitGraph" });
 });
-for (const button of Array.from(
-  document.querySelectorAll<HTMLButtonElement>("button[data-sync-workspace]")
-)) {
-  button.addEventListener("click", () => {
-    const workspacePath = button.dataset.syncWorkspace || "";
-    if (!bdAvailable || workspacePath === "") {
-      return;
-    }
-    vscode.postMessage({ command: "syncBeads", workspacePath });
-  });
-}
-for (const button of Array.from(
-  document.querySelectorAll<HTMLButtonElement>(".startParallelBeads")
-)) {
-  button.addEventListener("click", () => {
-    const workspacePath = button.dataset.startParallelWorkspace || "";
-    const items = decodeEncodedJson<
-      Array<{
-        issueId: string;
-        title?: string;
-        provider?: AgentProviderId;
-        model?: string;
-        ssot?: string;
-        worktree?: string;
-      }>
-    >(button.dataset.startParallelItems);
-    const skipped = decodeEncodedJson<
-      Array<{
-        issueId: string;
-        title?: string;
-        reason: string;
-      }>
-    >(button.dataset.startParallelSkipped);
-    if (!bdAvailable || workspacePath === "" || items === null || items.length === 0) {
-      return;
-    }
-    vscode.postMessage({
-      command: "startParallelBeads",
-      workspacePath,
-      items,
-      skipped: skipped ?? []
+function bindDynamicContent() {
+  bindGraphPanes();
+  for (const button of Array.from(
+    document.querySelectorAll<HTMLButtonElement>("button[data-sync-workspace]")
+  )) {
+    button.addEventListener("click", () => {
+      const workspacePath = button.dataset.syncWorkspace || "";
+      if (!bdAvailable || workspacePath === "") {
+        return;
+      }
+      vscode.postMessage({ command: "syncBeads", workspacePath });
     });
-  });
-}
-for (const button of Array.from(
-  document.querySelectorAll<HTMLButtonElement>(".mergeParallelPrs")
-)) {
-  button.addEventListener("click", () => {
-    const issueId = button.dataset.mergeId || "";
-    const workspacePath = button.dataset.mergeWorkspace || "";
-    const dependencyIds = (button.dataset.mergeDependencies || "")
-      .split(",")
-      .map((id) => id.trim())
-      .filter((id) => id !== "");
-    if (!bdAvailable || issueId === "" || workspacePath === "" || dependencyIds.length === 0) {
-      return;
-    }
-
-    const dependencySet = new Set(dependencyIds);
-    const dependencies = findSectionRows(button)
-      .map((row) => decodeRowItem(row))
-      .filter((item): item is BeadRowItem => item !== null && dependencySet.has(item.id))
-      .map(toExecutionTarget);
-    vscode.postMessage({
-      command: "mergeParallelPrs",
-      issueId,
-      workspacePath,
-      title: button.dataset.mergeTitle || "",
-      dependencies
+  }
+  for (const button of Array.from(
+    document.querySelectorAll<HTMLButtonElement>(".startParallelBeads")
+  )) {
+    button.addEventListener("click", () => {
+      const workspacePath = button.dataset.startParallelWorkspace || "";
+      const items = decodeEncodedJson<
+        Array<{
+          issueId: string;
+          title?: string;
+          provider?: AgentProviderId;
+          model?: string;
+          ssot?: string;
+          worktree?: string;
+        }>
+      >(button.dataset.startParallelItems);
+      const skipped = decodeEncodedJson<
+        Array<{
+          issueId: string;
+          title?: string;
+          reason: string;
+        }>
+      >(button.dataset.startParallelSkipped);
+      if (!bdAvailable || workspacePath === "" || items === null || items.length === 0) {
+        return;
+      }
+      vscode.postMessage({
+        command: "startParallelBeads",
+        requestId: createRequestId(),
+        workspacePath,
+        items,
+        skipped: skipped ?? []
+      });
     });
-  });
-}
-for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".sortToggle"))) {
-  button.addEventListener("click", () => {
-    const key = (button.dataset.sortKey as SortKey | undefined) || "updated";
-    sortState = sortState.key === key ? { key, desc: !sortState.desc } : { key, desc: true };
-    applySort();
-  });
-}
-for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRow"))) {
-  const toggleButton = row.querySelector<HTMLButtonElement>(".collapseToggle");
-  const detailsButton = row.querySelector<HTMLButtonElement>(".beadDetailsButton");
+  }
+  for (const button of Array.from(
+    document.querySelectorAll<HTMLButtonElement>(".mergeParallelPrs")
+  )) {
+    button.addEventListener("click", () => {
+      const issueId = button.dataset.mergeId || "";
+      const workspacePath = button.dataset.mergeWorkspace || "";
+      const dependencyIds = (button.dataset.mergeDependencies || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id !== "");
+      if (!bdAvailable || issueId === "" || workspacePath === "" || dependencyIds.length === 0) {
+        return;
+      }
 
-  toggleButton?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    toggleRowCollapse(row);
-  });
-  detailsButton?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    clearRowClickTimer();
-    toggleRowDetails(row);
-  });
-  row.addEventListener("click", (event) => {
-    if (event.target instanceof Element && event.target.closest("button")) {
-      return;
-    }
-    clearRowClickTimer();
-    const clickDelayMs = isCollapsibleRow(row) ? 260 : 160;
-    rowClickTimer = window.setTimeout(() => {
-      rowClickTimer = null;
+      const dependencySet = new Set(dependencyIds);
+      const dependencies = findSectionRows(button)
+        .map((row) => decodeRowItem(row))
+        .filter((item): item is BeadRowItem => item !== null && dependencySet.has(item.id))
+        .map(toExecutionTarget);
+      vscode.postMessage({
+        command: "mergeParallelPrs",
+        issueId,
+        workspacePath,
+        title: button.dataset.mergeTitle || "",
+        dependencies
+      });
+    });
+  }
+  for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".sortToggle"))) {
+    button.addEventListener("click", () => {
+      const key = (button.dataset.sortKey as SortKey | undefined) || "updated";
+      sortState = sortState.key === key ? { key, desc: !sortState.desc } : { key, desc: true };
+      applySort();
+    });
+  }
+  for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRow"))) {
+    const toggleButton = row.querySelector<HTMLButtonElement>(".collapseToggle");
+    const detailsButton = row.querySelector<HTMLButtonElement>(".beadDetailsButton");
+
+    toggleButton?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleRowCollapse(row);
+    });
+    detailsButton?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      clearRowClickTimer();
       toggleRowDetails(row);
-    }, clickDelayMs);
-  });
-  row.addEventListener("dblclick", (event) => {
-    if (event.target instanceof Element && event.target.closest("button")) {
-      return;
-    }
-    clearRowClickTimer();
-    event.preventDefault();
-    if (toggleEpicSubprojects(row)) {
-      if (selectedRow === row) {
-        clearSelectedRow();
+    });
+    row.addEventListener("click", (event) => {
+      if (event.target instanceof Element && event.target.closest("button")) {
+        return;
       }
-      return;
-    }
-    if (toggleRowCollapse(row)) {
-      if (selectedRow === row) {
-        clearSelectedRow();
+      clearRowClickTimer();
+      const clickDelayMs = isCollapsibleRow(row) ? 260 : 160;
+      rowClickTimer = window.setTimeout(() => {
+        rowClickTimer = null;
+        toggleRowDetails(row);
+      }, clickDelayMs);
+    });
+    row.addEventListener("dblclick", (event) => {
+      if (event.target instanceof Element && event.target.closest("button")) {
+        return;
       }
-      return;
-    }
-    toggleRowDetails(row);
-  });
-  row.addEventListener("keydown", (event) => {
-    if (event.key !== "F10" || !event.shiftKey) {
-      return;
-    }
-    event.preventDefault();
-    const rect = row.getBoundingClientRect();
-    openContextMenu(
-      row,
-      row.dataset.workspacePath || "",
-      rect.left + Math.min(24, rect.width / 2),
-      rect.top + Math.min(24, rect.height / 2),
-      true
-    );
-  });
+      clearRowClickTimer();
+      event.preventDefault();
+      if (toggleEpicSubprojects(row)) {
+        if (selectedRow === row) {
+          clearSelectedRow();
+        }
+        return;
+      }
+      if (toggleRowCollapse(row)) {
+        if (selectedRow === row) {
+          clearSelectedRow();
+        }
+        return;
+      }
+      toggleRowDetails(row);
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.key !== "F10" || !event.shiftKey) {
+        return;
+      }
+      event.preventDefault();
+      const rect = row.getBoundingClientRect();
+      openContextMenu(
+        row,
+        row.dataset.workspacePath || "",
+        rect.left + Math.min(24, rect.width / 2),
+        rect.top + Math.min(24, rect.height / 2),
+        true
+      );
+    });
+  }
 }
+bindDynamicContent();
 
 const restoredPlanDraftText = vscode.getState()?.planDraftText;
 if (typeof restoredPlanDraftText === "string") {
   planDraftText.value = restoredPlanDraftText;
   planDraftController.setText(restoredPlanDraftText);
+}
+const restoredPlanGoalText = vscode.getState()?.planGoalText;
+if (typeof restoredPlanGoalText === "string") {
+  planGoalText.value = restoredPlanGoalText;
 }
 const restoredPlanWorkspacePath = vscode.getState()?.planWorkspacePath;
 if (
@@ -2257,8 +2779,29 @@ if (
 ) {
   planDraftWorkspace.value = restoredPlanWorkspacePath;
 }
+const restoredParallelExecutionResult = vscode.getState()?.parallelExecutionResult;
+renderParallelExecutionResult(
+  isBeadsHostMessage(restoredParallelExecutionResult) &&
+    restoredParallelExecutionResult.command === "parallelExecutionResult"
+    ? restoredParallelExecutionResult
+    : undefined
+);
 
+for (const row of getVisibleBeadRows()) {
+  updateCollapseButton(row);
+}
 renderFilterChips();
+restoreSelectedIssue(normalizeSelectedIssue(initialWebviewState?.selectedIssue));
 applySort();
 applyFilters();
 applyViewMode(activeViewMode);
+const restoredWindowScrollY = initialWebviewState?.windowScrollY;
+if (
+  typeof restoredWindowScrollY === "number" &&
+  Number.isFinite(restoredWindowScrollY) &&
+  restoredWindowScrollY > 0
+) {
+  window.requestAnimationFrame(() => {
+    window.scrollTo({ top: restoredWindowScrollY });
+  });
+}
