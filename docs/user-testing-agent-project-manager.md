@@ -267,12 +267,13 @@ browser page. It verifies user-visible source behavior, but it does not exercise
 ## Packaged VSIX result — 2026-07-24; rebuilt 2026-07-28
 
 - **Artifact:** `beads-git-graph-0.4.20260710.vsix`, SHA-256
-  `38585cdf4257d84f9e9316e326940a989cc2e0b3a28295ff173522504e42bd10`.
+  `32b6bb7b456ad46779b6264b1ad4c34e93f1169193828a43788d55bb25020405`.
 - **Package inspection:** the current artifact contains provider/model selection, Host-side
   readiness/schema/dependency checks, response-artifact preservation, bounded parallel requests,
   pointer-centered Graph zoom, normal-drag pan, dependency and parent-child line rendering, static
-  Sync warning styling, and keyed incremental refresh handling. VSCE rewrote the README screenshot
-  to the repository asset URL.
+  Sync warning styling, keyed incremental refresh handling, view-specific Details hosts, visible
+  parallel-target filtering, relevant capability gating, and client/Host duplicate-action guards.
+  VSCE rewrote the README screenshot to the repository asset URL.
 - **Install/activation boundary:** a package built immediately before the final Host safety changes
   installed as `ToppyMicroServices.beads-git-graph@0.4.20260710` in an isolated extension directory
   and opened the Beads webview in an isolated VS Code profile. The final artifact above was rebuilt
@@ -348,6 +349,24 @@ browser page. It verifies user-visible source behavior, but it does not exercise
   final Graph presentation pass without re-clamping the saved pan.
 - **Evidence level:** compiled-source browser interaction plus Vitest/source assertions.
   Installed-VSIX repetition remains part of PM-006D/MAN-14.
+
+## Details, action, and capability source-browser result — 2026-07-28
+
+- **Observed:** Manage opened the matching blocked-task Details in the Manage pane. A Graph fixture
+  with no warning/risk drawer opened the matching Details without hiding it.
+- **Observed:** the Graph rendered one recorded dependency edge; wheel zoom around an off-center
+  pointer changed `100%` to `162%`, and a following normal drag changed both pan coordinates while
+  preserving the zoom.
+- **Observed:** double-clicking Start AI, Start Parallel, and Plan Import emitted one request for
+  each action. Both visible Start AI controls for the same task immediately showed the same disabled
+  busy state.
+- **Observed:** selecting the Blocked preset hid Start Parallel and reduced its eligible targets to
+  none. The filter menu exposed `aria-expanded=true` and unchecked menu-item state when opened.
+- **Observed:** a present CLI without `bd sync` rendered Sync disabled with the observed unsupported
+  reason. The browser recorded no warning or error for the final fixture.
+- **Boundary:** this is a compiled-source browser result with synthetic data. It does not exercise
+  an Extension Host, provider picker, real `bd` mutation, watcher lifecycle, or packaged VSIX.
+  PM-004D, PM-006D, MAN-10, and MAN-14 remain pending where already stated.
 
 ## Extension Host and manual checks
 

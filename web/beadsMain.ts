@@ -214,6 +214,7 @@ let scrollStateSaveTimer: number | null = null;
 const graphZoomAnchors = new WeakMap<HTMLElement, GraphZoomAnchor>();
 const initializedGraphPanes = new WeakSet<HTMLElement>();
 const dynamicallyBoundElements = new WeakSet<EventTarget>();
+const pendingActionKeys = new Set<string>();
 let rowClickTimer: number | null = null;
 const collapsedIds = new Set(normalizeStringList(initialWebviewState?.collapsedIds));
 const collapsedEpicIds = new Set(normalizeStringList(initialWebviewState?.collapsedEpicIds));
@@ -221,6 +222,7 @@ let lastRenderGeneration = 0;
 
 const chips = queryElement<HTMLDivElement>("#chips");
 const preset = queryElement<HTMLSelectElement>("#preset");
+const addFilter = queryElement<HTMLButtonElement>("#addFilter");
 const filterMenu = queryElement<HTMLDivElement>("#filterMenu");
 const clearFilters = queryElement<HTMLButtonElement>("#clearFilters");
 const rowContextMenu = queryElement<HTMLDivElement>("#rowContextMenu");
@@ -246,6 +248,9 @@ const beadsWarnings = queryElement<HTMLDivElement>("#beadsWarnings");
 const beadsErrors = queryElement<HTMLDivElement>("#beadsErrors");
 let lastWorkspaceRenderHtml = beadsWorkspaceViews.innerHTML;
 let bdAvailable = document.body.dataset.bdAvailable === "1";
+let syncAvailable = document.body.dataset.syncAvailable === "1";
+let syncUnavailableReason =
+  document.body.dataset.syncUnavailableReason || "The active Beads CLI does not provide bd sync.";
 let hasSyncWarnings = document.body.dataset.hasSyncWarnings === "1";
 const planDraftController = createPlanDraftController((message) => vscode.postMessage(message));
 let currentPlanPreview: PlanDraftPreviewState | null = null;
@@ -385,16 +390,80 @@ function saveInteractionState() {
 }
 
 function updateSyncButtonState() {
-  syncBeadsButton.disabled = !bdAvailable;
-  syncBeadsButton.title = !bdAvailable
-    ? "The Beads CLI is unavailable; configure bd before syncing."
+  syncBeadsButton.disabled = !syncAvailable;
+  syncBeadsButton.title = !syncAvailable
+    ? syncUnavailableReason
     : hasSyncWarnings
       ? "Sync Beads (differences detected)"
       : "Sync Beads";
   syncBeadsButton.setAttribute(
     "aria-label",
-    hasSyncWarnings && bdAvailable ? "Sync Beads, differences detected" : "Sync Beads"
+    !syncAvailable
+      ? `Sync unavailable: ${syncUnavailableReason}`
+      : hasSyncWarnings
+        ? "Sync Beads, differences detected"
+        : "Sync Beads"
   );
+}
+
+function markActionButtonsPending(
+  buttons: Iterable<HTMLButtonElement>,
+  pendingLabel: string,
+  timeoutMs: number = 1500
+) {
+  for (const button of buttons) {
+    if (button.disabled || button.dataset.pendingAction === "1") {
+      continue;
+    }
+    button.dataset.pendingOriginalLabel = button.textContent || "";
+    button.dataset.pendingAction = "1";
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    button.textContent = pendingLabel;
+    window.setTimeout(() => {
+      if (!button.isConnected || button.dataset.pendingAction !== "1") {
+        return;
+      }
+      delete button.dataset.pendingAction;
+      button.removeAttribute("aria-busy");
+      button.disabled = false;
+      button.textContent = button.dataset.pendingOriginalLabel || "";
+      delete button.dataset.pendingOriginalLabel;
+    }, timeoutMs);
+  }
+}
+
+function restoreActionButtons(buttons: Iterable<HTMLButtonElement>) {
+  for (const button of buttons) {
+    if (button.dataset.pendingAction !== "1") {
+      continue;
+    }
+    delete button.dataset.pendingAction;
+    button.removeAttribute("aria-busy");
+    button.disabled = false;
+    button.textContent = button.dataset.pendingOriginalLabel || "";
+    delete button.dataset.pendingOriginalLabel;
+  }
+}
+
+function beginClientAction(
+  actionKey: string,
+  buttons: Iterable<HTMLButtonElement>,
+  pendingLabel: string,
+  timeoutMs: number = 1500
+) {
+  if (pendingActionKeys.has(actionKey)) {
+    return false;
+  }
+  pendingActionKeys.add(actionKey);
+  markActionButtonsPending(buttons, pendingLabel, timeoutMs);
+  window.setTimeout(() => pendingActionKeys.delete(actionKey), timeoutMs);
+  return true;
+}
+
+function cancelClientAction(actionKey: string, buttons: Iterable<HTMLButtonElement>) {
+  pendingActionKeys.delete(actionKey);
+  restoreActionButtons(buttons);
 }
 
 function createRequestId() {
@@ -580,7 +649,19 @@ function renderCurrentPlanPreview() {
     .querySelector<HTMLButtonElement>("#importPlanDraft")
     ?.addEventListener("click", () => {
       const capability = getSelectedPlanCapability();
-      planDraftController.importPlan(planDraftWorkspace.value, capability?.supported === true);
+      const importButton = planDraftPreview.querySelector<HTMLButtonElement>("#importPlanDraft");
+      const actionKey = `import-plan:${planDraftWorkspace.value}`;
+      if (
+        importButton === null ||
+        !beginClientAction(actionKey, [importButton], "Importing…", 3000)
+      ) {
+        return;
+      }
+      if (
+        !planDraftController.importPlan(planDraftWorkspace.value, capability?.supported === true)
+      ) {
+        cancelClientAction(actionKey, [importButton]);
+      }
     });
 }
 
@@ -644,10 +725,13 @@ function openGraphBeadDetails(
   if (row === undefined) {
     return;
   }
-  const pane = button.closest<HTMLElement>(".graphPane");
   const item = decodeRowItem(row);
-  const issueStack = pane?.querySelector<HTMLElement>(".graphIssueStack");
-  if (pane === null || item === null || issueStack === null || issueStack === undefined) {
+  const detailsHost =
+    button.closest<HTMLElement>(".graphPane")?.querySelector<HTMLElement>(".graphIssueStack") ??
+    button
+      .closest<HTMLElement>(".agentWorkQueue")
+      ?.querySelector<HTMLElement>(".agentWorkDetailsHost");
+  if (item === null || detailsHost === null || detailsHost === undefined) {
     return;
   }
 
@@ -678,7 +762,8 @@ function openGraphBeadDetails(
   details.append(closeButton);
   details.insertAdjacentHTML("beforeend", renderDetailsMarkup(item));
   bindCommitLinks(details);
-  issueStack.prepend(details);
+  detailsHost.prepend(details);
+  detailsHost.hidden = false;
   if (options.saveState !== false) {
     saveInteractionState();
   }
@@ -712,16 +797,17 @@ function restoreSelectedIssue(
   setRowDetailsExpanded(row, true);
   expandDetailsRow(row, item);
 
-  if (activeViewMode === "graph") {
-    const graphButton = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(".graphDetailsBead")
+  if (activeViewMode === "graph" || activeViewMode === "control") {
+    const modeRootSelector = activeViewMode === "graph" ? ".graphPane" : ".agentWorkQueue";
+    const detailsButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(`${modeRootSelector} .graphDetailsBead`)
     ).find(
       (button) =>
         button.dataset.graphDetailsWorkspace === issue.workspacePath &&
         button.dataset.graphDetailsId === issue.issueId
     );
-    if (graphButton !== undefined) {
-      openGraphBeadDetails(graphButton, options);
+    if (detailsButton !== undefined) {
+      openGraphBeadDetails(detailsButton, options);
     }
   }
   if (options.saveState !== false) {
@@ -762,6 +848,7 @@ const STABLE_RENDER_CLASSES = new Set([
   "graphPane",
   "graphHeader",
   "graphIssueStack",
+  "agentWorkDetailsHost",
   "graphMapFrame",
   "graphMapHeader",
   "graphScroller",
@@ -1048,8 +1135,13 @@ function applyBeadsRenderUpdate(
   reconcileRenderRegion(beadsWarnings, nextWarnings);
   reconcileRenderRegion(beadsErrors, nextErrors);
   bdAvailable = parsed.body.dataset.bdAvailable === "1";
+  syncAvailable = parsed.body.dataset.syncAvailable === "1";
+  syncUnavailableReason =
+    parsed.body.dataset.syncUnavailableReason || "The active Beads CLI does not provide bd sync.";
   hasSyncWarnings = parsed.body.dataset.hasSyncWarnings === "1";
   document.body.dataset.bdAvailable = bdAvailable ? "1" : "0";
+  document.body.dataset.syncAvailable = syncAvailable ? "1" : "0";
+  document.body.dataset.syncUnavailableReason = syncUnavailableReason;
   document.body.dataset.hasSyncWarnings = hasSyncWarnings ? "1" : "0";
   updateSyncButtonState();
   const planWorkspaceOptionsChanged = updatePlanWorkspaceOptions(nextPlanWorkspace);
@@ -1089,7 +1181,19 @@ function closeContextMenu() {
 function postAssignStartBead(button: HTMLButtonElement) {
   const issueId = button.dataset.assignStartId || "";
   const workspacePath = button.dataset.assignStartWorkspace || "";
-  if (!bdAvailable || issueId === "" || workspacePath === "") {
+  if (button.disabled || issueId === "" || workspacePath === "") {
+    return;
+  }
+  const matchingButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>(".assignStartBead")
+  ).filter(
+    (candidate) =>
+      candidate.dataset.assignStartId === issueId &&
+      candidate.dataset.assignStartWorkspace === workspacePath
+  );
+  if (
+    !beginClientAction(`start-bead:${workspacePath}:${issueId}`, matchingButtons, "Starting…", 3000)
+  ) {
     return;
   }
   vscode.postMessage({
@@ -1123,9 +1227,27 @@ function openContextMenu(
   contextMenuRow = row;
   contextMenuWorkspacePath = workspacePath;
   const item = row ? decodeRowItem(row) : null;
-  createBeadAction.disabled = !bdAvailable || contextMenuWorkspacePath === "";
+  const section =
+    row?.closest<BeadSection>("section[data-workspace-path]") ??
+    Array.from(document.querySelectorAll<BeadSection>("section[data-workspace-path]")).find(
+      (candidate) => candidate.dataset.workspacePath === workspacePath
+    ) ??
+    null;
+  const writeAvailable = section?.dataset.writeAvailable === "1";
+  const unavailableReason =
+    section?.dataset.writeUnavailableReason ||
+    "Beads write capability has not been confirmed for this workspace.";
+  createBeadAction.disabled = !writeAvailable || contextMenuWorkspacePath === "";
   closeBeadAction.disabled =
-    !bdAvailable || item === null || (row?.dataset.status ?? "") === "closed";
+    !writeAvailable || item === null || (row?.dataset.status ?? "") === "closed";
+  createBeadAction.title = createBeadAction.disabled ? unavailableReason : "Create a bead";
+  closeBeadAction.title = !writeAvailable
+    ? unavailableReason
+    : item === null
+      ? "Select a bead to close."
+      : (row?.dataset.status ?? "") === "closed"
+        ? "This bead is already closed."
+        : "Close this bead";
   rowContextMenu.classList.add("open");
   const menuRect = rowContextMenu.getBoundingClientRect();
   const viewportMargin = 4;
@@ -1169,7 +1291,10 @@ function renderFilterMenu() {
     candidates.length === 0
       ? '<div style="font-size:11px;opacity:.8;padding:4px 6px;">No more filters</div>'
       : candidates
-          .map((status) => `<button data-add-filter="${status}">${STATUS_LABELS[status]}</button>`)
+          .map(
+            (status) =>
+              `<button type="button" role="menuitemcheckbox" aria-checked="false" data-add-filter="${status}">${STATUS_LABELS[status]}</button>`
+          )
           .join("");
 
   for (const button of Array.from(
@@ -1182,11 +1307,19 @@ function renderFilterMenu() {
       }
       activeFilters.add(status);
       preset.value = "";
-      filterMenu.classList.remove("open");
+      setFilterMenuOpen(false);
       renderFilterChips();
       applyFilters();
       saveInteractionState();
     });
+  }
+}
+
+function setFilterMenuOpen(open: boolean, focusFirst: boolean = false) {
+  filterMenu.classList.toggle("open", open);
+  addFilter.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open && focusFirst) {
+    filterMenu.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
   }
 }
 
@@ -1508,6 +1641,7 @@ function refreshRowVisibility(options: { refreshGraph?: boolean; renderHierarchy
   stats.title = `${rows.length} total beads`;
   refreshGraphNodeVisibility();
   refreshAgentWorkQueueVisibility();
+  refreshParallelStartActions();
   if (shouldRenderHierarchy) {
     renderHierarchyOverlays();
   }
@@ -1541,27 +1675,31 @@ function updateViewModeControls(mode: ViewMode, persist: boolean = true) {
 }
 
 function applyViewMode(mode: ViewMode) {
+  const selectedIssue =
+    selectedRow === null
+      ? null
+      : {
+          workspacePath: selectedRow.dataset.workspacePath || "",
+          issueId: selectedRow.dataset.id || ""
+        };
   updateViewModeControls(mode);
-  if (mode === "graph") {
-    const selectedIssue =
-      selectedRow === null
-        ? null
-        : {
-            workspacePath: selectedRow.dataset.workspacePath || "",
-            issueId: selectedRow.dataset.id || ""
-          };
-    if (selectedIssue !== null && document.querySelector(".graphSelectedDetails") === null) {
-      const graphButton = Array.from(
-        document.querySelectorAll<HTMLButtonElement>(".graphDetailsBead")
+  if ((mode === "graph" || mode === "control") && selectedIssue !== null) {
+    const modeRootSelector = mode === "graph" ? ".graphPane" : ".agentWorkQueue";
+    const activeDetails = document.querySelector(`${modeRootSelector} .graphSelectedDetails`);
+    if (activeDetails === null) {
+      const detailsButton = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(`${modeRootSelector} .graphDetailsBead`)
       ).find(
         (button) =>
           button.dataset.graphDetailsWorkspace === selectedIssue.workspacePath &&
           button.dataset.graphDetailsId === selectedIssue.issueId
       );
-      if (graphButton !== undefined) {
-        openGraphBeadDetails(graphButton);
+      if (detailsButton !== undefined) {
+        openGraphBeadDetails(detailsButton);
       }
     }
+  }
+  if (mode === "graph") {
     refreshGraphPresentation();
     updateGraphViewportPreservingTransform();
   }
@@ -1854,6 +1992,42 @@ function refreshAgentWorkQueueVisibility() {
   }
 }
 
+function refreshParallelStartActions() {
+  for (const button of Array.from(
+    document.querySelectorAll<HTMLButtonElement>(".startParallelBeads")
+  )) {
+    const section = button.closest<BeadSection>("section[data-workspace-path]");
+    if (section === null) {
+      button.hidden = true;
+      continue;
+    }
+    const visibleIds = new Set(
+      Array.from(section.querySelectorAll<BeadRow>("tbody .beadRow"))
+        .filter((row) => row.style.display !== "none")
+        .map((row) => row.dataset.id || "")
+        .filter((id) => id !== "")
+    );
+    const items =
+      decodeEncodedJson<Array<{ issueId: string }>>(button.dataset.startParallelItems) ?? [];
+    const skipped =
+      decodeEncodedJson<Array<{ issueId: string; reason: string }>>(
+        button.dataset.startParallelSkipped
+      ) ?? [];
+    const visibleItems = items.filter((item) => visibleIds.has(item.issueId));
+    const visibleSkipped = skipped.filter((item) => visibleIds.has(item.issueId));
+    button.dataset.activeStartParallelItems = encodeURIComponent(JSON.stringify(visibleItems));
+    button.dataset.activeStartParallelSkipped = encodeURIComponent(JSON.stringify(visibleSkipped));
+    button.hidden = visibleItems.length < 2;
+    if (visibleItems.length >= 2 && button.dataset.pendingAction !== "1") {
+      button.textContent = `${visibleItems.length} Start Parallel`;
+      button.setAttribute(
+        "aria-label",
+        `Start ${visibleItems.length} currently visible parallel-ready tasks`
+      );
+    }
+  }
+}
+
 function getVisibleGraphNodes(pane: HTMLElement) {
   return Array.from(pane.querySelectorAll<HTMLElement>(".graphNode[data-graph-id]")).filter(
     (node) => node.style.display !== "none"
@@ -1974,7 +2148,8 @@ function refreshGraphDerivedState(pane: HTMLElement) {
   );
   const issueStack = pane.querySelector<HTMLElement>(".graphIssueStack");
   if (issueStack !== null) {
-    issueStack.hidden = warningCount + riskCount === 0;
+    const hasSelectedDetails = issueStack.querySelector(".graphSelectedDetails") !== null;
+    issueStack.hidden = warningCount + riskCount === 0 && !hasSelectedDetails;
   }
 }
 
@@ -2324,8 +2499,9 @@ function zoomGraphFromWheel(pane: HTMLElement, event: WheelEvent) {
   const zoomFactor = Math.exp(-boundedDeltaPixels * 0.002);
   const nextZoom = normalizeGraphZoom(transform.zoom * zoomFactor);
   const anchor = rememberGraphZoomAnchor(pane, event.clientX, event.clientY);
-  event.preventDefault();
-  setGraphZoom(pane, nextZoom, anchor ?? undefined);
+  if (setGraphZoom(pane, nextZoom, anchor ?? undefined)) {
+    event.preventDefault();
+  }
 }
 
 function isGraphInteractiveTarget(target: EventTarget | null) {
@@ -2686,8 +2862,8 @@ function renderDependencyGraphOverlays() {
   }
 }
 
-queryElement<HTMLButtonElement>("#addFilter").addEventListener("click", () => {
-  filterMenu.classList.toggle("open");
+addFilter.addEventListener("click", () => {
+  setFilterMenuOpen(!filterMenu.classList.contains("open"), true);
 });
 tableViewButton.addEventListener("click", () => {
   applyViewMode("table");
@@ -2836,7 +3012,7 @@ document.addEventListener("click", (event) => {
     return;
   }
   if (!target.closest(".menu")) {
-    filterMenu.classList.remove("open");
+    setFilterMenuOpen(false);
   }
   if (!target.closest(".contextMenu")) {
     closeContextMenu();
@@ -2844,7 +3020,7 @@ document.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    filterMenu.classList.remove("open");
+    setFilterMenuOpen(false);
     closeContextMenu();
   }
 });
@@ -2872,14 +3048,15 @@ document.addEventListener("contextmenu", (event) => {
 });
 createBeadAction.addEventListener("click", () => {
   const workspacePath = contextMenuWorkspacePath;
+  const disabled = createBeadAction.disabled;
   closeContextMenu();
-  if (!bdAvailable || workspacePath === "") {
+  if (disabled || workspacePath === "") {
     return;
   }
   vscode.postMessage({ command: "createBead", workspacePath });
 });
 closeBeadAction.addEventListener("click", () => {
-  if (!bdAvailable || contextMenuRow === null) {
+  if (closeBeadAction.disabled || contextMenuRow === null) {
     return;
   }
 
@@ -2963,7 +3140,10 @@ queryElement<HTMLButtonElement>("#refresh").addEventListener("click", () => {
   vscode.postMessage({ command: "refresh" });
 });
 syncBeadsButton.addEventListener("click", () => {
-  if (!bdAvailable) {
+  if (!syncAvailable || syncBeadsButton.disabled) {
+    return;
+  }
+  if (!beginClientAction("sync-all-beads", [syncBeadsButton], "Syncing…", 3000)) {
     return;
   }
   vscode.postMessage({ command: "syncAllBeads" });
@@ -2982,7 +3162,10 @@ function bindDynamicContent() {
     dynamicallyBoundElements.add(button);
     button.addEventListener("click", () => {
       const workspacePath = button.dataset.syncWorkspace || "";
-      if (!bdAvailable || workspacePath === "") {
+      if (button.disabled || workspacePath === "") {
+        return;
+      }
+      if (!beginClientAction(`sync-beads:${workspacePath}`, [button], "Syncing…", 3000)) {
         return;
       }
       vscode.postMessage({ command: "syncBeads", workspacePath });
@@ -3006,15 +3189,18 @@ function bindDynamicContent() {
           ssot?: string;
           worktree?: string;
         }>
-      >(button.dataset.startParallelItems);
+      >(button.dataset.activeStartParallelItems ?? button.dataset.startParallelItems);
       const skipped = decodeEncodedJson<
         Array<{
           issueId: string;
           title?: string;
           reason: string;
         }>
-      >(button.dataset.startParallelSkipped);
-      if (!bdAvailable || workspacePath === "" || items === null || items.length === 0) {
+      >(button.dataset.activeStartParallelSkipped ?? button.dataset.startParallelSkipped);
+      if (button.disabled || workspacePath === "" || items === null || items.length < 2) {
+        return;
+      }
+      if (!beginClientAction(`start-parallel:${workspacePath}`, [button], "Starting…", 3000)) {
         return;
       }
       vscode.postMessage({
@@ -3040,7 +3226,7 @@ function bindDynamicContent() {
         .split(",")
         .map((id) => id.trim())
         .filter((id) => id !== "");
-      if (!bdAvailable || issueId === "" || workspacePath === "" || dependencyIds.length === 0) {
+      if (button.disabled || issueId === "" || workspacePath === "" || dependencyIds.length === 0) {
         return;
       }
 
@@ -3049,6 +3235,23 @@ function bindDynamicContent() {
         .map((row) => decodeRowItem(row))
         .filter((item): item is BeadRowItem => item !== null && dependencySet.has(item.id))
         .map(toExecutionTarget);
+      const matchingButtons = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(".mergeParallelPrs")
+      ).filter(
+        (candidate) =>
+          candidate.dataset.mergeId === issueId &&
+          candidate.dataset.mergeWorkspace === workspacePath
+      );
+      if (
+        !beginClientAction(
+          `merge-parallel:${workspacePath}:${issueId}`,
+          matchingButtons,
+          "Merging…",
+          3000
+        )
+      ) {
+        return;
+      }
       vscode.postMessage({
         command: "mergeParallelPrs",
         issueId,

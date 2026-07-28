@@ -1,4 +1,5 @@
 import { type BeadItem } from "./beadsData";
+import { type BeadsSyncCapability } from "./beadsSync";
 import { type BeadsWriteCapability } from "./beadsWriteCapability";
 import { type CommandAvailability } from "./commandAvailability";
 
@@ -35,6 +36,11 @@ export interface BeadLoadResult {
     workspace: string;
     workspacePath: string;
     capability: BeadsWriteCapability;
+  }>;
+  syncCapabilities?: Array<{
+    workspace: string;
+    workspacePath: string;
+    capability: BeadsSyncCapability;
   }>;
 }
 

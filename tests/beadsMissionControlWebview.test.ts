@@ -68,6 +68,28 @@ function getAgentCard(html: string, issueId: string) {
   return getTagContaining(html, "article", `data-work-item-id="${issueId}"`);
 }
 
+function supportedCapabilities(workspace: string, workspacePath: string) {
+  const capability = {
+    supported: true,
+    state: "supported" as const,
+    reason: "The required Beads write commands are available."
+  };
+  return {
+    planImportCapabilities: [{ workspace, workspacePath, capability }],
+    agentWriteCapabilities: [{ workspace, workspacePath, capability }],
+    syncCapabilities: [
+      {
+        workspace,
+        workspacePath,
+        capability: {
+          supported: true as const,
+          reason: "The active Beads CLI provides bd sync."
+        }
+      }
+    ]
+  };
+}
+
 describe("Agent Project Manager webview", () => {
   it("renders a truthful, actionable mixed-work queue", () => {
     const workspacePath = "/tmp/mission&control";
@@ -121,6 +143,7 @@ describe("Agent Project Manager webview", () => {
       emptyWorkspaces: [],
       unavailableWorkspaces: [],
       bdExecutableStatus: { available: true, command: "bd", message: null },
+      ...supportedCapabilities("Mission Control", workspacePath),
       errors: [],
       warnings: []
     };
@@ -134,6 +157,7 @@ describe("Agent Project Manager webview", () => {
 
     expect(html).toContain('<button id="controlView" type="button">Manage</button>');
     expect(html).toContain("Agent Work Queue");
+    expect(html).toContain('<div class="agentWorkDetailsHost"></div>');
 
     for (const lane of ["attention", "review", "running", "queue", "done"]) {
       expect(html).toContain(`data-work-lane="${lane}"`);
@@ -150,12 +174,24 @@ describe("Agent Project Manager webview", () => {
 
     expect(html).toContain('data-graph-details-id="attention-1"');
     expect(html).toContain('data-graph-details-workspace="/tmp/mission&amp;control"');
+    expect(
+      getTagContaining(
+        getAgentCard(html, "attention-1"),
+        "button",
+        'data-graph-details-id="attention-1"'
+      )
+    ).toContain('aria-label="Details for attention-1: Fix blocked delivery"');
     expect(html).toContain('data-assign-start-id="queue-1"');
     expect(html).toContain('data-assign-start-workspace="/tmp/mission&amp;control"');
     expect(html).toContain(
       'data-assign-start-title="Start &lt;unsafe&gt; &amp; &quot;quoted&quot; work"'
     );
     expect(html).toContain('data-assign-start-provider="openai"');
+    expect(
+      getTagContaining(getAgentCard(html, "queue-1"), "button", 'data-assign-start-id="queue-1"')
+    ).toContain(
+      'aria-label="Start AI for queue-1: Start &lt;unsafe&gt; &amp; &quot;quoted&quot; work"'
+    );
     expect(
       getTagContaining(getAgentCard(html, "queue-1"), "button", 'data-assign-start-id="queue-1"')
     ).toContain('data-assign-start-worktree=""');
@@ -210,6 +246,7 @@ describe("Agent Project Manager webview", () => {
       emptyWorkspaces: [],
       unavailableWorkspaces: [],
       bdExecutableStatus: { available: true, command: "bd", message: null },
+      ...supportedCapabilities("Mission Control", "/tmp/mission-control"),
       errors: [],
       warnings: []
     };
@@ -300,6 +337,27 @@ describe("Agent Project Manager webview", () => {
           }
         }
       ],
+      planImportCapabilities: [
+        {
+          workspace: "Schema mismatch",
+          workspacePath,
+          capability: {
+            supported: false,
+            state: "schema-mismatch",
+            reason: "Beads schema v49 is incompatible with v53."
+          }
+        }
+      ],
+      syncCapabilities: [
+        {
+          workspace: "Schema mismatch",
+          workspacePath,
+          capability: {
+            supported: false,
+            reason: "The active Beads CLI does not provide bd sync."
+          }
+        }
+      ],
       errors: [],
       warnings: []
     };
@@ -322,6 +380,10 @@ describe("Agent Project Manager webview", () => {
     expect(startButton).toContain(" disabled");
     expect(startButton).toContain("AI actions are disabled because Beads cannot be updated safely");
     expect(getTagContaining(html, "button", 'class="startParallelBeads')).toContain(" disabled");
+    expect(html).toContain('data-write-available="0"');
+    const syncButton = getTagContaining(html, "button", 'id="syncBeads"');
+    expect(syncButton).toContain(" disabled");
+    expect(syncButton).toContain("The active Beads CLI does not provide bd sync.");
   });
 
   it("shows a completed direct-provider artifact as review, not live running work", () => {
@@ -344,6 +406,7 @@ describe("Agent Project Manager webview", () => {
       emptyWorkspaces: [],
       unavailableWorkspaces: [],
       bdExecutableStatus: { available: true, command: "bd", message: null },
+      ...supportedCapabilities("Mission Control", "/tmp/mission-control"),
       errors: [],
       warnings: []
     };
@@ -383,6 +446,7 @@ describe("Agent Project Manager webview", () => {
       emptyWorkspaces: [],
       unavailableWorkspaces: [],
       bdExecutableStatus: { available: true, command: "bd", message: null },
+      ...supportedCapabilities("Mission Control", "/tmp/mission-control"),
       errors: [],
       warnings: []
     };
@@ -405,6 +469,30 @@ describe("Agent Project Manager webview", () => {
     ).not.toContain(" disabled");
   });
 
+  it("keeps Create available in a confirmed writable empty workspace", () => {
+    const workspacePath = "/tmp/empty-mission-control";
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      {
+        groups: [],
+        emptyWorkspaces: [{ workspace: "Empty Mission Control", workspacePath }],
+        unavailableWorkspaces: [],
+        bdExecutableStatus: { available: true, command: "bd", message: null },
+        ...supportedCapabilities("Empty Mission Control", workspacePath),
+        errors: [],
+        warnings: []
+      }
+    );
+
+    expect(html).toContain(
+      `<section data-workspace-path="${workspacePath}" data-write-available="1" data-write-unavailable-reason="">`
+    );
+  });
+
   it("moves a linked cross-model handoff from upstream work to the downstream queue", () => {
     const render = (items: BeadItem[]) =>
       renderBeadsWebviewHtml(
@@ -424,6 +512,7 @@ describe("Agent Project Manager webview", () => {
           emptyWorkspaces: [],
           unavailableWorkspaces: [],
           bdExecutableStatus: { available: true, command: "bd", message: null },
+          ...supportedCapabilities("Mission Control", "/tmp/mission-control"),
           errors: [],
           warnings: []
         }

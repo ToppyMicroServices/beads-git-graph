@@ -1,6 +1,44 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { flushBeadsWorkspace, syncBeadsWorkspace } from "../src/beadsSync";
+import {
+  flushBeadsWorkspace,
+  probeBeadsSyncCapability,
+  syncBeadsWorkspace
+} from "../src/beadsSync";
+
+describe("probeBeadsSyncCapability", () => {
+  it("reports sync support without mutating the workspace", async () => {
+    const runBdCommand = vi.fn(async () => "Synchronize Beads data");
+
+    await expect(probeBeadsSyncCapability(runBdCommand, "/tmp/demo")).resolves.toEqual({
+      supported: true,
+      reason: "The active Beads CLI provides bd sync."
+    });
+    expect(runBdCommand).toHaveBeenCalledWith(["sync", "--help"], "/tmp/demo");
+  });
+
+  it("reports an unsupported sync command", async () => {
+    const runBdCommand = vi.fn(async () => {
+      throw new Error('unknown command "sync" for "bd"');
+    });
+
+    await expect(probeBeadsSyncCapability(runBdCommand, "/tmp/demo")).resolves.toEqual({
+      supported: false,
+      reason: "The active Beads CLI does not provide bd sync."
+    });
+  });
+
+  it("reports an unexpected probe failure without claiming support", async () => {
+    const runBdCommand = vi.fn(async () => {
+      throw new Error("schema inspection failed");
+    });
+
+    await expect(probeBeadsSyncCapability(runBdCommand, "/tmp/demo")).resolves.toEqual({
+      supported: false,
+      reason: "Unable to verify bd sync support: schema inspection failed"
+    });
+  });
+});
 
 describe("syncBeadsWorkspace", () => {
   it("flushes issues.jsonl after a sync completes", async () => {

@@ -135,8 +135,10 @@ workspace.
 - [x] **PM-004C — Exercise the compiled source preview in a browser**
   - **Input:** compiled current webview script and the synthetic mixed-status preview.
   - **Edit target:** test evidence only; no product source is changed by this task.
-  - **Done/test:** Manage, Details, Start AI payload, and the 640 px layout were exercised in the
-    browser preview and recorded separately from Extension Host evidence.
+  - **Done/test:** Manage and warning-free Graph Details, task-specific accessible action names,
+    filtered parallel targets, and single Start AI/Start Parallel/Plan Import messages under
+    double-click were exercised in the browser preview and recorded separately from Extension Host
+    evidence.
   - **Depends:** PM-003C, PM-004B.
   - **Tier:** low-cost.
 - [ ] **PM-004D — Verify an installed packaged extension — partially verified**
@@ -269,6 +271,15 @@ workspace.
     after it, and after each of the next two animation frames. Warning-only updates skip workspace
     reconciliation, and task-content updates run the Graph presentation pass once.
   - **Depends:** PM-006A through PM-006E.
+  - **Tier:** capable.
+- [x] **PM-006G — Keep task actions and details stable across view changes**
+  - **Input:** selected task Details, warning-free Graph data, rapid action clicks, a status filter,
+    and unavailable write/sync capabilities.
+  - **Edit target:** generated action metadata, webview interaction state, and Host action guards.
+  - **Done/test:** Manage and Graph show the selected Details in their own visible host; duplicate
+    action events emit one request; filtered-out tasks leave the parallel batch; and Create, Close,
+    and Sync stay disabled until the relevant capability is confirmed.
+  - **Depends:** PM-006A through PM-006F.
   - **Tier:** capable.
 - [ ] **PM-006D — Repeat refresh continuity in an installed VSIX**
   - **Input:** a freshly packaged VSIX and a disposable workspace whose issue fixture changes while

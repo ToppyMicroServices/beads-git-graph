@@ -23,6 +23,14 @@
 
 ### Fixed
 
+- Open task Details from both Manage and warning-free Graph views, preserve the selected task when
+  switching views, and give repeated task actions distinct accessible names.
+- Prevent duplicate Start AI, Start Parallel, Plan Import, merge, and sync requests in both the
+  webview and Extension Host; limit Start Parallel to currently visible ready tasks.
+- Disable Create, Close, and Sync unless the relevant Beads capabilities are confirmed, and explain
+  schema or missing-`bd sync` constraints instead of exposing actions that will fail.
+- Let page scrolling continue when Graph wheel zoom is already at its limit, and expose the filter
+  menu's expanded and menu-item state to assistive technology.
 - Keep the visible Table or Graph viewport fixed during live updates, avoid re-running Graph layout
   for warning-only changes, and preserve runtime zoom, pan, node, and relationship geometry.
 - Stop animating the Sync warning button and preserve existing controls during in-place task

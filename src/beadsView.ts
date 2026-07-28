@@ -48,7 +48,7 @@ import {
   MAX_BEADS_RENDER_UPDATE_LENGTH,
   type ParallelExecutionOutcome
 } from "./beadsProtocol";
-import { flushBeadsWorkspace, syncBeadsWorkspace } from "./beadsSync";
+import { flushBeadsWorkspace, probeBeadsSyncCapability, syncBeadsWorkspace } from "./beadsSync";
 import {
   type BeadGroup,
   type BeadLoadResult,
@@ -152,6 +152,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private readonly credentialStore: AgentCredentialStore;
   private readonly artifactStore: AgentArtifactStore;
   private readonly agentExecutionQueue = new WorkspaceSerialQueue<string>();
+  private readonly inFlightActions = new Set<string>();
 
   constructor(
     extensionUri: vscode.Uri,
@@ -227,6 +228,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     while (this.disposables.length > 0) {
       this.disposables.pop()?.dispose();
     }
+    this.inFlightActions.clear();
   }
 
   public resolveWebviewView(webviewView: vscode.WebviewView) {
@@ -411,6 +413,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const warnings: BeadWarning[] = [];
     const planImportCapabilities: NonNullable<BeadLoadResult["planImportCapabilities"]> = [];
     const agentWriteCapabilities: NonNullable<BeadLoadResult["agentWriteCapabilities"]> = [];
+    const syncCapabilities: NonNullable<BeadLoadResult["syncCapabilities"]> = [];
     const bdExecutableStatus = await checkExecutable(getConfig().bdPath());
 
     for (const folder of workspaceFolders) {
@@ -438,6 +441,18 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
             bdExecutableStatus.message,
             (args) => this.runBdCapabilityProbe(args, folder.uri.fsPath)
           )
+        });
+        syncCapabilities.push({
+          ...workspaceInfo,
+          capability: bdExecutableStatus.available
+            ? await probeBeadsSyncCapability(
+                (args, cwd) => this.runBdCommand(args, cwd),
+                folder.uri.fsPath
+              )
+            : {
+                supported: false,
+                reason: bdExecutableStatus.message?.trim() || "The Beads CLI is unavailable."
+              }
         });
       }
 
@@ -495,12 +510,26 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       ),
       planImportCapabilities: planImportCapabilities.sort((a, b) =>
         a.workspace.localeCompare(b.workspace)
-      )
+      ),
+      syncCapabilities: syncCapabilities.sort((a, b) => a.workspace.localeCompare(b.workspace))
     };
   }
 
   private getHtml(webview: vscode.Webview, result: BeadLoadResult) {
     return renderBeadsWebviewHtml(webview, this.extensionUri, result);
+  }
+
+  private beginAction(actionKey: string, label: string) {
+    if (this.inFlightActions.has(actionKey)) {
+      vscode.window.showWarningMessage(`${label} is already in progress.`);
+      return false;
+    }
+    this.inFlightActions.add(actionKey);
+    return true;
+  }
+
+  private finishAction(actionKey: string) {
+    this.inFlightActions.delete(actionKey);
   }
 
   public async handleMessage(message: unknown, sourceWebview?: vscode.Webview) {
@@ -548,112 +577,128 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         );
         return;
       }
-      if (message.draftText.length > 1_000_000) {
-        vscode.window.showWarningMessage("The Plan Draft is too large to import.");
+      const actionKey = `import-plan:${workspacePath}`;
+      if (!this.beginAction(actionKey, "Plan import")) {
         return;
       }
-
-      let parsedValue: unknown;
       try {
-        parsedValue = JSON.parse(message.draftText);
-      } catch (error) {
-        vscode.window.showWarningMessage(
-          error instanceof Error
-            ? `Invalid Plan Draft JSON: ${error.message}`
-            : "Invalid Plan Draft JSON."
+        if (message.draftText.length > 1_000_000) {
+          vscode.window.showWarningMessage("The Plan Draft is too large to import.");
+          return;
+        }
+
+        let parsedValue: unknown;
+        try {
+          parsedValue = JSON.parse(message.draftText);
+        } catch (error) {
+          vscode.window.showWarningMessage(
+            error instanceof Error
+              ? `Invalid Plan Draft JSON: ${error.message}`
+              : "Invalid Plan Draft JSON."
+          );
+          return;
+        }
+        const parsed = parsePlanDraft(parsedValue);
+        if (parsed.draft === null || parsed.errors.length > 0) {
+          const details = parsed.errors
+            .map((error) => `${error.path || "draft"}: ${error.message}`)
+            .join("\n");
+          vscode.window.showWarningMessage(
+            `Plan Draft validation failed.${details === "" ? "" : `\n${details}`}`
+          );
+          return;
+        }
+
+        const executableStatus = await checkExecutable(getConfig().bdPath());
+        const capability = await probeBeadsWriteCapability(
+          executableStatus.available,
+          executableStatus.message,
+          (args) => this.runBdCapabilityProbe(args, workspacePath)
+        );
+        if (!capability.supported) {
+          vscode.window.showWarningMessage(`Plan import is disabled: ${capability.reason}`);
+          return;
+        }
+
+        const mutations = projectPlanDraftMutations(parsed.draft);
+        const confirmation = await vscode.window.showWarningMessage(
+          `Import ${parsed.draft.tasks.length} planned task(s) into ${path.basename(workspacePath)}?`,
+          {
+            modal: true,
+            detail: `${mutations.map((mutation, index) => `${index + 1}. ${formatPlanMutation(mutation)}`).join("\n")}\n\nMutations stop on the first failure. No automatic rollback is attempted.`
+          },
+          "Import Plan"
+        );
+        if (confirmation !== "Import Plan") {
+          return;
+        }
+
+        const importResult = await executePlanImport(mutations, (args) =>
+          this.runBdCommand([...args], workspacePath)
+        );
+        await this.refresh();
+        const createdSummary =
+          importResult.createdIds.length === 0
+            ? "No tasks were created."
+            : `Created: ${importResult.createdIds.map(({ taskId, issueId }) => `${taskId} → ${issueId}`).join(", ")}.`;
+        if (importResult.failed !== null) {
+          vscode.window.showErrorMessage(
+            `Plan import stopped after ${importResult.completed.length} operation(s). ${createdSummary} Failed: ${formatPlanMutation(importResult.failed.mutation)} — ${importResult.failed.error}. ${importResult.unexecuted.length} operation(s) were not executed. No rollback was attempted.`
+          );
+          return;
+        }
+        vscode.window.showInformationMessage(
+          `Plan imported with ${importResult.completed.length} operation(s). ${createdSummary}`
         );
         return;
+      } finally {
+        this.finishAction(actionKey);
       }
-      const parsed = parsePlanDraft(parsedValue);
-      if (parsed.draft === null || parsed.errors.length > 0) {
-        const details = parsed.errors
-          .map((error) => `${error.path || "draft"}: ${error.message}`)
-          .join("\n");
-        vscode.window.showWarningMessage(
-          `Plan Draft validation failed.${details === "" ? "" : `\n${details}`}`
-        );
-        return;
-      }
-
-      const executableStatus = await checkExecutable(getConfig().bdPath());
-      const capability = await probeBeadsWriteCapability(
-        executableStatus.available,
-        executableStatus.message,
-        (args) => this.runBdCapabilityProbe(args, workspacePath)
-      );
-      if (!capability.supported) {
-        vscode.window.showWarningMessage(`Plan import is disabled: ${capability.reason}`);
-        return;
-      }
-
-      const mutations = projectPlanDraftMutations(parsed.draft);
-      const confirmation = await vscode.window.showWarningMessage(
-        `Import ${parsed.draft.tasks.length} planned task(s) into ${path.basename(workspacePath)}?`,
-        {
-          modal: true,
-          detail: `${mutations.map((mutation, index) => `${index + 1}. ${formatPlanMutation(mutation)}`).join("\n")}\n\nMutations stop on the first failure. No automatic rollback is attempted.`
-        },
-        "Import Plan"
-      );
-      if (confirmation !== "Import Plan") {
-        return;
-      }
-
-      const importResult = await executePlanImport(mutations, (args) =>
-        this.runBdCommand([...args], workspacePath)
-      );
-      await this.refresh();
-      const createdSummary =
-        importResult.createdIds.length === 0
-          ? "No tasks were created."
-          : `Created: ${importResult.createdIds.map(({ taskId, issueId }) => `${taskId} → ${issueId}`).join(", ")}.`;
-      if (importResult.failed !== null) {
-        vscode.window.showErrorMessage(
-          `Plan import stopped after ${importResult.completed.length} operation(s). ${createdSummary} Failed: ${formatPlanMutation(importResult.failed.mutation)} — ${importResult.failed.error}. ${importResult.unexecuted.length} operation(s) were not executed. No rollback was attempted.`
-        );
-        return;
-      }
-      vscode.window.showInformationMessage(
-        `Plan imported with ${importResult.completed.length} operation(s). ${createdSummary}`
-      );
-      return;
     }
 
     if (message.command === "syncAllBeads") {
-      const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
-      const syncedWorkspaces: string[] = [];
-      const unsupportedWorkspaces: string[] = [];
+      const actionKey = "sync-all-beads";
+      if (!this.beginAction(actionKey, "Beads sync")) {
+        return;
+      }
+      try {
+        const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
+        const syncedWorkspaces: string[] = [];
+        const unsupportedWorkspaces: string[] = [];
 
-      for (const folder of workspaceFolders) {
-        const beadsDirUri = vscode.Uri.joinPath(folder.uri, ".beads");
-        if (!(await this.pathExists(beadsDirUri))) {
-          continue;
+        for (const folder of workspaceFolders) {
+          const beadsDirUri = vscode.Uri.joinPath(folder.uri, ".beads");
+          if (!(await this.pathExists(beadsDirUri))) {
+            continue;
+          }
+
+          const result = await syncBeadsWorkspace(
+            (args, cwd) => this.runBdCommand(args, cwd),
+            folder.uri.fsPath
+          );
+          if (result.status === "synced") {
+            syncedWorkspaces.push(folder.name);
+          } else {
+            unsupportedWorkspaces.push(folder.name);
+          }
         }
 
-        const result = await syncBeadsWorkspace(
-          (args, cwd) => this.runBdCommand(args, cwd),
-          folder.uri.fsPath
-        );
-        if (result.status === "synced") {
-          syncedWorkspaces.push(folder.name);
-        } else {
-          unsupportedWorkspaces.push(folder.name);
+        await this.refresh();
+
+        if (syncedWorkspaces.length > 0) {
+          vscode.window.showInformationMessage(
+            `Synced Beads data for ${syncedWorkspaces.join(", ")}.`
+          );
         }
-      }
-
-      await this.refresh();
-
-      if (syncedWorkspaces.length > 0) {
-        vscode.window.showInformationMessage(
-          `Synced Beads data for ${syncedWorkspaces.join(", ")}.`
-        );
-      }
-      if (unsupportedWorkspaces.length > 0) {
-        vscode.window.showWarningMessage(
-          `The Beads CLI does not support sync; data was not synced for ${unsupportedWorkspaces.join(", ")}.`
-        );
-      } else if (syncedWorkspaces.length === 0) {
-        vscode.window.showWarningMessage("No Beads workspace was found to sync.");
+        if (unsupportedWorkspaces.length > 0) {
+          vscode.window.showWarningMessage(
+            `The Beads CLI does not support sync; data was not synced for ${unsupportedWorkspaces.join(", ")}.`
+          );
+        } else if (syncedWorkspaces.length === 0) {
+          vscode.window.showWarningMessage("No Beads workspace was found to sync.");
+        }
+      } finally {
+        this.finishAction(actionKey);
       }
       return;
     }
@@ -667,6 +712,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         return;
       }
 
+      const actionKey = `sync-beads:${workspacePath}`;
+      if (!this.beginAction(actionKey, `Beads sync for ${path.basename(workspacePath)}`)) {
+        return;
+      }
       try {
         const result = await syncBeadsWorkspace(
           (args, cwd) => this.runBdCommand(args, cwd),
@@ -685,6 +734,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       } catch (error) {
         const messageText = error instanceof Error ? error.message : "Unable to sync Beads data.";
         vscode.window.showErrorMessage(messageText);
+      } finally {
+        this.finishAction(actionKey);
       }
       return;
     }
@@ -716,11 +767,18 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         return;
       }
 
+      const actionKey = `create-bead:${workspacePath}`;
+      if (!this.beginAction(actionKey, "Bead creation")) {
+        return;
+      }
       try {
+        await this.assertWorkspaceWriteCapability(workspacePath);
         await this.promptAndCreateBead(workspacePath);
       } catch (error) {
         const messageText = error instanceof Error ? error.message : "Unable to create bead.";
         vscode.window.showErrorMessage(messageText);
+      } finally {
+        this.finishAction(actionKey);
       }
       return;
     }
@@ -741,16 +799,20 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         return;
       }
 
-      const confirmation = await vscode.window.showWarningMessage(
-        `Close bead ${issueId}${message.title ? `: ${message.title}` : ""}?`,
-        { modal: true },
-        "Close"
-      );
-      if (confirmation !== "Close") {
+      const actionKey = `close-bead:${workspacePath}:${issueId}`;
+      if (!this.beginAction(actionKey, `Closing bead ${issueId}`)) {
         return;
       }
-
       try {
+        await this.assertWorkspaceWriteCapability(workspacePath);
+        const confirmation = await vscode.window.showWarningMessage(
+          `Close bead ${issueId}${message.title ? `: ${message.title}` : ""}?`,
+          { modal: true },
+          "Close"
+        );
+        if (confirmation !== "Close") {
+          return;
+        }
         await this.runBdCommand(["close", issueId], workspacePath);
         await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
         await this.refresh();
@@ -758,6 +820,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       } catch (error) {
         const messageText = error instanceof Error ? error.message : "Unable to close bead.";
         vscode.window.showErrorMessage(messageText);
+      } finally {
+        this.finishAction(actionKey);
       }
       return;
     }
@@ -778,6 +842,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         return;
       }
 
+      const actionKey = `start-bead:${workspacePath}:${issueId}`;
+      if (!this.beginAction(actionKey, `Starting bead ${issueId}`)) {
+        return;
+      }
       try {
         await this.autoAssignAndStartBead(
           workspacePath,
@@ -792,6 +860,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         const messageText =
           error instanceof Error ? error.message : "Unable to assign and start bead.";
         vscode.window.showErrorMessage(messageText);
+      } finally {
+        this.finishAction(actionKey);
       }
       return;
     }
@@ -809,6 +879,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         return;
       }
 
+      const actionKey = `start-parallel:${workspacePath}`;
+      if (!this.beginAction(actionKey, "Parallel AI start")) {
+        return;
+      }
       try {
         const outcomes = await this.startParallelBeads(
           workspacePath,
@@ -845,6 +919,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           },
           sourceWebview
         );
+      } finally {
+        this.finishAction(actionKey);
       }
       return;
     }
@@ -865,6 +941,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         return;
       }
 
+      const actionKey = `merge-parallel:${workspacePath}:${issueId}`;
+      if (!this.beginAction(actionKey, `Merging work for ${issueId}`)) {
+        return;
+      }
       try {
         await this.mergeParallelPullRequests(
           workspacePath,
@@ -876,6 +956,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         const messageText =
           error instanceof Error ? error.message : "Unable to merge parallel PRs.";
         vscode.window.showErrorMessage(messageText);
+      } finally {
+        this.finishAction(actionKey);
       }
     }
   }
@@ -1930,6 +2012,18 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       throw new Error(
         "Trust this workspace before starting AI work, creating worktrees, or updating Beads."
       );
+    }
+  }
+
+  private async assertWorkspaceWriteCapability(workspacePath: string) {
+    const executableStatus = await checkExecutable(getConfig().bdPath());
+    const capability = await probeBeadsWriteCapability(
+      executableStatus.available,
+      executableStatus.message,
+      (args) => this.runBdCapabilityProbe(args, workspacePath)
+    );
+    if (!capability.supported) {
+      throw new Error(`Beads cannot be updated safely: ${capability.reason}`);
     }
   }
 
