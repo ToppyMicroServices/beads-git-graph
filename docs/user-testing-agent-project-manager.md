@@ -267,17 +267,19 @@ browser page. It verifies user-visible source behavior, but it does not exercise
 ## Packaged VSIX result — 2026-07-24; rebuilt 2026-07-28
 
 - **Artifact:** `beads-git-graph-0.4.20260710.vsix`, SHA-256
-  `ad2b3fc74ced00c9c523214c078dc1f1d9aef12ee251a4fbc216f9c9ac338df9`.
+  `60d90d6bef3df4b89ccf2a62eacb5a2bb6f3eb2fc815b4e423aebd014b063e6d`.
 - **Package inspection:** the current artifact contains provider/model selection, Host-side
   readiness/schema/dependency checks, response-artifact preservation, bounded parallel requests,
-  pointer-centered Graph zoom, and incremental refresh handling. VSCE rewrote the README screenshot
+  pointer-centered Graph zoom, normal-drag pan, dependency and parent-child line rendering, static
+  Sync warning styling, and keyed incremental refresh handling. VSCE rewrote the README screenshot
   to the repository asset URL.
 - **Install/activation boundary:** a package built immediately before the final Host safety changes
   installed as `ToppyMicroServices.beads-git-graph@0.4.20260710` in an isolated extension directory
   and opened the Beads webview in an isolated VS Code profile. The final artifact above was rebuilt
-  and installed into a new isolated extension/profile directory; `code --list-extensions
---show-versions` confirmed `toppymicroservices.beads-git-graph@0.4.20260710`. A new GUI Extension
-  Host launch was not completed in this run.
+  and installed into new isolated extension/profile directories; the latest
+  `code --list-extensions --show-versions` check confirmed
+  `toppymicroservices.beads-git-graph@0.4.20260710`. A new GUI Extension Host launch was not
+  completed in this run.
 - **Plan observation:** in an empty workspace, **Load example** rendered three tasks, two
   dependencies, two requested-model transitions, `research -> implement -> review` as Critical
   Path, and eight ordered mutations. Import remained disabled because no initialized Beads
@@ -318,6 +320,20 @@ browser page. It verifies user-visible source behavior, but it does not exercise
   persisted interaction fields, and the full-render fallback.
 - **Evidence level:** compiled-source browser preview plus Vitest/source assertions. PM-006D remains
   pending because this scenario was not rerun in an installed Extension Host.
+
+## Graph pan, relationship line, and stable-control result — 2026-07-28
+
+- **Observed:** after zooming from Fit to `142%`, normal drag changed the Graph transform by
+  `-200 px` horizontally and `-140 px` vertically without opening the box-zoom selection.
+- **Observed:** the fixture rendered two execution-dependency arrows and one dashed parent-child
+  line. All three remained present after a host render update.
+- **Observed:** the focused Fit button remained the same DOM node with `0 px` position drift while
+  the task title changed to the refreshed value. The Sync warning stayed visually static with
+  `animation-name: none`.
+- **Additional checks:** normal left drag maps to pan, Option/Alt-left drag maps to box zoom, middle
+  drag remains pan, and interactive controls do not start a graph gesture.
+- **Evidence level:** compiled-source browser interaction plus pure gesture/transform tests and
+  source assertions. Installed-VSIX repetition remains part of PM-006D/MAN-14.
 
 ## Extension Host and manual checks
 
@@ -484,7 +500,8 @@ fixture between state-changing scenarios.
   Refresh.
 - **Expected:** data updates without a Table flash or full-page flicker; the active mode, filter,
   details, graph transform, sorting, collapse, and scroll remain stable; the open details show the
-  updated title; a superseded refresh cannot restore older task data.
+  updated title; focused controls do not move or flash; dependency and parent-child lines remain
+  visible; a superseded refresh cannot restore older task data.
 - **Evidence:** before/after screenshots or recording, fixture revisions with timestamps, and the
   Extension Host console log.
 

@@ -21,8 +21,9 @@ before approving an import or starting work.
 - Lets you switch between Git Graph and Beads from the toolbar
 - Lets you refresh, create, close, and sync Beads items inside VS Code
 - Shows optional parallel, AI provider/model, response artifact, SSOT/context, worktree, branch, PR, check, and sync-risk hints on Beads items
-- Shows a Beads execution map with Critical Path, dependency edges, parent context, merge/worktree risk, Start AI, Start Parallel, and merge actions
-- Zooms the execution map around the location under the pointer and preserves manual zoom when switching views or resizing
+- Shows a Beads execution map with Critical Path, dependency arrows, dashed parent-child lines, merge/worktree risk, Start AI, Start Parallel, and merge actions
+- Zooms the execution map around the location under the pointer, pans with normal drag, box-zooms
+  with Option/Alt-drag, and preserves the transform when switching views, resizing, or refreshing
 - Refreshes task data in place while preserving the selected view, open details, filters, sorting, collapsed groups, scroll position, and graph transform
 - Adds a Manage view that groups recorded work into Needs attention, Review, Recorded in progress, Queue, and Done
 - Adds an AI Plan Draft workflow that turns a goal into editable tasks, then validates and previews dependencies, Critical Path, parallel groups, requested provider/model transitions, and exact Beads mutations before import

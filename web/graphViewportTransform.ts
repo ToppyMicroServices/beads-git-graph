@@ -8,6 +8,22 @@ export interface GraphSize {
   height: number;
 }
 
+export type GraphPointerGesture = "pan" | "select" | "none";
+
+export function getGraphPointerGesture(
+  button: number,
+  altKey: boolean,
+  interactiveTarget: boolean
+): GraphPointerGesture {
+  if (interactiveTarget) {
+    return "none";
+  }
+  if (button === 0) {
+    return altKey ? "select" : "pan";
+  }
+  return button === 1 ? "pan" : "none";
+}
+
 export function computeAnchoredGraphPan(
   currentPan: GraphPoint,
   previousZoom: number,

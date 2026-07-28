@@ -577,7 +577,7 @@ function renderBeadsDependencyGraph(
       ? ""
       : `<div class="graphIssueStack">${dependencyWarningHtml}${mergeRiskHtml}</div>`;
 
-  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">Point anywhere and wheel to zoom there · Drag a box to zoom · Shift+drag to pan · Double-click to fit</div></div><div class="graphHeaderActions"><div class="workspaceSummary"><span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="fit">Fit</button></div></div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to zoom, Shift drag to pan, arrow keys to pan, and press zero to fit."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
+  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">Point anywhere and wheel to zoom there · Drag to pan · Option/Alt+drag a box to zoom · Double-click to fit</div></div><div class="graphHeaderActions"><div class="workspaceSummary"><span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="fit">Fit</button></div></div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to pan, Option or Alt drag a box to zoom, use arrow keys to pan, and press zero to fit."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
 }
 
 export function renderBeadsWebviewHtml(
@@ -954,9 +954,8 @@ button:focus-visible,select:focus-visible,.graphScroller:focus-visible{outline:1
 .actionBtn:hover:not(:disabled){background:rgba(128,128,128,.2);}
 .actionBtn:disabled,.workspaceAction:disabled,.warningAction:disabled{opacity:.45;cursor:default;}
 #syncBeads{min-width:68px;}
-body[data-bd-available="1"][data-has-sync-warnings="1"] #syncBeads{border-color:var(--vscode-editorWarning-foreground, #f59e0b);background:rgba(245,158,11,.18);box-shadow:0 0 0 0 rgba(245,158,11,.32);animation:syncPulse 1.4s ease-in-out infinite;}
+body[data-bd-available="1"][data-has-sync-warnings="1"] #syncBeads{border-color:var(--vscode-editorWarning-foreground, #f59e0b);background:rgba(245,158,11,.18);}
 body[data-bd-available="1"][data-has-sync-warnings="1"] #syncBeads .toolbarActionLabel{font-weight:700;}
-@keyframes syncPulse{0%{box-shadow:0 0 0 0 rgba(245,158,11,.34);}70%{box-shadow:0 0 0 8px rgba(245,158,11,0);}100%{box-shadow:0 0 0 0 rgba(245,158,11,0);}}
 #openGitGraph{min-width:74px;}
 #refresh{width:80px;font-size:14px;line-height:1;}
 .toolbarIcon{display:block;color:var(--vscode-button-foreground);}
@@ -1156,7 +1155,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphWarningBand span{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border-radius:6px;border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.12);color:var(--vscode-editorWarning-foreground,#f59e0b);font-size:10px;font-weight:650;}
 .graphRiskBand{display:flex;flex-wrap:wrap;gap:4px;margin:0;padding:0 8px 8px;max-height:92px;overflow:auto;}
 .graphRiskBand span{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border-radius:6px;border:1px solid rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:var(--vscode-errorForeground,#ef4444);font-size:10px;font-weight:650;}
-.graphScroller{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;background:var(--vscode-editor-background);cursor:crosshair;user-select:none;}
+.graphScroller{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;background:var(--vscode-editor-background);cursor:grab;user-select:none;}
 .graphScroller.isPanning{cursor:grabbing;}
 .graphCanvas{position:relative;min-width:100%;min-height:100%;overflow:hidden;background-color:var(--vscode-editor-background);background-image:linear-gradient(rgba(128,128,128,.1) 1px, transparent 1px),linear-gradient(90deg, rgba(128,128,128,.1) 1px, transparent 1px);background-size:48px 48px;}
 .graphContent{position:absolute;left:0;top:0;transform:translate(var(--graph-pan-x,0px),var(--graph-pan-y,0px)) scale(var(--graph-zoom,1));transform-origin:0 0;}
@@ -1164,6 +1163,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .dependencyOverlay{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none;overflow:visible;}
 .dependencyPath{fill:none;stroke:rgba(148,163,184,.8);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
 .dependencyPath.criticalDependencyPath{stroke:var(--vscode-charts-pink,#ec4899);stroke-width:2;}
+.graphParentPath{fill:none;stroke:var(--vscode-textLink-foreground,#3b82f6);stroke-width:1.4;stroke-dasharray:6 5;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
 .dependencyArrowHead{fill:rgba(148,163,184,.88);}
 .criticalDependencyArrowHead{fill:var(--vscode-charts-pink,#ec4899);}
 .graphLevelGuide{position:absolute;top:0;bottom:18px;left:var(--graph-guide-x);z-index:0;border-left:1px dashed rgba(128,128,128,.28);}

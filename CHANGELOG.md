@@ -23,6 +23,10 @@
 
 ### Fixed
 
+- Stop animating the Sync warning button and preserve existing controls during in-place task
+  updates so buttons do not flash, move, or lose focus.
+- Make normal Graph dragging pan the zoomed canvas, keep box zoom on Option/Alt-drag, and render
+  both execution-dependency arrows and dashed parent-child lines after refresh.
 - Stop reporting a successful Beads sync when the installed CLI does not provide `bd sync`.
 - Disable Graph-view Start AI until `bd ready` confirms the task and its dependencies.
 - Recheck `bd ready` before worktree preparation and again immediately before Beads mutation.

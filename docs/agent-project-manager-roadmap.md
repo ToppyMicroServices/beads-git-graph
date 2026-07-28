@@ -227,9 +227,9 @@ workspace.
 - [x] **PM-006A — Replace normal full-page reloads with incremental data updates**
   - **Input:** the existing render signature, Beads file watchers, and compiled webview.
   - **Edit target:** `src/beadsView.ts`, `src/beadsProtocol.ts`, and `web/beadsMain.ts`.
-  - **Done/test:** an initial render still loads the complete document; later data changes replace
-    only generated workspace/warning content, and oversized or undeliverable updates use a safe
-    full-render fallback.
+  - **Done/test:** an initial render still loads the complete document; later data changes
+    reconcile generated workspace/warning content while preserving unchanged controls, and
+    oversized or undeliverable updates use a safe full-render fallback.
   - **Depends:** BASE-001.
   - **Tier:** capable.
 - [x] **PM-006B — Make concurrent refreshes latest-wins**
@@ -247,6 +247,17 @@ workspace.
     open task drawer while updating the drawer to the refreshed task title; no new browser error is
     recorded.
   - **Depends:** PM-006A.
+  - **Tier:** capable.
+- [x] **PM-006E — Stabilize controls and Graph relationships during refresh**
+  - **Input:** a warning state, dependency and parent-child task relationships, and a changed task
+    title while Graph is open.
+  - **Edit target:** keyed webview reconciliation, dynamic listener binding, Graph gestures, and
+    SVG relationship overlays.
+  - **Done/test:** a compiled-source browser check keeps the Fit button as the same focused DOM
+    node with `0 px` position drift while updating the task title; normal drag pans at `142%`,
+    two dependency arrows and one parent-child line remain visible, and no browser error is
+    recorded.
+  - **Depends:** PM-006A through PM-006C.
   - **Tier:** capable.
 - [ ] **PM-006D — Repeat refresh continuity in an installed VSIX**
   - **Input:** a freshly packaged VSIX and a disposable workspace whose issue fixture changes while

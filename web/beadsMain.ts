@@ -26,7 +26,8 @@ import {
 import {
   clampGraphPanForVisibility,
   computeAnchoredGraphPan,
-  computeCenteredGraphPan
+  computeCenteredGraphPan,
+  getGraphPointerGesture
 } from "./graphViewportTransform";
 import { createPlanDraftController, type PlanDraftPreviewState } from "./planDraftController";
 
@@ -205,6 +206,7 @@ let graphTransformSaveTimer: number | null = null;
 let scrollStateSaveTimer: number | null = null;
 const graphZoomAnchors = new WeakMap<HTMLElement, GraphZoomAnchor>();
 const initializedGraphPanes = new WeakSet<HTMLElement>();
+const dynamicallyBoundElements = new WeakSet<EventTarget>();
 let rowClickTimer: number | null = null;
 const collapsedIds = new Set(normalizeStringList(initialWebviewState?.collapsedIds));
 const collapsedEpicIds = new Set(normalizeStringList(initialWebviewState?.collapsedEpicIds));
@@ -709,9 +711,18 @@ function restoreSelectedIssue(issue: SelectedIssueState | null) {
 
 function updatePlanWorkspaceOptions(nextSelect: HTMLSelectElement) {
   const preferredWorkspace = planDraftWorkspace.value || vscode.getState()?.planWorkspacePath || "";
-  planDraftWorkspace.replaceChildren(
-    ...Array.from(nextSelect.options).map((option) => option.cloneNode(true))
-  );
+  const currentOptions = Array.from(planDraftWorkspace.options)
+    .map((option) => option.outerHTML)
+    .join("");
+  const nextOptions = Array.from(nextSelect.options)
+    .map((option) => option.outerHTML)
+    .join("");
+  const optionsChanged = currentOptions !== nextOptions;
+  if (optionsChanged) {
+    planDraftWorkspace.replaceChildren(
+      ...Array.from(nextSelect.options).map((option) => option.cloneNode(true))
+    );
+  }
   if (
     typeof preferredWorkspace === "string" &&
     Array.from(planDraftWorkspace.options).some((option) => option.value === preferredWorkspace)
@@ -722,6 +733,150 @@ function updatePlanWorkspaceOptions(nextSelect: HTMLSelectElement) {
     activePlanGenerationRequestId !== null || planDraftWorkspace.value === "";
   generatePlanDraftWithAi.disabled =
     activePlanGenerationRequestId !== null || planDraftWorkspace.value === "";
+  return optionsChanged;
+}
+
+const STABLE_RENDER_CLASSES = new Set([
+  "workspaceHeader",
+  "tableWrap",
+  "graphPane",
+  "graphHeader",
+  "graphIssueStack",
+  "graphMapFrame",
+  "graphMapHeader",
+  "graphScroller",
+  "graphCanvas",
+  "graphContent",
+  "dependencyOverlay",
+  "graphNodes",
+  "agentWorkQueue"
+]);
+
+function getStableRenderKey(node: Node) {
+  if (!(node instanceof Element)) {
+    return null;
+  }
+  if (node.id !== "") {
+    return `${node.tagName}#${node.id}`;
+  }
+  const workspacePath = node.getAttribute("data-workspace-path");
+  if (
+    workspacePath !== null &&
+    (node.tagName === "SECTION" || node.classList.contains("graphPane"))
+  ) {
+    return `${node.tagName}:workspace:${workspacePath}:${node.className}`;
+  }
+  const issueId = node.getAttribute("data-id");
+  if (node.classList.contains("beadRow") && issueId !== null) {
+    return `row:${workspacePath ?? ""}:${issueId}`;
+  }
+  const graphId = node.getAttribute("data-graph-id");
+  if (graphId !== null) {
+    return `graph-node:${graphId}`;
+  }
+  if (node.classList.contains("graphEdge")) {
+    return `graph-edge:${node.getAttribute("data-from-id") ?? ""}:${node.getAttribute("data-to-id") ?? ""}`;
+  }
+  for (const className of STABLE_RENDER_CLASSES) {
+    if (node.classList.contains(className)) {
+      return `${node.tagName}.${className}`;
+    }
+  }
+  return null;
+}
+
+function canReconcileRenderNode(currentNode: Node, nextNode: Node) {
+  if (currentNode.nodeType !== nextNode.nodeType) {
+    return false;
+  }
+  if (!(currentNode instanceof Element) || !(nextNode instanceof Element)) {
+    return true;
+  }
+  if (currentNode.tagName !== nextNode.tagName) {
+    return false;
+  }
+  const currentKey = getStableRenderKey(currentNode);
+  const nextKey = getStableRenderKey(nextNode);
+  return currentKey === null && nextKey === null ? true : currentKey === nextKey;
+}
+
+function reconcileRenderAttributes(currentElement: Element, nextElement: Element) {
+  for (const attribute of Array.from(currentElement.attributes)) {
+    if (!nextElement.hasAttribute(attribute.name)) {
+      currentElement.removeAttribute(attribute.name);
+    }
+  }
+  for (const attribute of Array.from(nextElement.attributes)) {
+    if (currentElement.getAttribute(attribute.name) !== attribute.value) {
+      currentElement.setAttribute(attribute.name, attribute.value);
+    }
+  }
+}
+
+function reconcileRenderNode(currentNode: Node, nextNode: Node) {
+  if (currentNode.nodeType === Node.TEXT_NODE || currentNode.nodeType === Node.COMMENT_NODE) {
+    if (currentNode.nodeValue !== nextNode.nodeValue) {
+      currentNode.nodeValue = nextNode.nodeValue;
+    }
+    return;
+  }
+  if (!(currentNode instanceof Element) || !(nextNode instanceof Element)) {
+    return;
+  }
+  reconcileRenderAttributes(currentNode, nextNode);
+  reconcileRenderChildren(currentNode, nextNode);
+}
+
+function reconcileRenderChildren(currentParent: Element, nextParent: Element) {
+  const keyedCurrentNodes = new Map<string, Node>();
+  for (const child of Array.from(currentParent.childNodes)) {
+    const key = getStableRenderKey(child);
+    if (key !== null) {
+      keyedCurrentNodes.set(key, child);
+    }
+  }
+
+  const retainedNodes = new Set<Node>();
+  let insertionPoint = currentParent.firstChild;
+  for (const nextChild of Array.from(nextParent.childNodes)) {
+    const key = getStableRenderKey(nextChild);
+    let currentChild = key === null ? null : (keyedCurrentNodes.get(key) ?? null);
+    if (
+      currentChild === null &&
+      insertionPoint !== null &&
+      !retainedNodes.has(insertionPoint) &&
+      getStableRenderKey(insertionPoint) === null &&
+      canReconcileRenderNode(insertionPoint, nextChild)
+    ) {
+      currentChild = insertionPoint;
+    }
+
+    if (currentChild === null || !canReconcileRenderNode(currentChild, nextChild)) {
+      currentChild = nextChild.cloneNode(true);
+      currentParent.insertBefore(currentChild, insertionPoint);
+    } else {
+      if (currentChild !== insertionPoint) {
+        currentParent.insertBefore(currentChild, insertionPoint);
+      }
+      reconcileRenderNode(currentChild, nextChild);
+    }
+    retainedNodes.add(currentChild);
+    insertionPoint = currentChild.nextSibling;
+  }
+
+  for (const child of Array.from(currentParent.childNodes)) {
+    if (!retainedNodes.has(child)) {
+      child.remove();
+    }
+  }
+}
+
+function reconcileRenderRegion(currentRegion: Element, nextRegion: Element) {
+  if (currentRegion.innerHTML === nextRegion.innerHTML) {
+    return false;
+  }
+  reconcileRenderChildren(currentRegion, nextRegion);
+  return true;
 }
 
 function applyBeadsRenderUpdate(
@@ -750,20 +905,22 @@ function applyBeadsRenderUpdate(
   const scrollY = window.scrollY;
   clearRowClickTimer();
   closeContextMenu();
+  removeExpandedDetails();
+  removeGraphSelectedDetails();
   selectedRow = null;
   expandedDetailsRow = null;
   graphSelection = null;
   graphPanGesture = null;
 
-  beadsWorkspaceViews.innerHTML = nextWorkspaceViews.innerHTML;
-  beadsWarnings.innerHTML = nextWarnings.innerHTML;
-  beadsErrors.innerHTML = nextErrors.innerHTML;
+  reconcileRenderRegion(beadsWorkspaceViews, nextWorkspaceViews);
+  reconcileRenderRegion(beadsWarnings, nextWarnings);
+  reconcileRenderRegion(beadsErrors, nextErrors);
   bdAvailable = parsed.body.dataset.bdAvailable === "1";
   hasSyncWarnings = parsed.body.dataset.hasSyncWarnings === "1";
   document.body.dataset.bdAvailable = bdAvailable ? "1" : "0";
   document.body.dataset.hasSyncWarnings = hasSyncWarnings ? "1" : "0";
   updateSyncButtonState();
-  updatePlanWorkspaceOptions(nextPlanWorkspace);
+  const planWorkspaceOptionsChanged = updatePlanWorkspaceOptions(nextPlanWorkspace);
 
   bindDynamicContent();
   for (const row of getVisibleBeadRows()) {
@@ -772,7 +929,9 @@ function applyBeadsRenderUpdate(
   restoreSelectedIssue(selectedIssue);
   applySort();
   applyFilters();
-  renderCurrentPlanPreview();
+  if (planWorkspaceOptionsChanged) {
+    renderCurrentPlanPreview();
+  }
   applyViewMode(activeViewMode);
 
   window.requestAnimationFrame(() => {
@@ -780,6 +939,7 @@ function applyBeadsRenderUpdate(
     if (activeViewMode === "graph") {
       refreshGraphPresentation();
       updateGraphViewportPreservingTransform();
+      renderDependencyGraphOverlays();
     }
   });
 }
@@ -2102,7 +2262,10 @@ function zoomGraphToSelection(selection: GraphSelectionState) {
 }
 
 function beginGraphSelection(pane: HTMLElement, event: PointerEvent) {
-  if (event.button !== 0 || isGraphInteractiveTarget(event.target)) {
+  if (
+    getGraphPointerGesture(event.button, event.altKey, isGraphInteractiveTarget(event.target)) !==
+    "select"
+  ) {
     return;
   }
 
@@ -2165,8 +2328,8 @@ function finishGraphSelection(pane: HTMLElement, event: PointerEvent) {
 
 function beginGraphPan(pane: HTMLElement, event: PointerEvent) {
   if (
-    isGraphInteractiveTarget(event.target) ||
-    (event.button !== 1 && !(event.button === 0 && event.shiftKey))
+    getGraphPointerGesture(event.button, event.altKey, isGraphInteractiveTarget(event.target)) !==
+    "pan"
   ) {
     return false;
   }
@@ -2225,8 +2388,17 @@ function finishGraphPan(pane: HTMLElement, event: PointerEvent) {
 
 function handleGraphPointerDown(pane: HTMLElement, event: PointerEvent) {
   rememberGraphZoomAnchor(pane, event.clientX, event.clientY);
-  if (!beginGraphPan(pane, event)) {
+  const gesture = getGraphPointerGesture(
+    event.button,
+    event.altKey,
+    isGraphInteractiveTarget(event.target)
+  );
+  if (gesture === "select") {
     beginGraphSelection(pane, event);
+    return;
+  }
+  if (gesture === "pan") {
+    beginGraphPan(pane, event);
   }
 }
 
@@ -2312,6 +2484,27 @@ function renderDependencyGraphOverlays() {
     const markerId = `dependencyArrow-${paneIndex}`;
     const criticalMarkerId = `criticalDependencyArrow-${paneIndex}`;
     const markerDefs = `<defs><marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="dependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${criticalMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="criticalDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker></defs>`;
+    const getConnectionPath = (fromNode: HTMLElement, toNode: HTMLElement) => {
+      const fromRect = fromNode.getBoundingClientRect();
+      const toRect = toNode.getBoundingClientRect();
+      const x1 = (fromRect.right - contentRect.left) / transform.zoom;
+      const y1 = (fromRect.top - contentRect.top + fromRect.height / 2) / transform.zoom;
+      const x2 = (toRect.left - contentRect.left) / transform.zoom;
+      const y2 = (toRect.top - contentRect.top + toRect.height / 2) / transform.zoom;
+      const gap = Math.max(18, Math.abs(x2 - x1) * 0.34);
+      return x2 >= x1
+        ? `M${x1.toFixed(1)} ${y1.toFixed(1)} C${(x1 + gap).toFixed(1)} ${y1.toFixed(1)} ${(x2 - gap).toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`
+        : `M${x1.toFixed(1)} ${y1.toFixed(1)} C${(x1 + gap).toFixed(1)} ${y1.toFixed(1)} ${(x1 + gap).toFixed(1)} ${(y1 + y2) / 2} ${(x1 + 12).toFixed(1)} ${(y1 + y2) / 2} S${(x2 - gap).toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+    };
+    let parentPaths = "";
+    for (const childNode of nodesById.values()) {
+      const parentId = childNode.dataset.parentId || "";
+      const parentNode = nodesById.get(parentId);
+      if (parentNode === undefined) {
+        continue;
+      }
+      parentPaths += `<path class="graphParentPath" d="${getConnectionPath(parentNode, childNode)}" />`;
+    }
     let paths = "";
     for (const edge of Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge"))) {
       const fromNode = nodesById.get(edge.dataset.fromId || "");
@@ -2320,22 +2513,12 @@ function renderDependencyGraphOverlays() {
         continue;
       }
 
-      const fromRect = fromNode.getBoundingClientRect();
-      const toRect = toNode.getBoundingClientRect();
-      const x1 = (fromRect.right - contentRect.left) / transform.zoom;
-      const y1 = (fromRect.top - contentRect.top + fromRect.height / 2) / transform.zoom;
-      const x2 = (toRect.left - contentRect.left) / transform.zoom;
-      const y2 = (toRect.top - contentRect.top + toRect.height / 2) / transform.zoom;
-      const gap = Math.max(18, Math.abs(x2 - x1) * 0.34);
-      const d =
-        x2 >= x1
-          ? `M${x1.toFixed(1)} ${y1.toFixed(1)} C${(x1 + gap).toFixed(1)} ${y1.toFixed(1)} ${(x2 - gap).toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`
-          : `M${x1.toFixed(1)} ${y1.toFixed(1)} C${(x1 + gap).toFixed(1)} ${y1.toFixed(1)} ${(x1 + gap).toFixed(1)} ${(y1 + y2) / 2} ${(x1 + 12).toFixed(1)} ${(y1 + y2) / 2} S${(x2 - gap).toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+      const d = getConnectionPath(fromNode, toNode);
       const criticalClass = edge.dataset.critical === "1" ? " criticalDependencyPath" : "";
       const arrowId = edge.dataset.critical === "1" ? criticalMarkerId : markerId;
       paths += `<path class="dependencyPath${criticalClass}" marker-end="url(#${arrowId})" d="${d}" />`;
     }
-    overlay.innerHTML = markerDefs + paths;
+    overlay.innerHTML = markerDefs + parentPaths + paths;
   }
 }
 
@@ -2568,28 +2751,35 @@ window.addEventListener("scroll", () => {
 function bindGraphPanes() {
   for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
     const scroller = getGraphScroller(pane);
-    scroller?.addEventListener("scroll", () => {
-      saveGraphScroll(pane);
-    });
-    scroller?.addEventListener("wheel", (event) => zoomGraphFromWheel(pane, event), {
-      passive: false
-    });
-    scroller?.addEventListener("pointerdown", (event) => handleGraphPointerDown(pane, event));
-    scroller?.addEventListener("pointermove", (event) => handleGraphPointerMove(pane, event));
-    scroller?.addEventListener("pointerup", (event) => handleGraphPointerEnd(pane, event));
-    scroller?.addEventListener("pointercancel", (event) => handleGraphPointerEnd(pane, event));
-    scroller?.addEventListener("keydown", (event) => handleGraphKeydown(pane, event));
-    scroller?.addEventListener("dblclick", (event) => {
-      if (isGraphInteractiveTarget(event.target)) {
-        return;
-      }
-      event.preventDefault();
-      fitGraphToPane(pane);
-      renderDependencyGraphOverlays();
-    });
+    if (scroller !== null && !dynamicallyBoundElements.has(scroller)) {
+      dynamicallyBoundElements.add(scroller);
+      scroller.addEventListener("scroll", () => {
+        saveGraphScroll(pane);
+      });
+      scroller.addEventListener("wheel", (event) => zoomGraphFromWheel(pane, event), {
+        passive: false
+      });
+      scroller.addEventListener("pointerdown", (event) => handleGraphPointerDown(pane, event));
+      scroller.addEventListener("pointermove", (event) => handleGraphPointerMove(pane, event));
+      scroller.addEventListener("pointerup", (event) => handleGraphPointerEnd(pane, event));
+      scroller.addEventListener("pointercancel", (event) => handleGraphPointerEnd(pane, event));
+      scroller.addEventListener("keydown", (event) => handleGraphKeydown(pane, event));
+      scroller.addEventListener("dblclick", (event) => {
+        if (isGraphInteractiveTarget(event.target)) {
+          return;
+        }
+        event.preventDefault();
+        fitGraphToPane(pane);
+        renderDependencyGraphOverlays();
+      });
+    }
     for (const button of Array.from(
       pane.querySelectorAll<HTMLButtonElement>("button[data-graph-action]")
     )) {
+      if (dynamicallyBoundElements.has(button)) {
+        continue;
+      }
+      dynamicallyBoundElements.add(button);
       button.addEventListener("click", () => {
         const action = button.dataset.graphAction;
         if (action === "in") {
@@ -2622,6 +2812,10 @@ function bindDynamicContent() {
   for (const button of Array.from(
     document.querySelectorAll<HTMLButtonElement>("button[data-sync-workspace]")
   )) {
+    if (dynamicallyBoundElements.has(button)) {
+      continue;
+    }
+    dynamicallyBoundElements.add(button);
     button.addEventListener("click", () => {
       const workspacePath = button.dataset.syncWorkspace || "";
       if (!bdAvailable || workspacePath === "") {
@@ -2633,6 +2827,10 @@ function bindDynamicContent() {
   for (const button of Array.from(
     document.querySelectorAll<HTMLButtonElement>(".startParallelBeads")
   )) {
+    if (dynamicallyBoundElements.has(button)) {
+      continue;
+    }
+    dynamicallyBoundElements.add(button);
     button.addEventListener("click", () => {
       const workspacePath = button.dataset.startParallelWorkspace || "";
       const items = decodeEncodedJson<
@@ -2667,6 +2865,10 @@ function bindDynamicContent() {
   for (const button of Array.from(
     document.querySelectorAll<HTMLButtonElement>(".mergeParallelPrs")
   )) {
+    if (dynamicallyBoundElements.has(button)) {
+      continue;
+    }
+    dynamicallyBoundElements.add(button);
     button.addEventListener("click", () => {
       const issueId = button.dataset.mergeId || "";
       const workspacePath = button.dataset.mergeWorkspace || "";
@@ -2693,6 +2895,10 @@ function bindDynamicContent() {
     });
   }
   for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".sortToggle"))) {
+    if (dynamicallyBoundElements.has(button)) {
+      continue;
+    }
+    dynamicallyBoundElements.add(button);
     button.addEventListener("click", () => {
       const key = (button.dataset.sortKey as SortKey | undefined) || "updated";
       sortState = sortState.key === key ? { key, desc: !sortState.desc } : { key, desc: true };
@@ -2700,6 +2906,10 @@ function bindDynamicContent() {
     });
   }
   for (const row of Array.from(document.querySelectorAll<BeadRow>("tbody tr.beadRow"))) {
+    if (dynamicallyBoundElements.has(row)) {
+      continue;
+    }
+    dynamicallyBoundElements.add(row);
     const toggleButton = row.querySelector<HTMLButtonElement>(".collapseToggle");
     const detailsButton = row.querySelector<HTMLButtonElement>(".beadDetailsButton");
 

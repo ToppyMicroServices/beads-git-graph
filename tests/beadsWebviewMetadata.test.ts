@@ -135,7 +135,9 @@ describe("beads webview presentation metadata", () => {
       ".graphCanvas{position:relative;min-width:100%;min-height:100%;overflow:hidden;"
     );
     expect(beadsWebview).toContain("graphZoomSelection");
-    expect(beadsWebview).toContain("cursor:crosshair");
+    expect(beadsWebview).toContain("cursor:grab");
+    expect(beadsWebview).toContain("Drag to pan");
+    expect(beadsWebview).toContain("Option/Alt+drag a box to zoom");
     expect(beadsWebview).toContain("translate(var(--graph-pan-x,0px),var(--graph-pan-y,0px))");
     expect(beadsWebview).not.toContain("min-height:620px");
     expect(beadsWebview).not.toContain("min-height:560px");
@@ -192,6 +194,9 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("saveGraphScroll");
     expect(beadsMain).toContain("setGraphZoom");
     expect(beadsMain).toContain("beginGraphSelection");
+    expect(beadsMain).toContain("getGraphPointerGesture");
+    expect(beadsMain).toContain('gesture === "select"');
+    expect(beadsMain).toContain('gesture === "pan"');
     expect(beadsMain).toContain("zoomGraphToSelection");
     expect(beadsMain).toContain("GRAPH_SELECTION_MIN_SIZE");
     expect(beadsMain).toContain("GRAPH_ZOOM_MIN");
@@ -230,6 +235,9 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain('target.closest(".assignStartBead")');
     expect(beadsMain).toContain("marker-end");
     expect(beadsMain).toContain("criticalDependencyArrow");
+    expect(beadsMain).toContain('class="graphParentPath"');
+    expect(beadsMain).toContain("childNode.dataset.parentId");
+    expect(beadsWebview).toContain(".graphParentPath{");
     expect(beadsMain).toContain('markerWidth="6.5"');
     expect(beadsMain).toContain("Math.max(18, Math.abs(x2 - x1) * 0.34)");
     expect(beadsMain).toContain(
@@ -255,7 +263,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("visibleRowIds.has(node.dataset.graphId");
     expect(beadsMain).toContain('querySelectorAll<HTMLElement>(".graphPane")');
     expect(beadsMain).toContain('querySelector<HTMLElement>(".graphScroller")');
-    expect(beadsMain).toContain('scroller?.addEventListener("scroll"');
+    expect(beadsMain).toContain('scroller.addEventListener("scroll"');
     expect(beadsMain).not.toContain("saveGraphScroll(pane);\n    renderDependencyGraphOverlays();");
     expect(beadsMain).toContain("content.style.setProperty");
     expect(beadsMain).toContain("data-graph-action");
@@ -359,7 +367,11 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("generation !== this.refreshGeneration");
     expect(beadsMain).toContain("applyBeadsRenderUpdate");
     expect(beadsMain).toContain("message.generation <= lastRenderGeneration");
-    expect(beadsMain).toContain("beadsWorkspaceViews.innerHTML = nextWorkspaceViews.innerHTML");
+    expect(beadsMain).toContain("reconcileRenderRegion(beadsWorkspaceViews, nextWorkspaceViews)");
+    expect(beadsMain).toContain("reconcileRenderChildren");
+    expect(beadsMain).toContain("dynamicallyBoundElements");
+    expect(beadsMain).not.toContain("beadsWorkspaceViews.innerHTML = nextWorkspaceViews.innerHTML");
+    expect(beadsWebview).not.toContain("syncPulse");
     expect(beadsMain).toContain("restoreSelectedIssue(selectedIssue)");
     expect(beadsMain).toContain("activeFilters?: StatusFilter[]");
     expect(beadsMain).toContain("collapsedEpicIds?: string[]");

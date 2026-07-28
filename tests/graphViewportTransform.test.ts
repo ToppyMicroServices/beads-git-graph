@@ -3,10 +3,24 @@ import { describe, expect, it } from "vitest";
 import {
   clampGraphPanForVisibility,
   computeAnchoredGraphPan,
-  computeCenteredGraphPan
+  computeCenteredGraphPan,
+  getGraphPointerGesture
 } from "../web/graphViewportTransform";
 
 describe("graph viewport transforms", () => {
+  it.each([
+    { button: 0, altKey: false, interactive: false, expected: "pan" },
+    { button: 0, altKey: true, interactive: false, expected: "select" },
+    { button: 1, altKey: false, interactive: false, expected: "pan" },
+    { button: 2, altKey: false, interactive: false, expected: "none" },
+    { button: 0, altKey: false, interactive: true, expected: "none" }
+  ] as const)(
+    "maps button $button, alt=$altKey, interactive=$interactive to $expected",
+    ({ button, altKey, interactive, expected }) => {
+      expect(getGraphPointerGesture(button, altKey, interactive)).toBe(expected);
+    }
+  );
+
   it.each([
     { x: 24.25, y: 18.75 },
     { x: 312.5, y: 184.125 },
