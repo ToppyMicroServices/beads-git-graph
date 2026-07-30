@@ -277,21 +277,21 @@ browser page. It verifies user-visible source behavior, but it does not exercise
 
 ## Packaged VSIX result — 2026-07-24; rebuilt and Host-smoked 2026-07-30
 
-- **Artifact:** `beads-git-graph-0.4.20260710.vsix`, SHA-256
-  `29fe0f386e444e565871ff56e1a470fa553e9bfb4f30cca9e76fb629e63dcdfb`.
+- **Artifact:** `beads-git-graph-0.6.0.vsix`, SHA-256
+  `86b8aa0713883c12ca81053b0df8a85cd799cd3a786756fbe55801cdc523a3da`.
 - **Package inspection:** the current artifact contains provider/model selection, Host-side
   readiness/schema/dependency checks, response-artifact preservation, bounded parallel requests,
   pointer-centered Graph zoom, normal-drag pan, dependency and parent-child line rendering, static
   Sync warning styling, keyed incremental refresh handling, view-specific Details hosts, visible
   parallel-target filtering, relevant capability gating, client/Host duplicate-action guards,
-  fetch-on-Graph-refresh, last-fetch metadata, and explicit local remote-tracking labels. VSCE
-  rewrote the README screenshot to the repository asset URL.
+  fetch-on-Graph-refresh, last-fetch metadata, explicit local remote-tracking labels, and sanitized
+  incremental webview updates. VSCE rewrote the README screenshot to the repository asset URL.
 - **Install/activation boundary:** a package built immediately before the final Host safety changes
-  installed as `ToppyMicroServices.beads-git-graph@0.4.20260710` in an isolated extension directory
+  installed as `ToppyMicroServices.beads-git-graph@0.6.0` in an isolated extension directory
   and opened the Beads webview in an isolated VS Code profile. The final artifact above was rebuilt
   and installed into new isolated extension/profile directories; the latest
   `code --list-extensions --show-versions` check confirmed
-  `toppymicroservices.beads-git-graph@0.4.20260710`. The final artifact then passed an isolated VS
+  `toppymicroservices.beads-git-graph@0.6.0`. The final artifact then passed an isolated VS
   Code 1.127.0 Extension Host smoke: activation, the View/Refresh/Clear Artifacts commands, the
   machine-scoped `bdPath`, the default-enabled Graph fetch setting, and the packaged Restricted Mode
   manifest were asserted before the Host exited with code 0. Restricted Mode interaction and the
