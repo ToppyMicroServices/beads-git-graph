@@ -41,6 +41,9 @@ class GitGraphView {
   private currentBranch: string | null = null;
   private currentRemote: string | null = null;
   private currentRepo!: string;
+  private lastFetchAt: number | null = null;
+  private lastFetchStatus: GG.GitFetchStatus | null = null;
+  private refreshRequestRepo: string | null = null;
 
   private graph: Graph;
   private config: Config;
@@ -52,6 +55,7 @@ class GitGraphView {
 
   private tableElem: HTMLElement;
   private footerElem: HTMLElement;
+  private fetchStatusElem: HTMLElement;
   private repoDropdown: Dropdown;
   private remoteDropdown: Dropdown;
   private branchDropdown: Dropdown;
@@ -74,12 +78,16 @@ class GitGraphView {
     this.graph = new Graph("commitGraph", this.config);
     this.tableElem = document.getElementById("commitTable")!;
     this.footerElem = document.getElementById("footer")!;
+    this.fetchStatusElem = document.getElementById("fetchStatus")!;
     this.repoDropdown = new Dropdown("repoSelect", true, "Repos", (value) => {
       this.currentRepo = value;
       this.maxCommits = this.config.initialLoadCommits;
       this.expandedCommit = null;
       this.currentBranch = null;
       this.currentRemote = this.gitRepos[value].selectedRemote ?? null;
+      this.lastFetchAt = null;
+      this.lastFetchStatus = null;
+      this.renderFetchStatus();
       this.saveState();
       this.refresh(true);
     });
@@ -88,6 +96,7 @@ class GitGraphView {
       this.maxCommits = this.config.initialLoadCommits;
       this.expandedCommit = null;
       this.currentBranch = null;
+      this.renderFetchStatus();
       this.persistRepoState();
       this.saveState();
       this.refresh(true);
@@ -121,7 +130,7 @@ class GitGraphView {
       sendMessage({ command: "focusBeadsView" });
     });
     document.getElementById("refreshBtn")!.addEventListener("click", () => {
-      this.refresh(true);
+      this.requestGraphRefresh();
     });
     this.observeWindowSizeChanges();
     this.observeWebviewStyleChanges();
@@ -146,11 +155,13 @@ class GitGraphView {
         this.currentRepo = prevState.currentRepo;
         this.maxCommits = prevState.maxCommits;
         this.expandedCommit = prevState.expandedCommit;
+        this.lastFetchAt = typeof prevState.lastFetchAt === "number" ? prevState.lastFetchAt : null;
         this.loadBranches(
           prevState.gitBranches,
           prevState.gitBranchHead,
           prevState.gitRemotes,
           prevState.currentRemote,
+          this.lastFetchAt,
           true,
           true
         );
@@ -215,6 +226,7 @@ class GitGraphView {
     branchHead: string | null,
     remotes: string[],
     defaultRemote: string | null,
+    lastFetchAt: number | null,
     hard: boolean,
     isRepo: boolean
   ) {
@@ -222,6 +234,10 @@ class GitGraphView {
       this.triggerLoadBranchesCallback(false, isRepo);
       return;
     }
+    if (lastFetchAt !== this.lastFetchAt && this.lastFetchStatus?.mode === "failed") {
+      this.lastFetchStatus = null;
+    }
+    this.lastFetchAt = lastFetchAt;
     const nextRemote = getPreferredRemote(
       remotes,
       this.gitRepos[this.currentRepo].selectedRemote,
@@ -236,12 +252,14 @@ class GitGraphView {
       this.currentRemote === nextRemote &&
       this.gitBranchHead === branchHead
     ) {
+      this.renderFetchStatus();
       this.triggerLoadBranchesCallback(false, isRepo);
       return;
     }
 
     this.gitRemotes = remotes;
     this.currentRemote = nextRemote;
+    this.renderFetchStatus();
     this.persistRepoState();
     this.updateRemoteControl();
 
@@ -266,7 +284,7 @@ class GitGraphView {
       options.push({
         name:
           this.gitBranches[i].indexOf("remotes/") === 0
-            ? this.gitBranches[i].substring(8)
+            ? `${this.gitBranches[i].substring(8)} (local remote-tracking)`
             : this.gitBranches[i],
         value: this.gitBranches[i]
       });
@@ -398,6 +416,55 @@ class GitGraphView {
     this.requestLoadBranchesAndCommits(hard);
   }
 
+  private requestGraphRefresh() {
+    if (this.refreshRequestRepo !== null) {
+      return;
+    }
+    this.refreshRequestRepo = this.currentRepo;
+    this.renderFetchStatus(true);
+    sendMessage({
+      command: "refreshGraph",
+      repo: this.currentRepo
+    });
+  }
+
+  public completeGraphRefresh(repo: string, status: GG.GitFetchStatus) {
+    if (this.refreshRequestRepo !== repo) {
+      return;
+    }
+    this.refreshRequestRepo = null;
+    if (this.currentRepo !== repo) {
+      return;
+    }
+    this.lastFetchStatus = status;
+    this.lastFetchAt = status.lastFetchAt;
+    this.renderFetchStatus();
+    this.refresh(true);
+  }
+
+  private renderFetchStatus(fetching: boolean = false) {
+    const trackingRef = this.currentRemote === null ? "remote/*" : `${this.currentRemote}/*`;
+    const lastFetch =
+      this.lastFetchAt === null
+        ? "Last successful fetch: unknown"
+        : `Last successful fetch: ${new Date(this.lastFetchAt).toLocaleString()}`;
+    const trackingExplanation = `${trackingRef} labels are local remote-tracking refs, not a live view of the remote.`;
+    let state = this.config.fetchOnGraphRefresh
+      ? "Manual refresh auto-fetches all remotes."
+      : "Manual refresh uses local refs only (auto-fetch is off).";
+    if (fetching) {
+      state = "Fetching all remotes before refresh…";
+    } else if (this.lastFetchStatus?.message) {
+      state = this.lastFetchStatus.message;
+    } else if (this.lastFetchStatus?.mode === "fetched") {
+      state = "Fetch completed; Graph refreshed from updated local remote-tracking refs.";
+    }
+    this.fetchStatusElem.textContent = `${trackingExplanation} ${lastFetch}. ${state}`;
+    this.fetchStatusElem.classList.toggle("fetchFailed", this.lastFetchStatus?.mode === "failed");
+    this.fetchStatusElem.classList.toggle("fetching", fetching);
+    this.fetchStatusElem.title = this.fetchStatusElem.textContent;
+  }
+
   /* Requests */
   private requestLoadBranches(
     hard: boolean,
@@ -456,7 +523,8 @@ class GitGraphView {
       maxCommits: this.maxCommits,
       showRemoteBranches: this.showRemoteBranches,
       commitTypeFilter: this.commitTypeFilter,
-      expandedCommit: this.expandedCommit
+      expandedCommit: this.expandedCommit,
+      lastFetchAt: this.lastFetchAt
     });
   }
 
@@ -510,6 +578,7 @@ class GitGraphView {
         j,
         refName,
         refActive,
+        refTitle,
         refHtml;
       for (j = 0; j < this.commits[i].refs.length; j++) {
         refName = escapeHtml(this.commits[i].refs[j].name);
@@ -517,6 +586,13 @@ class GitGraphView {
         refActive =
           this.commits[i].refs[j].type === "head" &&
           this.commits[i].refs[j].name === this.gitBranchHead;
+        refTitle =
+          this.commits[i].refs[j].type === "remote"
+            ? "Local remote-tracking ref; updated by git fetch, not read live from the remote."
+            : "";
+        if (dbSyncRef) {
+          refTitle += `${refTitle === "" ? "" : " "}DB sync branch (generated commits).`;
+        }
         refHtml =
           '<span class="gitRef ' +
           this.commits[i].refs[j].type +
@@ -524,8 +600,9 @@ class GitGraphView {
           (dbSyncRef ? " dbSync" : "") +
           '" data-name="' +
           refName +
+          '" title="' +
+          escapeHtml(refTitle) +
           '"' +
-          (dbSyncRef ? ' title="DB sync branch (generated commits)"' : "") +
           ">" +
           (this.commits[i].refs[j].type === "tag" ? svgIcons.tag : svgIcons.branch) +
           refName +
@@ -1489,6 +1566,7 @@ let gitGraph = new GitGraphView(
     autoCenterCommitDetailsView: viewState.autoCenterCommitDetailsView,
     commitDetailsFileActionVisibility: viewState.commitDetailsFileActionVisibility,
     enhancedAccessibility: viewState.enhancedAccessibility,
+    fetchOnGraphRefresh: viewState.fetchOnGraphRefresh,
     graphColours: viewState.graphColours,
     graphStyle: viewState.graphStyle,
     grid: { x: 16, y: 24, offsetX: 8, offsetY: 12, expandY: 250 },
@@ -1551,6 +1629,7 @@ window.addEventListener("message", (event) => {
         msg.head,
         msg.remotes,
         msg.defaultRemote,
+        msg.lastFetchAt,
         msg.hard,
         msg.isRepo
       );
@@ -1560,6 +1639,9 @@ window.addEventListener("message", (event) => {
       break;
     case "loadRepos":
       gitGraph.loadRepos(msg.repos, msg.lastActiveRepo);
+      break;
+    case "refreshGraph":
+      gitGraph.completeGraphRefresh(msg.repo, msg.status);
       break;
     case "mergeBranch":
       refreshGraphOrDisplayError(msg.status, "Unable to Merge Branch");

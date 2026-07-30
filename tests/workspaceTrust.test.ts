@@ -16,6 +16,7 @@ describe("workspace trust boundary", () => {
     "mergeBranch",
     "mergeCommit",
     "pushTag",
+    "refreshGraph",
     "renameBranch",
     "resetFileToRevision",
     "resetToCommit",

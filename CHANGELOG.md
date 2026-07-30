@@ -21,6 +21,8 @@
 - Preserve provider/model handoffs through Plan Draft, Beads metadata, single starts, and parallel
   starts, with a cross-provider workflow test.
 - Add bounded local response-artifact retention and a confirmed command to clear stored responses.
+- Add configurable fetch-on-Graph-refresh, last successful fetch time, and explicit local
+  remote-tracking labels for `origin/*` refs.
 
 ### Fixed
 

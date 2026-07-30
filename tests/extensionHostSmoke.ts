@@ -33,7 +33,7 @@ export async function run() {
     };
     contributes?: {
       configuration?: {
-        properties?: Record<string, { scope?: string }>;
+        properties?: Record<string, { default?: unknown; scope?: string }>;
       };
     };
   };
@@ -48,5 +48,16 @@ export async function run() {
         "beads-git-graph.bdPath"
       ),
     "The packaged Restricted Mode manifest does not restrict bdPath."
+  );
+  assert(
+    manifest.contributes?.configuration?.properties?.["beads-git-graph.fetchOnGraphRefresh"]
+      ?.default === true,
+    "The packaged Graph refresh fetch setting is not enabled by default."
+  );
+  assert(
+    manifest.capabilities.untrustedWorkspaces.restrictedConfigurations?.includes(
+      "beads-git-graph.fetchOnGraphRefresh"
+    ),
+    "The packaged Restricted Mode manifest does not restrict Graph refresh fetch."
   );
 }

@@ -79,6 +79,10 @@ class Config {
     return this.workspaceConfiguration.get("loadMoreCommits", 75);
   }
 
+  public fetchOnGraphRefresh() {
+    return this.workspaceConfiguration.get("fetchOnGraphRefresh", true);
+  }
+
   public referenceInputSpaceSubstitution(): ReferenceInputSpaceSubstitution {
     return this.workspaceConfiguration.get("referenceInputSpaceSubstitution", "None");
   }

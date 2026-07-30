@@ -8,6 +8,7 @@ import { getGitMutationInputError } from "./gitInputSafety";
 import { RepoFileWatcher } from "./repoFileWatcher";
 import { RepoManager } from "./repoManager";
 import {
+  GitFetchStatus,
   GitFileChangeType,
   GitGraphViewState,
   GitRepoSet,
@@ -36,6 +37,7 @@ export class GitGraphView {
   private isGraphViewLoaded: boolean = false;
   private isPanelVisible: boolean = true;
   private currentRepo: string | null = null;
+  private readonly graphRefreshes = new Map<string, Promise<GitFetchStatus>>();
 
   public static createOrShow(
     extensionUri: vscode.Uri,
@@ -153,6 +155,19 @@ export class GitGraphView {
           this.repoFileWatcher.unmute();
           return;
         }
+        if (!vscode.workspace.isTrusted && msg.command === "refreshGraph") {
+          this.sendMessage({
+            command: "refreshGraph",
+            repo: msg.repo,
+            status: {
+              mode: "restricted",
+              lastFetchAt: await this.dataSource.getLastFetchAt(msg.repo),
+              message: "Automatic fetch is disabled in Restricted Mode."
+            }
+          });
+          this.repoFileWatcher.unmute();
+          return;
+        }
         if (!vscode.workspace.isTrusted && isGitMutationCommand(msg.command)) {
           vscode.window.showWarningMessage(
             "Trust this workspace before changing Git branches, commits, tags, or files."
@@ -238,8 +253,11 @@ export class GitGraphView {
             });
             break;
           case "loadBranches":
-            let branchData = await this.dataSource.getBranches(msg.repo, msg.showRemoteBranches),
-              isRepo = true;
+            const [branchData, lastFetchAt] = await Promise.all([
+              this.dataSource.getBranches(msg.repo, msg.showRemoteBranches),
+              this.dataSource.getLastFetchAt(msg.repo)
+            ]);
+            let isRepo = true;
             if (branchData.error) {
               // If an error occurred, check to make sure the repo still exists
               isRepo = await this.dataSource.isGitRepository(msg.repo);
@@ -250,6 +268,7 @@ export class GitGraphView {
               head: branchData.head,
               remotes: branchData.remotes,
               defaultRemote: branchData.defaultRemote,
+              lastFetchAt,
               hard: msg.hard,
               isRepo: isRepo
             });
@@ -258,6 +277,13 @@ export class GitGraphView {
               this.extensionState.setLastActiveRepo(msg.repo);
               this.repoFileWatcher.start(msg.repo);
             }
+            break;
+          case "refreshGraph":
+            this.sendMessage({
+              command: "refreshGraph",
+              repo: msg.repo,
+              status: await this.refreshGraph(msg.repo)
+            });
             break;
           case "loadCommits":
             this.sendMessage({
@@ -398,6 +424,7 @@ export class GitGraphView {
       graphColours: config.graphColours(),
       graphStyle: config.graphStyle(),
       initialLoadCommits: config.initialLoadCommits(),
+      fetchOnGraphRefresh: config.fetchOnGraphRefresh(),
       lastActiveRepo: this.extensionState.getLastActiveRepo(),
       loadMoreCommits: config.loadMoreCommits(),
       mutedGraphOpacity: config.mutedGraphOpacity(),
@@ -432,9 +459,9 @@ export class GitGraphView {
       body = `<body style="${colorVars}">
 			<div id="controls">
 				<span id="repoControl"><span class="unselectable">Repo: </span><div id="repoSelect" class="dropdown"></div></span>
-        <span id="remoteControl"><span class="unselectable">Remote: </span><div id="remoteSelect" class="dropdown"></div></span>
+        <span id="remoteControl"><span class="unselectable">Remote-tracking filter: </span><div id="remoteSelect" class="dropdown"></div></span>
         <span id="branchControl"><span class="unselectable">Branch: </span><div id="branchSelect" class="dropdown"></div></span>
-				<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" value="1" checked>Show Remote</label>
+				<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" value="1" checked>Show local remote-tracking refs</label>
         <span id="typeFilterControl"><span class="unselectable">Type: </span><select id="typeFilterSelect"><option value="all">All</option><option value="feat">feat</option><option value="fix">fix</option><option value="docs">docs</option><option value="chore">chore</option><option value="refactor">refactor</option><option value="perf">perf</option><option value="test">test</option><option value="build">build</option><option value="ci">ci</option><option value="style">style</option><option value="revert">revert</option><option value="other">other</option></select></span>
         <div id="beadsBtn" class="roundedBtn iconBtn" title="Beads" aria-label="Beads">
           <svg class="toolbarActionIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -449,6 +476,7 @@ export class GitGraphView {
 					</svg>
 				</div>
 			</div>
+      <div id="fetchStatus" role="status" aria-live="polite"></div>
 			<div id="content">
 				<div id="commitGraph"></div>
 				<div id="commitTable"></div>
@@ -483,6 +511,61 @@ export class GitGraphView {
 			</head>
 			${body}
 		</html>`;
+  }
+
+  private refreshGraph(repo: string) {
+    const existing = this.graphRefreshes.get(repo);
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    const refresh = this.performGraphRefresh(repo).finally(() => {
+      this.graphRefreshes.delete(repo);
+    });
+    this.graphRefreshes.set(repo, refresh);
+    return refresh;
+  }
+
+  private async performGraphRefresh(repo: string): Promise<GitFetchStatus> {
+    const lastFetchAt = await this.dataSource.getLastFetchAt(repo);
+    if (!vscode.workspace.isTrusted) {
+      return {
+        mode: "restricted",
+        lastFetchAt,
+        message: "Automatic fetch is disabled in Restricted Mode."
+      };
+    }
+    if (!getConfig().fetchOnGraphRefresh()) {
+      return {
+        mode: "local-only",
+        lastFetchAt,
+        message: "Automatic fetch on manual Graph refresh is disabled in settings."
+      };
+    }
+
+    const branchData = await this.dataSource.getBranches(repo, false);
+    if (branchData.remotes.length === 0) {
+      return {
+        mode: "local-only",
+        lastFetchAt,
+        message: "No Git remotes are configured; refreshed local refs only."
+      };
+    }
+
+    const error = await this.dataSource.fetchAll(repo);
+    if (error !== null) {
+      return {
+        mode: "failed",
+        lastFetchAt,
+        message:
+          "git fetch --all failed. The Graph was refreshed from existing local refs; check Git credentials or network access."
+      };
+    }
+    return {
+      mode: "fetched",
+      lastFetchAt: (await this.dataSource.getLastFetchAt(repo)) ?? Date.now(),
+      message: null
+    };
   }
 
   private getMediaUri(file: string) {

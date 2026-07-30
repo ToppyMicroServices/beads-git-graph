@@ -13,6 +13,7 @@ declare global {
     autoCenterCommitDetailsView: boolean;
     commitDetailsFileActionVisibility: GG.CommitDetailsFileActionVisibility;
     enhancedAccessibility: boolean;
+    fetchOnGraphRefresh: boolean;
     graphColours: string[];
     graphStyle: "rounded" | "angular";
     grid: { x: number; y: number; offsetX: number; offsetY: number; expandY: number };
@@ -121,6 +122,7 @@ declare global {
     showRemoteBranches: boolean;
     commitTypeFilter: string;
     expandedCommit: ExpandedCommit | null;
+    lastFetchAt: number | null;
   }
 }
 

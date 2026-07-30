@@ -16,6 +16,8 @@ before approving an import or starting work.
 ## What It Does
 
 - Shows branches, tags, merges, and uncommitted changes in a Git graph
+- Fetches all configured remotes before a manual Graph refresh by default, shows the last successful
+  fetch time, and labels `origin/*` as local remote-tracking refs rather than a live remote view
 - Opens commit details, changed files, and diffs
 - Adds a Beads view in the Activity Bar
 - Lets you switch between Git Graph and Beads from the toolbar
@@ -180,7 +182,7 @@ These hints are visual metadata. Beads ready/blocking behavior still comes from 
 
 In VS Code Restricted Mode, the extension keeps Git history and tracked Beads JSON/JSONL viewing
 available, but it does not start `bd`, contact an AI provider, manage provider credentials, create a
-worktree, or change Git or Beads state. Trust the workspace before using those actions. The
+worktree, fetch a remote, or change Git or Beads state. Trust the workspace before using those actions. The
 Extension Host enforces this boundary even if a webview sends a forged action message.
 
 Every `bd` process started by this extension, including executable and capability checks, receives

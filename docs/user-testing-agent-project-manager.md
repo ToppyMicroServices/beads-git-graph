@@ -278,13 +278,14 @@ browser page. It verifies user-visible source behavior, but it does not exercise
 ## Packaged VSIX result — 2026-07-24; rebuilt and Host-smoked 2026-07-30
 
 - **Artifact:** `beads-git-graph-0.4.20260710.vsix`, SHA-256
-  `107b23cb8ee8a2e4f7cbab7fdcf08e0ba13f6cbf45b44f40d21886555d6c4484`.
+  `29fe0f386e444e565871ff56e1a470fa553e9bfb4f30cca9e76fb629e63dcdfb`.
 - **Package inspection:** the current artifact contains provider/model selection, Host-side
   readiness/schema/dependency checks, response-artifact preservation, bounded parallel requests,
   pointer-centered Graph zoom, normal-drag pan, dependency and parent-child line rendering, static
   Sync warning styling, keyed incremental refresh handling, view-specific Details hosts, visible
-  parallel-target filtering, relevant capability gating, and client/Host duplicate-action guards.
-  VSCE rewrote the README screenshot to the repository asset URL.
+  parallel-target filtering, relevant capability gating, client/Host duplicate-action guards,
+  fetch-on-Graph-refresh, last-fetch metadata, and explicit local remote-tracking labels. VSCE
+  rewrote the README screenshot to the repository asset URL.
 - **Install/activation boundary:** a package built immediately before the final Host safety changes
   installed as `ToppyMicroServices.beads-git-graph@0.4.20260710` in an isolated extension directory
   and opened the Beads webview in an isolated VS Code profile. The final artifact above was rebuilt
@@ -292,9 +293,9 @@ browser page. It verifies user-visible source behavior, but it does not exercise
   `code --list-extensions --show-versions` check confirmed
   `toppymicroservices.beads-git-graph@0.4.20260710`. The final artifact then passed an isolated VS
   Code 1.127.0 Extension Host smoke: activation, the View/Refresh/Clear Artifacts commands, the
-  machine-scoped `bdPath`, and the packaged Restricted Mode manifest were asserted before the Host
-  exited with code 0. Restricted Mode interaction and the complete MAN-10 UI sequence remain
-  separate manual checks.
+  machine-scoped `bdPath`, the default-enabled Graph fetch setting, and the packaged Restricted Mode
+  manifest were asserted before the Host exited with code 0. Restricted Mode interaction and the
+  complete MAN-10 UI sequence remain separate manual checks.
 - **Plan observation:** in an empty workspace, **Load example** rendered three tasks, two
   dependencies, two requested-model transitions, `research -> implement -> review` as Critical
   Path, and eight ordered mutations. Import remained disabled because no initialized Beads
@@ -322,6 +323,21 @@ browser page. It verifies user-visible source behavior, but it does not exercise
   deltas are normalized and bounded, and continuous wheel persistence is debounced.
 - **Evidence level:** compiled-source browser preview plus pure transform tests. The freshly
   packaged VSIX was inspected, but this graph scenario was not rerun in an installed Extension Host.
+
+## Graph fetch source-browser result — 2026-07-30
+
+- **Observed:** the Graph status identified `origin/*` as local remote-tracking refs rather than a
+  live remote view, showed the last successful fetch time, and changed from fetch-in-progress to
+  fetch-completed after one manual refresh.
+- **Observed:** the `origin/main` commit label exposed the same local-tracking boundary in its
+  tooltip, and the preview recorded no browser warning or error.
+- **Additional checks:** Vitest covers `git fetch --all` without prune or terminal prompting,
+  `FETCH_HEAD` timestamp handling, Restricted Mode gating, duplicate fetch suppression, and
+  cross-repository response isolation. The installed VSIX smoke covers the packaged default setting
+  and Restricted Mode configuration.
+- **Evidence level:** compiled-source browser interaction, Vitest, package inspection, and
+  Extension Host manifest smoke. A real remote update in the installed Graph remains a separate
+  manual acceptance step.
 
 ## Refresh continuity source-browser result — 2026-07-28
 
@@ -566,6 +582,24 @@ fixture between state-changing scenarios.
   count.
 - **Evidence:** VSIX identifier/version, trust-state screenshot, empty sentinel log, artifact file
   count, confirmation screenshot, and Extension Host log.
+
+### MAN-16 — Refresh local remote-tracking refs — Partially verified
+
+- **Setup:** Install the packaged VSIX in a trusted disposable repository with a local branch,
+  `origin/main`, and a second clone that can push one new commit to the remote.
+- **Steps:** Record the displayed fetch time and `origin/main` tip; push from the second clone; click
+  Graph **Refresh** once; repeat with `beads-git-graph.fetchOnGraphRefresh` disabled and once in
+  Restricted Mode.
+- **Expected:** the enabled trusted refresh shows fetch-in-progress, runs one `git fetch --all`,
+  advances the local `origin/main`, updates the successful-fetch time, and finishes without merge,
+  rebase, or prune. The disabled and Restricted Mode runs refresh existing local refs without
+  contacting the remote. Every `origin/*` label remains identified as a local remote-tracking ref,
+  not a live remote view.
+- **Evidence:** before/after remote and local commit IDs, fetch timestamp screenshots, a sanitized Git
+  trace or fake executable log, and the Extension Host log.
+- **Observed:** the compiled browser preview passed the status transition and labeling checks; the
+  packaged manifest passed its default-setting and Restricted Mode assertions. The disposable
+  two-clone remote update remains pending.
 
 ## Plan user acceptance
 

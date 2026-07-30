@@ -9,6 +9,7 @@ const GIT_MUTATION_COMMANDS = new Set([
   "mergeBranch",
   "mergeCommit",
   "pushTag",
+  "refreshGraph",
   "renameBranch",
   "resetFileToRevision",
   "resetToCommit",

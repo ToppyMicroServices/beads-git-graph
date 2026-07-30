@@ -46,6 +46,14 @@ export interface GitUnsavedChanges {
   changes: number;
 }
 
+export type GitFetchMode = "fetched" | "failed" | "local-only" | "restricted";
+
+export interface GitFetchStatus {
+  mode: GitFetchMode;
+  lastFetchAt: number | null;
+  message: string | null;
+}
+
 export interface GitGraphViewState {
   autoCenterCommitDetailsView: boolean;
   commitDetailsFileActionVisibility: CommitDetailsFileActionVisibility;
@@ -64,6 +72,7 @@ export interface GitGraphViewState {
   repos: GitRepoSet;
   preferMainBranchByDefault: boolean;
   showCurrentBranchByDefault: boolean;
+  fetchOnGraphRefresh: boolean;
 }
 
 export interface GitFileChange {
@@ -206,8 +215,20 @@ export interface ResponseLoadBranches {
   head: string | null;
   remotes: string[];
   defaultRemote: string | null;
+  lastFetchAt: number | null;
   hard: boolean;
   isRepo: boolean;
+}
+
+export interface RequestRefreshGraph {
+  command: "refreshGraph";
+  repo: string;
+}
+
+export interface ResponseRefreshGraph {
+  command: "refreshGraph";
+  repo: string;
+  status: GitFetchStatus;
 }
 
 export interface RequestLoadCommits {
@@ -377,6 +398,7 @@ export type RequestMessage =
   | RequestLoadBranches
   | RequestLoadCommits
   | RequestLoadRepos
+  | RequestRefreshGraph
   | RequestMergeBranch
   | RequestMergeCommit
   | RequestPushTag
@@ -404,6 +426,7 @@ export type ResponseMessage =
   | ResponseLoadBranches
   | ResponseLoadCommits
   | ResponseLoadRepos
+  | ResponseRefreshGraph
   | ResponseMergeBranch
   | ResponseMergeCommit
   | ResponsePushTag

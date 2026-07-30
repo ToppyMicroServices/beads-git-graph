@@ -126,6 +126,8 @@ export function activate(context: vscode.ExtensionContext) {
         GitGraphView.refreshCurrentPanel();
       } else if (e.affectsConfiguration("beads-git-graph.bdPath")) {
         beadsViewProvider.refresh();
+      } else if (e.affectsConfiguration("beads-git-graph.fetchOnGraphRefresh")) {
+        GitGraphView.refreshCurrentPanel();
       }
     }),
     repoManager
