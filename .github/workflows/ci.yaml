@@ -59,7 +59,7 @@ jobs:
       - run: corepack enable
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Format check
         run: pnpm run format
@@ -73,8 +73,11 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+      - name: Audit dependencies
+        run: pnpm run audit
+
       - name: Build VSIX
-        run: pnpm run clean && pnpm dlx @vscode/vsce package
+        run: pnpm run package
 
   cross-platform-smoke:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_cross_platform == true }}
@@ -96,7 +99,7 @@ jobs:
       - run: corepack enable
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Format check
         run: pnpm run format
@@ -110,5 +113,8 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+      - name: Audit dependencies
+        run: pnpm run audit
+
       - name: Build VSIX
-        run: pnpm run clean && pnpm dlx @vscode/vsce package
+        run: pnpm run package

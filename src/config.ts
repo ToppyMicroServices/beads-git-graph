@@ -188,6 +188,11 @@ class Config {
     return Math.round(Math.min(8, Math.max(1, concurrency)));
   }
 
+  public agentArtifactRetentionCount() {
+    const count = this.workspaceConfiguration.get("agentArtifactRetentionCount", 50);
+    return Math.round(Math.min(500, Math.max(1, count)));
+  }
+
   public gitPath(): string {
     const path = vscode.workspace.getConfiguration("git").get("path", null);
     return path !== null ? path : "git";

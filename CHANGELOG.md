@@ -20,6 +20,7 @@
 - Store direct API output as a local untrusted response artifact without applying it to a worktree.
 - Preserve provider/model handoffs through Plan Draft, Beads metadata, single starts, and parallel
   starts, with a cross-provider workflow test.
+- Add bounded local response-artifact retention and a confirmed command to clear stored responses.
 
 ### Fixed
 
@@ -50,6 +51,11 @@
   agent assignment and response metadata in one update, and preserve generated output on failure.
 - Enforce the provider response-size limit while streaming and distinguish invalid artifact
   references from missing or unreadable stored artifacts.
+- Keep Restricted Mode read-only by blocking every `bd` process and Git/Beads mutation, machine-scope
+  `bdPath`, reject option-shaped Git refs, and disable Dolt event flushing for extension-started
+  Beads processes.
+- Pin packaging tools and patched DOMPurify, PostCSS, and brace-expansion versions; require frozen
+  CI installs and a High-severity dependency audit.
 
 ## [0.4.20260710] - 2026-07-08
 

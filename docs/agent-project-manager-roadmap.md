@@ -153,7 +153,9 @@ workspace.
   - **Tier:** capable.
   - **Observed:** the packaged extension activated in an isolated Extension Host; its webview loaded
     synthetic Beads data and a fake `bd` without a migration, bootstrap, sync, or write. The packaged
-    Plan view was exercised by mouse and keyboard at 640 CSS px without horizontal overflow.
+    Plan view was exercised by mouse and keyboard at 640 CSS px without horizontal overflow. The
+    2026-07-30 final VSIX additionally passed a VS Code 1.127.0 Host smoke for activation, registered
+    commands, machine-scoped `bdPath`, and the packaged Restricted Mode manifest.
   - **Remaining:** complete every MAN-10 Manage/Details/Start/refresh statement in a trusted,
     initialized disposable workspace. The source preview and partial packaged checks do not satisfy
     the full task.

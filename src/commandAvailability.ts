@@ -10,7 +10,8 @@ export interface CommandAvailability {
 
 export function checkExecutable(
   command: string,
-  args: string[] = ["--version"]
+  args: string[] = ["--version"],
+  options: cp.SpawnOptionsWithoutStdio = {}
 ): Promise<CommandAvailability> {
   return new Promise<CommandAvailability>((resolve) => {
     let stdout = "";
@@ -26,7 +27,7 @@ export function checkExecutable(
       resolve({ available, command, message });
     };
 
-    const child = cp.spawn(command, args);
+    const child = cp.spawn(command, args, options);
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });

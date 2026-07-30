@@ -19,7 +19,8 @@ describe("release metadata", () => {
   it("publishes without the deprecated HaaLeo action", () => {
     expect(publishWorkflow).not.toContain("HaaLeo/publish-vscode-extension");
     expect(publishWorkflow).toContain("!startsWith(github.event.release.tag_name, 'daily-')");
-    expect(publishWorkflow).toContain('pnpm dlx ovsx -p "$OPEN_VSX_TOKEN" publish -i');
-    expect(publishWorkflow).toContain("pnpm dlx @vscode/vsce publish --packagePath");
+    expect(publishWorkflow).toContain('pnpm exec ovsx -p "$OPEN_VSX_TOKEN" publish -i');
+    expect(publishWorkflow).toContain("pnpm exec vsce publish --packagePath");
+    expect(publishWorkflow).not.toContain("pnpm dlx");
   });
 });

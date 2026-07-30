@@ -1,9 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createDirectory, openTextDocument, showTextDocument, writeFile } = vi.hoisted(() => ({
+const {
+  createDirectory,
+  deleteFile,
+  openTextDocument,
+  readDirectory,
+  showTextDocument,
+  stat,
+  writeFile
+} = vi.hoisted(() => ({
   createDirectory: vi.fn(async () => undefined),
+  deleteFile: vi.fn(async () => undefined),
   openTextDocument: vi.fn(async (uri: unknown) => ({ uri })),
+  readDirectory: vi.fn(async () => [] as [string, number][]),
   showTextDocument: vi.fn(async () => undefined),
+  stat: vi.fn(async () => ({ mtime: 0 })),
   writeFile: vi.fn(async () => undefined)
 }));
 
@@ -25,6 +36,9 @@ vi.mock("vscode", () => ({
     openTextDocument,
     fs: {
       createDirectory,
+      delete: deleteFile,
+      readDirectory,
+      stat,
       writeFile
     }
   },
@@ -43,8 +57,14 @@ describe("agent artifact ownership", () => {
   beforeEach(() => {
     createDirectory.mockReset();
     createDirectory.mockResolvedValue(undefined);
+    deleteFile.mockReset();
+    deleteFile.mockResolvedValue(undefined);
     openTextDocument.mockClear();
+    readDirectory.mockReset();
+    readDirectory.mockResolvedValue([]);
     showTextDocument.mockClear();
+    stat.mockReset();
+    stat.mockResolvedValue({ mtime: 0 });
     writeFile.mockReset();
     writeFile.mockResolvedValue(undefined);
   });
@@ -124,5 +144,57 @@ describe("agent artifact ownership", () => {
     ).resolves.toEqual({ status: "could-not-open" });
     expect(openTextDocument).toHaveBeenCalledOnce();
     expect(showTextDocument).not.toHaveBeenCalled();
+  });
+
+  it("keeps only the configured number of newest response artifacts", async () => {
+    const stored = new Map<string, number>();
+    let modified = 0;
+    writeFile.mockImplementation(async (uri: { path: string }) => {
+      stored.set(uri.path, ++modified);
+    });
+    readDirectory.mockImplementation(async () =>
+      [...stored.keys()].map((artifactPath) => [artifactPath.split("/").at(-1) ?? "", 1])
+    );
+    stat.mockImplementation(async (uri: { path: string }) => ({
+      mtime: stored.get(uri.path) ?? 0
+    }));
+    deleteFile.mockImplementation(async (uri: { path: string }) => {
+      stored.delete(uri.path);
+    });
+    const store = new AgentArtifactStore(storageUri as never, () => 2);
+    const values = {
+      issueId: "retention-1",
+      title: "Bound local response retention",
+      response: {
+        provider: "openai" as const,
+        requestedModel: "gpt-test",
+        confirmedModel: "gpt-test",
+        text: "Generated response"
+      }
+    };
+
+    await store.write(values);
+    await store.write(values);
+    await store.write(values);
+
+    expect(stored.size).toBe(2);
+    expect(deleteFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("deletes only response artifacts from the fixed extension storage directory", async () => {
+    readDirectory.mockResolvedValue([
+      ["12345678-1234-4234-8234-123456789abc.txt", 1],
+      ["unrelated.txt", 1]
+    ]);
+    const store = new AgentArtifactStore(storageUri as never);
+
+    await expect(store.clearAll()).resolves.toBe(1);
+    expect(deleteFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/extension-storage/agent-responses/12345678-1234-4234-8234-123456789abc.txt"
+      }),
+      { recursive: false, useTrash: false }
+    );
+    expect(deleteFile).toHaveBeenCalledTimes(1);
   });
 });

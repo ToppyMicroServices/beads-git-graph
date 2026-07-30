@@ -28,7 +28,10 @@ Required checks:
 - `pnpm run format`
 - `pnpm run lint`
 - `pnpm run typecheck`
+- `pnpm test`
 - `pnpm run package`
+- `pnpm audit --audit-level high`
+- Package and publish tools must be lockfile-pinned and invoked with `pnpm exec`.
 - CodeQL: no High
 - OSV / Dependabot: High fixed; Medium either fixed or explicitly triaged with rationale
 

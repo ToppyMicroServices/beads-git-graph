@@ -4,6 +4,7 @@ import { AgentArtifactStore } from "./agentArtifactStore";
 import { manageAgentProviderCredentials } from "./agentCredentialManager";
 import { AgentCredentialStore } from "./agentCredentialStore";
 import { BeadsViewProvider } from "./beadsView";
+import { getConfig } from "./config";
 import { DataSource } from "./dataSource";
 import { decodeDiffDocUri, DiffDocProvider } from "./diffDocProvider";
 import { ExtensionState } from "./extensionState";
@@ -17,7 +18,10 @@ export function activate(context: vscode.ExtensionContext) {
   const extensionState = new ExtensionState(context);
   const dataSource = new DataSource();
   const agentCredentialStore = new AgentCredentialStore(context.secrets);
-  const agentArtifactStore = new AgentArtifactStore(context.storageUri ?? context.globalStorageUri);
+  const agentArtifactStore = new AgentArtifactStore(
+    context.storageUri ?? context.globalStorageUri,
+    () => getConfig().agentArtifactRetentionCount()
+  );
   const beadsViewProvider = new BeadsViewProvider(
     context.extensionUri,
     agentCredentialStore,
@@ -49,6 +53,38 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("beads-git-graph.manageAgentProviderCredentials", async () =>
       manageAgentProviderCredentials(agentCredentialStore)
     ),
+    vscode.commands.registerCommand("beads-git-graph.clearAgentResponseArtifacts", async () => {
+      if (!vscode.workspace.isTrusted) {
+        vscode.window.showWarningMessage(
+          "Trust this workspace before deleting stored AI response artifacts."
+        );
+        return;
+      }
+      const confirmation = await vscode.window.showWarningMessage(
+        "Delete all locally stored AI response artifacts for this workspace?",
+        {
+          modal: true,
+          detail:
+            "These plain-text responses are stored in VS Code extension storage. This cannot be undone."
+        },
+        "Delete Artifacts"
+      );
+      if (confirmation !== "Delete Artifacts") {
+        return;
+      }
+      try {
+        const deleted = await agentArtifactStore.clearAll();
+        vscode.window.showInformationMessage(
+          `Deleted ${deleted} stored AI response artifact${deleted === 1 ? "" : "s"}.`
+        );
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          error instanceof Error
+            ? `Unable to delete stored AI response artifacts: ${error.message}`
+            : "Unable to delete stored AI response artifacts."
+        );
+      }
+    }),
     vscode.commands.registerCommand("beads-git-graph.openDiffFile", async (uri?: vscode.Uri) => {
       const sourceUri =
         uri ??

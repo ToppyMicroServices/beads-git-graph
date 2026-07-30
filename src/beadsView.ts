@@ -41,6 +41,11 @@ import {
   toBeadItem
 } from "./beadsData";
 import {
+  assertBeadsProcessTrusted,
+  createBdSpawnOptions,
+  resolveBdExecutableStatus
+} from "./beadsProcess";
+import {
   type BeadsExecutionSkip,
   type BeadsExecutionTarget,
   type BeadsHostMessage,
@@ -414,7 +419,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const planImportCapabilities: NonNullable<BeadLoadResult["planImportCapabilities"]> = [];
     const agentWriteCapabilities: NonNullable<BeadLoadResult["agentWriteCapabilities"]> = [];
     const syncCapabilities: NonNullable<BeadLoadResult["syncCapabilities"]> = [];
-    const bdExecutableStatus = await checkExecutable(getConfig().bdPath());
+    const bdExecutableStatus = await this.getBdExecutableStatus();
 
     for (const folder of workspaceFolders) {
       const workspaceInfo = {
@@ -609,7 +614,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           return;
         }
 
-        const executableStatus = await checkExecutable(getConfig().bdPath());
+        const executableStatus = await this.getBdExecutableStatus();
         const capability = await probeBeadsWriteCapability(
           executableStatus.available,
           executableStatus.message,
@@ -2008,15 +2013,11 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   private assertTrustedWorkspaceForAgentAction() {
-    if (!vscode.workspace.isTrusted) {
-      throw new Error(
-        "Trust this workspace before starting AI work, creating worktrees, or updating Beads."
-      );
-    }
+    assertBeadsProcessTrusted(vscode.workspace.isTrusted);
   }
 
   private async assertWorkspaceWriteCapability(workspacePath: string) {
-    const executableStatus = await checkExecutable(getConfig().bdPath());
+    const executableStatus = await this.getBdExecutableStatus();
     const capability = await probeBeadsWriteCapability(
       executableStatus.available,
       executableStatus.message,
@@ -2028,7 +2029,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   private async assertAgentWriteCapability(workspacePath: string) {
-    const executableStatus = await checkExecutable(getConfig().bdPath());
+    const executableStatus = await this.getBdExecutableStatus();
     const capability = await probeBeadsAgentWriteCapability(
       executableStatus.available,
       executableStatus.message,
@@ -3025,6 +3026,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   private async runBdCommand(args: string[], cwd: string) {
+    assertBeadsProcessTrusted(vscode.workspace.isTrusted);
     const workspacePath = await this.resolveAuthorizedWorkspacePath(cwd);
     if (workspacePath === null) {
       throw new Error("Refusing to run bd outside an initialized workspace folder.");
@@ -3032,7 +3034,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
     return new Promise<string>((resolve, reject) => {
       const bdPath = getConfig().bdPath();
-      const child = cp.spawn(bdPath, args, { cwd: workspacePath });
+      const child = cp.spawn(bdPath, args, createBdSpawnOptions(workspacePath));
       let stdout = "";
       let stderr = "";
       child.stdout.on("data", (chunk) => {
@@ -3062,8 +3064,14 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     args: readonly string[],
     cwd: string
   ): Promise<BeadsCapabilityCommandResult> {
+    assertBeadsProcessTrusted(vscode.workspace.isTrusted);
+    const workspacePath = await this.resolveAuthorizedWorkspacePath(cwd);
+    if (workspacePath === null) {
+      throw new Error("Refusing to probe bd outside an initialized workspace folder.");
+    }
+
     return new Promise((resolve, reject) => {
-      const child = cp.spawn(getConfig().bdPath(), [...args], { cwd });
+      const child = cp.spawn(getConfig().bdPath(), [...args], createBdSpawnOptions(workspacePath));
       let stdout = "";
       let stderr = "";
       child.stdout.on("data", (chunk) => {
@@ -3077,6 +3085,14 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         resolve({ exitCode: code ?? -1, stdout, stderr });
       });
     });
+  }
+
+  private getBdExecutableStatus() {
+    return resolveBdExecutableStatus(
+      getConfig().bdPath(),
+      vscode.workspace.isTrusted,
+      checkExecutable
+    );
   }
 
   private async runGitCommand(args: string[], cwd: string) {

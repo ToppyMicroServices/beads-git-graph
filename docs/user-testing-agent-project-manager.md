@@ -241,6 +241,17 @@ pnpm run compile
 - **Evidence:** `beadsProtocol.test.ts`, `beadsWebviewMetadata.test.ts`, source typecheck, and the
   refresh-continuity browser result below.
 
+### AUTO-21 — Enforce process and workspace trust boundaries — Current
+
+- **Given:** Trusted and untrusted workspace states, a sentinel `bdPath`, forged Git mutation
+  messages, and safe tracked JSON/JSONL Beads fixtures.
+- **When:** The Beads view loads, capability checks run, or a Git/Beads mutation is requested.
+- **Then:** Restricted Mode never calls the sentinel, starts `bd`, or changes Git/Beads state;
+  tracked data remains readable; trusted `bd` child processes receive
+  `DOLT_DISABLE_EVENT_FLUSH=true`; malformed ref-like arguments are rejected.
+- **Evidence:** `beadsProcess.test.ts`, `workspaceTrust.test.ts`, `privacyPolicy.test.ts`, and the
+  packaged Extension Host check in MAN-15.
+
 ## Completed source-preview check
 
 The following check used the compiled current webview script, synthetic fixture data, and a local
@@ -264,10 +275,10 @@ browser page. It verifies user-visible source behavior, but it does not exercise
   horizontal `scrollWidth` overflow.
 - **Evidence level:** compiled-source browser preview only. PM-004D/MAN-10 remains pending.
 
-## Packaged VSIX result — 2026-07-24; rebuilt 2026-07-28
+## Packaged VSIX result — 2026-07-24; rebuilt and Host-smoked 2026-07-30
 
 - **Artifact:** `beads-git-graph-0.4.20260710.vsix`, SHA-256
-  `32b6bb7b456ad46779b6264b1ad4c34e93f1169193828a43788d55bb25020405`.
+  `107b23cb8ee8a2e4f7cbab7fdcf08e0ba13f6cbf45b44f40d21886555d6c4484`.
 - **Package inspection:** the current artifact contains provider/model selection, Host-side
   readiness/schema/dependency checks, response-artifact preservation, bounded parallel requests,
   pointer-centered Graph zoom, normal-drag pan, dependency and parent-child line rendering, static
@@ -279,8 +290,11 @@ browser page. It verifies user-visible source behavior, but it does not exercise
   and opened the Beads webview in an isolated VS Code profile. The final artifact above was rebuilt
   and installed into new isolated extension/profile directories; the latest
   `code --list-extensions --show-versions` check confirmed
-  `toppymicroservices.beads-git-graph@0.4.20260710`. A new GUI Extension Host launch was not
-  completed in this run.
+  `toppymicroservices.beads-git-graph@0.4.20260710`. The final artifact then passed an isolated VS
+  Code 1.127.0 Extension Host smoke: activation, the View/Refresh/Clear Artifacts commands, the
+  machine-scoped `bdPath`, and the packaged Restricted Mode manifest were asserted before the Host
+  exited with code 0. Restricted Mode interaction and the complete MAN-10 UI sequence remain
+  separate manual checks.
 - **Plan observation:** in an empty workspace, **Load example** rendered three tasks, two
   dependencies, two requested-model transitions, `research -> implement -> review` as Critical
   Path, and eight ordered mutations. Import remained disabled because no initialized Beads
@@ -537,6 +551,21 @@ fixture between state-changing scenarios.
   visible; a superseded refresh cannot restore older task data.
 - **Evidence:** before/after screenshots or recording, fixture revisions with timestamps, and the
   Extension Host console log.
+
+### MAN-15 — Restricted Mode and artifact retention — Pending packaged verification
+
+- **Setup:** Install a freshly packaged VSIX in a disposable untrusted workspace whose
+  machine-scoped `bdPath` is a sentinel logger. Prepare tracked `.beads/issues.jsonl`, then trust a
+  second disposable workspace with three fake provider responses and retention set to two.
+- **Steps:** Open Table/Graph/Manage in Restricted Mode; attempt Sync, import, and a Git mutation;
+  inspect the sentinel log. In the trusted workspace, store three responses, inspect extension
+  storage, run **Clear Stored AI Response Artifacts**, cancel once, then approve.
+- **Expected:** Restricted viewing works and the sentinel log remains empty; mutations show a trust
+  warning. Only two newest plain-text response artifacts remain; Cancel deletes nothing; approval
+  deletes only recognized response artifacts from the fixed storage directory and reports the
+  count.
+- **Evidence:** VSIX identifier/version, trust-state screenshot, empty sentinel log, artifact file
+  count, confirmation screenshot, and Extension Host log.
 
 ## Plan user acceptance
 

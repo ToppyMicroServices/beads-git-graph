@@ -22,7 +22,10 @@ export type AgentArtifactOpenResult =
   | { status: "could-not-open" };
 
 export class AgentArtifactStore {
-  constructor(private readonly storageUri: vscode.Uri) {}
+  constructor(
+    private readonly storageUri: vscode.Uri,
+    private readonly retentionCount: () => number = () => 50
+  ) {}
 
   private responseDirectory() {
     return vscode.Uri.joinPath(this.storageUri, "agent-responses");
@@ -63,6 +66,7 @@ export class AgentArtifactStore {
       prepared.artifact.uri,
       Buffer.from(prepared.content, "utf8")
     );
+    await this.pruneBestEffort();
     return prepared.artifact;
   }
 
@@ -78,7 +82,6 @@ export class AgentArtifactStore {
         prepared.artifact.uri,
         Buffer.from(prepared.content, "utf8")
       );
-      return { status: "stored", artifact: prepared.artifact };
     } catch (error) {
       const document = await vscode.workspace.openTextDocument({
         content: prepared.content,
@@ -90,6 +93,8 @@ export class AgentArtifactStore {
         storageError: error instanceof Error ? error.message : "extension storage write failed"
       };
     }
+    await this.pruneBestEffort();
+    return { status: "stored", artifact: prepared.artifact };
   }
 
   public async open(artifact: AgentResponseArtifact) {
@@ -108,6 +113,64 @@ export class AgentArtifactStore {
       return { status: "opened" };
     } catch {
       return { status: "could-not-open" };
+    }
+  }
+
+  public async clearAll() {
+    const directory = this.responseDirectory();
+    let entries: [string, vscode.FileType][];
+    try {
+      entries = await vscode.workspace.fs.readDirectory(directory);
+    } catch (error) {
+      if ((error as { code?: unknown }).code === "FileNotFound") {
+        return 0;
+      }
+      throw error;
+    }
+    const artifacts = entries.filter(([name]) => this.isArtifactFilename(name));
+    await Promise.all(
+      artifacts.map(([name]) =>
+        vscode.workspace.fs.delete(vscode.Uri.joinPath(directory, name), {
+          recursive: false,
+          useTrash: false
+        })
+      )
+    );
+    return artifacts.length;
+  }
+
+  private isArtifactFilename(name: string) {
+    return (
+      name.toLowerCase().endsWith(".txt") &&
+      getAgentArtifactRunId(`beads-response:${name.slice(0, -4)}`) !== null
+    );
+  }
+
+  private async pruneBestEffort() {
+    try {
+      const directory = this.responseDirectory();
+      const entries = (await vscode.workspace.fs.readDirectory(directory)).filter(([name]) =>
+        this.isArtifactFilename(name)
+      );
+      const files = await Promise.all(
+        entries.map(async ([name]) => {
+          const uri = vscode.Uri.joinPath(directory, name);
+          const stat = await vscode.workspace.fs.stat(uri);
+          return { name, uri, modified: stat.mtime };
+        })
+      );
+      const configuredRetention = Math.round(this.retentionCount());
+      const keep = Number.isFinite(configuredRetention)
+        ? Math.max(1, Math.min(500, configuredRetention))
+        : 50;
+      files.sort((a, b) => b.modified - a.modified || b.name.localeCompare(a.name));
+      await Promise.all(
+        files
+          .slice(keep)
+          .map(({ uri }) => vscode.workspace.fs.delete(uri, { recursive: false, useTrash: false }))
+      );
+    } catch {
+      // Artifact storage already succeeded; pruning must not discard or hide that result.
     }
   }
 }

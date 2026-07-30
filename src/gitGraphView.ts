@@ -4,6 +4,7 @@ import { getConfig } from "./config";
 import { DataSource } from "./dataSource";
 import { encodeDiffDocUri } from "./diffDocProvider";
 import { ExtensionState } from "./extensionState";
+import { getGitMutationInputError } from "./gitInputSafety";
 import { RepoFileWatcher } from "./repoFileWatcher";
 import { RepoManager } from "./repoManager";
 import {
@@ -20,6 +21,7 @@ import {
   getNonce,
   resolvePathWithinRoot
 } from "./utils";
+import { isGitMutationCommand } from "./workspaceTrust";
 
 export class GitGraphView {
   public static currentPanel: GitGraphView | undefined;
@@ -148,6 +150,19 @@ export class GitGraphView {
         const repo = "repo" in msg && typeof msg.repo === "string" ? msg.repo : null;
         if (repo !== null && !this.isKnownRepo(repo)) {
           vscode.window.showWarningMessage("Refusing to run an action for an unknown repository.");
+          this.repoFileWatcher.unmute();
+          return;
+        }
+        if (!vscode.workspace.isTrusted && isGitMutationCommand(msg.command)) {
+          vscode.window.showWarningMessage(
+            "Trust this workspace before changing Git branches, commits, tags, or files."
+          );
+          this.repoFileWatcher.unmute();
+          return;
+        }
+        const gitInputError = getGitMutationInputError(msg);
+        if (gitInputError !== null) {
+          vscode.window.showWarningMessage(gitInputError);
           this.repoFileWatcher.unmute();
           return;
         }

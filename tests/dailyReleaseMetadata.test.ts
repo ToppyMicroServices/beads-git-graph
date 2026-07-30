@@ -79,8 +79,9 @@ describe("daily prerelease automation", () => {
     );
     expect(dailyPrereleaseWorkflow).toContain("--write-release-notes /tmp/daily-release-notes.md");
     expect(dailyPrereleaseWorkflow).toContain(
-      "@vscode/vsce package --no-dependencies --pre-release"
+      "pnpm exec vsce package --no-dependencies --pre-release"
     );
+    expect(dailyPrereleaseWorkflow).not.toContain("pnpm dlx");
     expect(dailyPrereleaseWorkflow).toContain("gh release create");
     expect(dailyPrereleaseWorkflow).toContain("--prerelease");
     expect(dailyPrereleaseWorkflow).toContain("Publish daily prerelease to VS Marketplace");

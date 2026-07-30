@@ -6,7 +6,7 @@
 A local-first project manager for coordinating dependency-linked work across different AI providers
 and requested models, with Git graph and Beads issue tools in one VS Code extension.
 
-No telemetry. Privacy-first. Security-first.
+The extension itself emits no telemetry. Privacy-first. Security-first.
 
 ![Plan Draft preview showing dependency-linked requested AI model transitions](./docs/assets/plan-draft-preview.png)
 
@@ -35,7 +35,8 @@ before approving an import or starting work.
 2. Open the Beads view from the Activity Bar.
 3. Use the toolbar to refresh, sync, or switch views.
 
-If your workspace has a `.beads` directory, the extension detects it automatically. Set `beads-git-graph.bdPath` if `bd` is not on `PATH`.
+If your workspace has a `.beads` directory, the extension detects it automatically. Set the
+machine-scoped `beads-git-graph.bdPath` setting if `bd` is not on `PATH`.
 
 ## Manage Agent Work
 
@@ -69,8 +70,9 @@ AI generation creates an editable draft only. It does not import tasks, mutate B
 response, or start an agent. The planning request contains the goal, workspace display name,
 available relative SSOT references, and configured provider/model choices; it does not include file
 contents, an absolute workspace path, or credentials. The raw provider response is retained as a
-local untrusted artifact for review. GitHub Copilot is not used for draft generation because its
-integration opens a coding session rather than returning a synchronous text response.
+local, plain-text, untrusted artifact for review. Do not put credentials or other secrets in the
+goal or draft. GitHub Copilot is not used for draft generation because its integration opens a
+coding session rather than returning a synchronous text response.
 
 You can also open **Advanced: view or edit Plan Draft JSON** to paste a version 1 draft, load the
 example, or edit the generated JSON directly. Preview remains local and read-only. When
@@ -142,6 +144,8 @@ Configure provider/model choices and the direct-response request bound with:
 - `beads-git-graph.agentAnthropicModelOptions`
 - `beads-git-graph.agentParallelConcurrency` for the direct-response request bound (default `4`,
   range `1`–`8`)
+- `beads-git-graph.agentArtifactRetentionCount` for the maximum number of plain-text responses kept
+  in this workspace's VS Code extension storage (default `50`, range `1`–`500`)
 
 Exact model availability remains provider/account-specific, so every picker also accepts a custom
 model ID. A Hugging Face repository model run by Ollama should be represented as
@@ -171,6 +175,29 @@ monitoring. Failed or cancelled tasks can be retried without rerunning successfu
 tasks receive local response artifacts and are not presented as worktree-editing agents.
 
 These hints are visual metadata. Beads ready/blocking behavior still comes from issue status and dependencies.
+
+## Security and Privacy Boundaries
+
+In VS Code Restricted Mode, the extension keeps Git history and tracked Beads JSON/JSONL viewing
+available, but it does not start `bd`, contact an AI provider, manage provider credentials, create a
+worktree, or change Git or Beads state. Trust the workspace before using those actions. The
+Extension Host enforces this boundary even if a webview sends a forged action message.
+
+Every `bd` process started by this extension, including executable and capability checks, receives
+`DOLT_DISABLE_EVENT_FLUSH=true`. This suppresses Dolt event flushing for those child processes. It
+does not change the behavior of `bd` run manually outside the extension, and selected cloud AI
+providers have their own network and privacy policies.
+
+AI response artifacts are unencrypted plain-text files in VS Code's workspace extension storage.
+They are never executed automatically, the oldest files are removed after the configured retention
+count is exceeded, and **Beads Git Graph: Clear Stored AI Response Artifacts** deletes the retained
+set after confirmation. Avoid sending or storing credentials, private keys, personal data, or other
+secrets in prompts, generated responses, task titles, descriptions, notes, or labels.
+
+Beads data is also local plain text and can be tracked by Git. This repository's default Beads setup
+tracks selected JSONL/configuration records, so data committed to a public repository becomes
+public. Review `.beads` changes before committing. The extension does not initialize, bootstrap, or
+migrate a Beads database, and it preserves schema-mismatch failures instead of bypassing them.
 
 ## SSOT Usage
 
