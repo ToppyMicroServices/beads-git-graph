@@ -378,6 +378,10 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("generation !== this.refreshGeneration");
     expect(beadsMain).toContain("applyBeadsRenderUpdate");
     expect(beadsMain).toContain("message.generation <= lastRenderGeneration");
+    expect(beadsMain).toContain("DOMPurify.sanitize(message.html)");
+    expect(beadsMain.indexOf("DOMPurify.sanitize(message.html)")).toBeLessThan(
+      beadsMain.indexOf('new DOMParser().parseFromString(sanitizedHtml, "text/html")')
+    );
     expect(beadsMain).toContain("reconcileRenderRegion(beadsWorkspaceViews, nextWorkspaceViews)");
     expect(beadsMain).toContain("reconcileRenderChildren");
     expect(beadsMain).toContain("dynamicallyBoundElements");

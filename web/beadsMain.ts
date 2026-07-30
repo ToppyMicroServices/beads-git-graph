@@ -1,3 +1,5 @@
+import createDOMPurify from "dompurify";
+
 import { normalizeAgentArtifactReference } from "../src/agentArtifactReference";
 import {
   type AgentProviderId,
@@ -127,6 +129,7 @@ interface BeadRowItem {
 }
 
 const vscode = acquireVsCodeApi();
+const DOMPurify = createDOMPurify(window);
 const STATUS_LABELS: Record<StatusFilter, string> = {
   open: "Open",
   in_progress: "In Progress",
@@ -1100,7 +1103,8 @@ function applyBeadsRenderUpdate(
     return;
   }
 
-  const parsed = new DOMParser().parseFromString(message.html, "text/html");
+  const sanitizedHtml = DOMPurify.sanitize(message.html);
+  const parsed = new DOMParser().parseFromString(sanitizedHtml, "text/html");
   const nextWorkspaceViews = parsed.querySelector<HTMLDivElement>("#beadsWorkspaceViews");
   const nextWarnings = parsed.querySelector<HTMLDivElement>("#beadsWarnings");
   const nextErrors = parsed.querySelector<HTMLDivElement>("#beadsErrors");
