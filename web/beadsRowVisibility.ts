@@ -1,3 +1,16 @@
+export const DEFAULT_ACTIVE_STATUSES = ["open", "in_progress", "blocked", "other"] as const;
+
+export function getDetailsReadinessLabel(item: {
+  normalizedStatus: string;
+  readyByBd: boolean;
+  synthetic: boolean;
+}) {
+  if (item.synthetic || item.normalizedStatus !== "open") {
+    return "N/A";
+  }
+  return item.readyByBd ? "Confirmed by bd ready" : "Not confirmed";
+}
+
 export interface BeadRowVisibilityState<Status extends string = string> {
   id: string;
   epicId: string;

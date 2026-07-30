@@ -1,6 +1,12 @@
 import * as vscode from "vscode";
 
 import {
+  buildAgentModelOptions,
+  DEFAULT_AGENT_MODEL,
+  normalizeAgentModelName
+} from "./agentModelSelection";
+import { type AgentProviderId } from "./agentProvider";
+import {
   CommitDetailsFileActionVisibility,
   DateFormat,
   DateType,
@@ -73,6 +79,10 @@ class Config {
     return this.workspaceConfiguration.get("loadMoreCommits", 75);
   }
 
+  public fetchOnGraphRefresh() {
+    return this.workspaceConfiguration.get("fetchOnGraphRefresh", true);
+  }
+
   public referenceInputSpaceSubstitution(): ReferenceInputSpaceSubstitution {
     return this.workspaceConfiguration.get("referenceInputSpaceSubstitution", "None");
   }
@@ -129,6 +139,62 @@ class Config {
 
   public bdPath(): string {
     return this.workspaceConfiguration.get("bdPath", "bd");
+  }
+
+  public agentModelOptions(): string[] {
+    const configured = this.workspaceConfiguration.get<unknown>("agentModelOptions", [
+      DEFAULT_AGENT_MODEL
+    ]);
+    return buildAgentModelOptions(
+      undefined,
+      (Array.isArray(configured) ? configured : [])
+        .map(normalizeAgentModelName)
+        .filter((model): model is string => model !== null)
+    );
+  }
+
+  public agentProviderModelOptions(provider: AgentProviderId): string[] {
+    if (provider === "copilot") {
+      return this.agentModelOptions();
+    }
+    const configurationKey: Record<Exclude<AgentProviderId, "copilot">, string> = {
+      ollama: "agentOllamaModelOptions",
+      huggingface: "agentHuggingFaceModelOptions",
+      openai: "agentOpenAIModelOptions",
+      anthropic: "agentAnthropicModelOptions"
+    };
+    const configured = this.workspaceConfiguration.get<unknown>(configurationKey[provider], []);
+    return [
+      ...new Set(
+        (Array.isArray(configured) ? configured : [])
+          .map(normalizeAgentModelName)
+          .filter((model): model is string => model !== null)
+      )
+    ];
+  }
+
+  public agentOllamaBaseUrl() {
+    return this.workspaceConfiguration.get("agentOllamaBaseUrl", "http://127.0.0.1:11434");
+  }
+
+  public agentProviderTimeoutMs() {
+    const seconds = this.workspaceConfiguration.get("agentProviderTimeoutSeconds", 120);
+    return Math.round(Math.min(600, Math.max(5, seconds)) * 1_000);
+  }
+
+  public agentProviderMaxOutputTokens() {
+    const tokens = this.workspaceConfiguration.get("agentProviderMaxOutputTokens", 2_048);
+    return Math.round(Math.min(32_768, Math.max(64, tokens)));
+  }
+
+  public agentParallelConcurrency() {
+    const concurrency = this.workspaceConfiguration.get("agentParallelConcurrency", 4);
+    return Math.round(Math.min(8, Math.max(1, concurrency)));
+  }
+
+  public agentArtifactRetentionCount() {
+    const count = this.workspaceConfiguration.get("agentArtifactRetentionCount", 50);
+    return Math.round(Math.min(500, Math.max(1, count)));
   }
 
   public gitPath(): string {

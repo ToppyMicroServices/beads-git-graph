@@ -1,0 +1,156 @@
+import { type AgentProviderId } from "./agentProvider";
+import { type PlanDraft } from "./planDraft";
+
+export interface PlanGraphNode {
+  id: string;
+  title: string;
+  priority: string;
+  provider?: AgentProviderId;
+  model?: string;
+  ssot: string[];
+  level: number;
+}
+
+export interface PlanGraphEdge {
+  fromId: string;
+  toId: string;
+}
+
+export interface PlanRequestedModelTransition extends PlanGraphEdge {
+  fromModel: string;
+  toModel: string;
+}
+
+export interface PlanRequestedProviderModelTransition extends PlanGraphEdge {
+  fromProvider?: AgentProviderId;
+  toProvider?: AgentProviderId;
+  fromModel?: string;
+  toModel?: string;
+}
+
+export interface PlanGraphProjection {
+  nodes: PlanGraphNode[];
+  edges: PlanGraphEdge[];
+  criticalPathIds: string[];
+  parallelGroups: string[][];
+  requestedModelTransitions: PlanRequestedModelTransition[];
+  requestedProviderModelTransitions: PlanRequestedProviderModelTransition[];
+}
+
+export function projectPlanDraftToGraph(draft: PlanDraft): PlanGraphProjection {
+  const orderById = new Map(draft.tasks.map((task, index) => [task.id, index]));
+  const taskById = new Map(draft.tasks.map((task) => [task.id, task]));
+  const levelsById = new Map<string, number>();
+  const pathById = new Map<string, string[]>();
+  const visiting = new Set<string>();
+
+  const resolve = (id: string): { level: number; path: string[] } => {
+    const cachedLevel = levelsById.get(id);
+    const cachedPath = pathById.get(id);
+    if (cachedLevel !== undefined && cachedPath !== undefined) {
+      return { level: cachedLevel, path: cachedPath };
+    }
+    if (visiting.has(id)) {
+      return { level: 0, path: [id] };
+    }
+    visiting.add(id);
+    const task = taskById.get(id);
+    const incoming = (task?.dependencyIds ?? [])
+      .map((dependencyId) => resolve(dependencyId))
+      .sort((left, right) => {
+        if (right.path.length !== left.path.length) {
+          return right.path.length - left.path.length;
+        }
+        return left.path.join("\0").localeCompare(right.path.join("\0"));
+      });
+    const bestIncoming = incoming[0];
+    const path = bestIncoming === undefined ? [id] : [...bestIncoming.path, id];
+    const level = bestIncoming === undefined ? 0 : bestIncoming.level + 1;
+    visiting.delete(id);
+    levelsById.set(id, level);
+    pathById.set(id, path);
+    return { level, path };
+  };
+
+  const nodes = draft.tasks.map((task) => {
+    const { level } = resolve(task.id);
+    return {
+      id: task.id,
+      title: task.title,
+      priority: task.priority,
+      ...(task.provider === undefined ? {} : { provider: task.provider }),
+      ...(task.model === undefined ? {} : { model: task.model }),
+      ssot: [...task.ssot],
+      level
+    };
+  });
+  const edges = draft.tasks.flatMap((task) =>
+    task.dependencyIds.map((dependencyId) => ({ fromId: dependencyId, toId: task.id }))
+  );
+  const requestedModelTransitions = edges.flatMap((edge) => {
+    const fromModel = taskById.get(edge.fromId)?.model?.trim();
+    const toModel = taskById.get(edge.toId)?.model?.trim();
+    return fromModel === undefined ||
+      fromModel === "" ||
+      toModel === undefined ||
+      toModel === "" ||
+      fromModel === toModel
+      ? []
+      : [{ ...edge, fromModel, toModel }];
+  });
+  const requestedProviderModelTransitions = edges.flatMap((edge) => {
+    const fromTask = taskById.get(edge.fromId);
+    const toTask = taskById.get(edge.toId);
+    const fromProvider = fromTask?.provider;
+    const toProvider = toTask?.provider;
+    const fromModel = fromTask?.model?.trim();
+    const toModel = toTask?.model?.trim();
+    if (
+      (fromProvider === undefined && toProvider === undefined) ||
+      (fromProvider === toProvider && fromModel === toModel)
+    ) {
+      return [];
+    }
+    return [
+      {
+        ...edge,
+        ...(fromProvider === undefined ? {} : { fromProvider }),
+        ...(toProvider === undefined ? {} : { toProvider }),
+        ...(fromModel === undefined || fromModel === "" ? {} : { fromModel }),
+        ...(toModel === undefined || toModel === "" ? {} : { toModel })
+      }
+    ];
+  });
+  const criticalPathIds =
+    edges.length === 0
+      ? []
+      : (draft.tasks
+          .map((task) => pathById.get(task.id) ?? [task.id])
+          .sort((left, right) => {
+            if (right.length !== left.length) {
+              return right.length - left.length;
+            }
+            return left.join("\0").localeCompare(right.join("\0"));
+          })[0] ?? []);
+  const groupedByLevel = new Map<number, string[]>();
+  for (const node of nodes) {
+    const ids = groupedByLevel.get(node.level) ?? [];
+    ids.push(node.id);
+    groupedByLevel.set(node.level, ids);
+  }
+  const parallelGroups = Array.from(groupedByLevel.entries())
+    .sort(([left], [right]) => left - right)
+    .map(([, ids]) =>
+      ids.sort((left, right) => (orderById.get(left) ?? 0) - (orderById.get(right) ?? 0))
+    )
+    .filter((ids) => ids.length > 1);
+
+  return {
+    nodes,
+    edges,
+    criticalPathIds,
+    parallelGroups,
+    requestedModelTransitions,
+    requestedProviderModelTransitions
+  };
+}

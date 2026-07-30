@@ -1,4 +1,6 @@
 import * as cp from "node:child_process";
+import { stat } from "node:fs/promises";
+import * as path from "node:path";
 
 import { checkExecutable } from "./commandAvailability";
 import { classifyCommitSubject } from "./commitTypes";
@@ -40,6 +42,30 @@ export class DataSource {
 
   public getGitExecutableStatus() {
     return checkExecutable(this.gitPath);
+  }
+
+  public fetchAll(repo: string) {
+    return this.runGitCommandSpawn(["fetch", "--all"], repo, {
+      ...process.env,
+      GIT_TERMINAL_PROMPT: "0"
+    });
+  }
+
+  public async getLastFetchAt(repo: string) {
+    const fetchHeadPath = await this.spawnGit(
+      ["rev-parse", "--git-path", "FETCH_HEAD"],
+      repo,
+      (stdout) => stdout.trim(),
+      ""
+    );
+    if (fetchHeadPath === "") {
+      return null;
+    }
+    try {
+      return (await stat(path.resolve(repo, fetchHeadPath))).mtimeMs;
+    } catch {
+      return null;
+    }
   }
 
   public generateGitCommandFormats() {
@@ -682,12 +708,15 @@ export class DataSource {
     });
   }
 
-  private runGitCommandSpawn(args: string[], repo: string) {
+  private runGitCommandSpawn(args: string[], repo: string, environment?: NodeJS.ProcessEnv) {
     return new Promise<GitCommandStatus>((resolve) => {
       let stdout = "",
         stderr = "",
         err = false;
-      const cmd = cp.spawn(this.gitPath, args, { cwd: repo });
+      const cmd = cp.spawn(this.gitPath, args, {
+        cwd: repo,
+        ...(environment === undefined ? {} : { env: environment })
+      });
       cmd.stdout.on("data", (d) => {
         stdout += d;
       });

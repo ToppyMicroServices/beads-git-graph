@@ -1,3 +1,9 @@
+import {
+  type AgentProviderId,
+  normalizeAgentProviderId,
+  resolveAgentProviderId
+} from "./agentProvider";
+
 export interface BeadItem {
   id: string;
   title: string;
@@ -14,12 +20,16 @@ export interface BeadItem {
   createdAt: string;
   parentId: string;
   dependencyIds: string[];
+  readyByBd: boolean;
   parallelizable: boolean;
   parallelizableSource: "explicit" | "ready" | "";
   parallelizableSuppressed: boolean;
   agent: string;
+  provider: AgentProviderId;
+  providerExplicit?: boolean;
   model: string;
   ssot: string;
+  artifact: string;
   worktree: string;
   branch: string;
   pullRequest: string;
@@ -254,6 +264,54 @@ export function beadPickAgent(record: Record<string, unknown>) {
   );
 }
 
+function beadPickProviderEvidence(record: Record<string, unknown>): {
+  provider: AgentProviderId;
+  explicit: boolean;
+} {
+  const keys = ["provider", "ai_provider", "aiProvider", "agent_provider", "agentProvider"];
+  const pickKnownProvider = (candidate: Record<string, unknown>) => {
+    for (const key of keys) {
+      const provider = normalizeAgentProviderId(candidate[key]);
+      if (provider !== null) {
+        return provider;
+      }
+    }
+    return null;
+  };
+
+  const direct = pickKnownProvider(record);
+  if (direct !== null) {
+    return { provider: direct, explicit: true };
+  }
+
+  const metadata = record.metadata;
+  if (typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)) {
+    const nested = pickKnownProvider(metadata as Record<string, unknown>);
+    if (nested !== null) {
+      return { provider: nested, explicit: true };
+    }
+  } else if (typeof metadata === "string" && metadata.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(metadata) as Record<string, unknown>;
+      const nested = pickKnownProvider(parsed);
+      if (nested !== null) {
+        return { provider: nested, explicit: true };
+      }
+    } catch {}
+  }
+
+  const tokenProvider = normalizeAgentProviderId(
+    beadPickStringFromTokens(record, ["provider", "ai-provider", "agent-provider"])
+  );
+  return tokenProvider === null
+    ? { provider: "copilot", explicit: false }
+    : { provider: tokenProvider, explicit: true };
+}
+
+export function beadPickProvider(record: Record<string, unknown>): AgentProviderId {
+  return beadPickProviderEvidence(record).provider;
+}
+
 export function beadPickModel(record: Record<string, unknown>) {
   return beadPickStructuredString(
     record,
@@ -274,6 +332,63 @@ export function beadPickSsot(record: Record<string, unknown>) {
       "sourceOfTruth"
     ],
     ["ssot", "context", "source-of-truth"]
+  );
+}
+
+function normalizeBeadArtifactUri(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  if (
+    normalized === "" ||
+    normalized.length > 2048 ||
+    /\s/.test(normalized) ||
+    !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(normalized) ||
+    /^(?:data|javascript):/i.test(normalized)
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+export function beadPickArtifact(record: Record<string, unknown>) {
+  const keys = ["artifact", "artifact_uri", "artifactUri"];
+  const pickArtifact = (candidate: Record<string, unknown>) => {
+    for (const key of keys) {
+      const artifact = normalizeBeadArtifactUri(candidate[key]);
+      if (artifact !== null) {
+        return artifact;
+      }
+    }
+    return null;
+  };
+
+  const direct = pickArtifact(record);
+  if (direct !== null) {
+    return direct;
+  }
+
+  const metadata = record.metadata;
+  if (typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)) {
+    const nested = pickArtifact(metadata as Record<string, unknown>);
+    if (nested !== null) {
+      return nested;
+    }
+  } else if (typeof metadata === "string" && metadata.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(metadata) as Record<string, unknown>;
+      const nested = pickArtifact(parsed);
+      if (nested !== null) {
+        return nested;
+      }
+    } catch {}
+  }
+
+  return (
+    normalizeBeadArtifactUri(beadPickStringFromTokens(record, ["artifact", "artifact-uri"])) ?? ""
   );
 }
 
@@ -494,6 +609,7 @@ export function toBeadItem(item: unknown): BeadItem | null {
   const id = beadPickString(record, ["id", "key", "slug", "issue", "name"]);
   const title = beadPickString(record, ["title", "summary", "name", "description"]);
   const parallelizablePreference = beadPickParallelizablePreference(record);
+  const providerEvidence = beadPickProviderEvidence(record);
 
   if (id === "" || title === "") {
     return null;
@@ -514,12 +630,16 @@ export function toBeadItem(item: unknown): BeadItem | null {
     updatedAt: beadPickString(record, ["updated_at", "updatedAt", "updated", "modified_at"], "-"),
     parentId: beadPickParentId(record),
     dependencyIds: beadPickDependencyIds(record, id),
+    readyByBd: false,
     parallelizable: parallelizablePreference === "yes",
     parallelizableSource: parallelizablePreference === "yes" ? "explicit" : "",
     parallelizableSuppressed: parallelizablePreference === "no",
     agent: beadPickAgent(record),
+    provider: providerEvidence.provider,
+    ...(providerEvidence.explicit ? { providerExplicit: true } : {}),
     model: beadPickModel(record),
     ssot: beadPickSsot(record),
+    artifact: beadPickArtifact(record),
     worktree: beadPickWorktree(record),
     branch: beadPickBranch(record),
     pullRequest: beadPickPullRequest(record),
@@ -649,19 +769,33 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
       [...item.dependencyIds, ...fallback.dependencyIds],
       item.id
     );
+    const primaryProviderExplicit =
+      item.providerExplicit === true ||
+      (item.providerExplicit === undefined && item.provider !== "copilot");
+    const fallbackProviderExplicit =
+      fallback.providerExplicit === true ||
+      (fallback.providerExplicit === undefined && fallback.provider !== "copilot");
+    const provider = primaryProviderExplicit
+      ? item.provider
+      : fallbackProviderExplicit
+        ? fallback.provider
+        : item.provider;
 
-    return {
+    const mergedItem: BeadItem = {
       ...fallback,
       ...item,
       parentId: item.parentId.trim() !== "" ? item.parentId : fallback.parentId,
       dependencyIds,
+      readyByBd: item.readyByBd || fallback.readyByBd,
       parallelizable,
       parallelizableSource,
       parallelizableSuppressed:
         !parallelizable && (item.parallelizableSuppressed || fallback.parallelizableSuppressed),
       agent: item.agent.trim() !== "" ? item.agent : fallback.agent,
+      provider: resolveAgentProviderId(provider),
       model: item.model.trim() !== "" ? item.model : fallback.model,
       ssot: item.ssot.trim() !== "" ? item.ssot : fallback.ssot,
+      artifact: (item.artifact ?? "").trim() !== "" ? item.artifact : (fallback.artifact ?? ""),
       worktree: item.worktree.trim() !== "" ? item.worktree : fallback.worktree,
       branch: item.branch.trim() !== "" ? item.branch : fallback.branch,
       pullRequest: item.pullRequest.trim() !== "" ? item.pullRequest : fallback.pullRequest,
@@ -670,6 +804,12 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
       synthetic: item.synthetic || fallback.synthetic,
       syntheticKind: item.syntheticKind || fallback.syntheticKind
     };
+    if (primaryProviderExplicit || fallbackProviderExplicit) {
+      mergedItem.providerExplicit = true;
+    } else {
+      delete mergedItem.providerExplicit;
+    }
+    return mergedItem;
   });
 
   const seenIds = new Set(merged.map((item) => item.id));
@@ -686,30 +826,34 @@ export function inferReadyParallelizableItems(
   items: BeadItem[],
   readyItemIds: ReadonlySet<string>
 ) {
-  const eligibleReadyIds = new Set(
-    items
+  const itemsWithReadiness = items.map((item) => {
+    const status = normalizeBeadStatus(item.status);
+    const readyByBd =
+      readyItemIds.has(item.id) &&
+      normalizeBeadType(item.type) !== "epic" &&
+      (status === "open" || status === "in_progress");
+    return item.parallelizableSource === "ready"
+      ? { ...item, readyByBd, parallelizable: false, parallelizableSource: "" as const }
+      : { ...item, readyByBd };
+  });
+
+  const readyParallelCandidateIds = new Set(
+    itemsWithReadiness
       .filter((item) => {
-        if (item.parallelizable || item.parallelizableSuppressed) {
+        if (item.parallelizableSuppressed || !item.readyByBd) {
           return false;
         }
-        if (!readyItemIds.has(item.id)) {
-          return false;
-        }
-        if (normalizeBeadType(item.type) === "epic") {
-          return false;
-        }
-        const status = normalizeBeadStatus(item.status);
-        return status === "open" || status === "in_progress";
+        return normalizeBeadType(item.type) !== "epic";
       })
       .map((item) => item.id)
   );
 
-  if (eligibleReadyIds.size < 2) {
-    return items;
+  if (readyParallelCandidateIds.size < 2) {
+    return itemsWithReadiness;
   }
 
-  return items.map((item) =>
-    eligibleReadyIds.has(item.id)
+  return itemsWithReadiness.map((item) =>
+    readyParallelCandidateIds.has(item.id) && !item.parallelizable
       ? { ...item, parallelizable: true, parallelizableSource: "ready" as const }
       : item
   );
@@ -722,7 +866,12 @@ export function deriveParallelMergeItems(items: BeadItem[]) {
 
   for (const entry of hierarchy) {
     const item = entry.item;
-    if (item.synthetic || !item.parallelizable || item.worktree.trim() === "") {
+    if (
+      item.synthetic ||
+      resolveAgentProviderId(item.provider) !== "copilot" ||
+      !item.parallelizable ||
+      item.worktree.trim() === ""
+    ) {
       continue;
     }
 
@@ -784,12 +933,15 @@ export function deriveParallelMergeItems(items: BeadItem[]) {
       createdAt: latestItem?.createdAt ?? "-",
       parentId: group.anchorId,
       dependencyIds,
+      readyByBd: false,
       parallelizable: false,
       parallelizableSource: "",
       parallelizableSuppressed: false,
       agent: "",
+      provider: "copilot",
       model: "",
       ssot: dependencyIds.map((id) => `bd:${id}`).join(", "),
+      artifact: "",
       worktree: "",
       branch: "",
       pullRequest: "",
@@ -916,8 +1068,10 @@ export function diffBeadItems(
     "parallelizable",
     "parallelizableSuppressed",
     "agent",
+    "provider",
     "model",
     "ssot",
+    "artifact",
     "worktree",
     "commitHash"
   ];

@@ -1,8 +1,39 @@
 import { describe, expect, it } from "vitest";
 
-import { isCollapsedByEpic, shouldShowBeadRow } from "../web/beadsRowVisibility";
+import {
+  DEFAULT_ACTIVE_STATUSES,
+  getDetailsReadinessLabel,
+  isCollapsedByEpic,
+  shouldShowBeadRow
+} from "../web/beadsRowVisibility";
 
 describe("bead row visibility", () => {
+  it("keeps unrecognized active states visible for intervention by default", () => {
+    expect(DEFAULT_ACTIVE_STATUSES).toEqual(["open", "in_progress", "blocked", "other"]);
+  });
+
+  it("shows readiness only where starting open work is applicable", () => {
+    expect(
+      getDetailsReadinessLabel({ normalizedStatus: "open", readyByBd: true, synthetic: false })
+    ).toBe("Confirmed by bd ready");
+    expect(
+      getDetailsReadinessLabel({ normalizedStatus: "open", readyByBd: false, synthetic: false })
+    ).toBe("Not confirmed");
+    expect(
+      getDetailsReadinessLabel({
+        normalizedStatus: "in_progress",
+        readyByBd: true,
+        synthetic: false
+      })
+    ).toBe("N/A");
+    expect(
+      getDetailsReadinessLabel({ normalizedStatus: "closed", readyByBd: false, synthetic: false })
+    ).toBe("N/A");
+    expect(
+      getDetailsReadinessLabel({ normalizedStatus: "open", readyByBd: false, synthetic: true })
+    ).toBe("N/A");
+  });
+
   it("keeps the epic visible while hiding descendants of collapsed epics", () => {
     const collapsedEpicIds = new Set(["epic-a"]);
 

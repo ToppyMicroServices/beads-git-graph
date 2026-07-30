@@ -41,8 +41,8 @@ jobs:
 
       - name: Publish to Open VSX
         if: env.OPEN_VSX_TOKEN != ''
-        run: pnpm dlx ovsx -p "$OPEN_VSX_TOKEN" publish -i "${{ steps.package_extension.outputs.vsix_path }}" --skip-duplicate
+        run: pnpm exec ovsx -p "$OPEN_VSX_TOKEN" publish -i "${{ steps.package_extension.outputs.vsix_path }}" --skip-duplicate
 
       - name: Publish to VS Marketplace
         if: env.VS_MARKETPLACE_TOKEN != ''
-        run: pnpm dlx @vscode/vsce publish --packagePath "${{ steps.package_extension.outputs.vsix_path }}" --skip-duplicate -p "$VS_MARKETPLACE_TOKEN"
+        run: pnpm exec vsce publish --packagePath "${{ steps.package_extension.outputs.vsix_path }}" --skip-duplicate -p "$VS_MARKETPLACE_TOKEN"

@@ -24,6 +24,20 @@ body.unableToLoad p {
 #content {
   position: relative;
 }
+#fetchStatus {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.35);
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-editor-background);
+  font-size: 12px;
+  line-height: 17px;
+}
+#fetchStatus.fetchFailed {
+  color: var(--vscode-errorForeground);
+}
+#fetchStatus.fetching {
+  color: var(--vscode-progressBar-background);
+}
 
 /* Commit Graph */
 #commitGraph {

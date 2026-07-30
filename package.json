@@ -50,25 +50,29 @@
     "vscode:prepublish": "pnpm run compile",
     "clean": "node -e \"require('node:fs').rmSync('out', { recursive: true, force: true })\"",
     "compile": "pnpm run clean && pnpm run compile-src && pnpm run compile-web",
+    "compile-extension-host-smoke": "esbuild --bundle tests/extensionHostSmoke.ts --outfile=out/extensionHostSmoke.cjs --platform=node --format=cjs --target=es2022 --external:vscode",
     "compile-src": "esbuild --bundle src/extension.ts --outfile=out/extension.js --platform=node --format=cjs --target=es6 --external:vscode --minify",
     "compile-web": "esbuild --bundle web/main.ts --outfile=out/web.min.js --minify --target=es6 --format=iife && esbuild --bundle web/beadsMain.ts --outfile=out/beadsWebview.min.js --minify --target=es6 --format=iife",
-    "package": "pnpm run clean && pnpm dlx @vscode/vsce package --no-dependencies",
-    "package-and-install": "pnpm run clean && pnpm dlx @vscode/vsce package --no-dependencies && node ./.vscode/install-package.js",
+    "package": "pnpm run clean && pnpm exec vsce package --no-dependencies",
+    "package-and-install": "pnpm run clean && pnpm exec vsce package --no-dependencies && node ./.vscode/install-package.js",
     "format": "oxfmt --check",
     "format:fix": "oxfmt .",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "worktree-sync:guard": "node scripts/worktree-sync-guard.mjs --all",
+    "audit": "pnpm audit --audit-level high",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
     "@types/vscode": "~1.120.0",
+    "@vscode/vsce": "3.9.2",
     "dompurify": "^3.4.12",
     "esbuild": "^0.28.1",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "fast-check": "^4.9.0",
+    "ovsx": "1.0.2",
     "oxfmt": "^0.61.0",
     "oxlint": "^1.76.0",
     "typescript": "^6.0.3",
@@ -96,6 +100,16 @@
         "category": "Beads Git Graph",
         "command": "beads-git-graph.focusBeadsView",
         "title": "Focus Beads View"
+      },
+      {
+        "category": "Beads Git Graph",
+        "command": "beads-git-graph.manageAgentProviderCredentials",
+        "title": "Manage AI Provider Credentials"
+      },
+      {
+        "category": "Beads Git Graph",
+        "command": "beads-git-graph.clearAgentResponseArtifacts",
+        "title": "Clear Stored AI Response Artifacts"
       }
     ],
     "menus": {
@@ -264,6 +278,11 @@
           "default": 100,
           "description": "Specifies the number of commits to load when the \"Load More Commits\" button is pressed (only shown when more commits are available)."
         },
+        "beads-git-graph.fetchOnGraphRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run git fetch --all before a manual Git Graph refresh. Fetch updates local remote-tracking refs only; it never merges, rebases, or prunes branches."
+        },
         "beads-git-graph.referenceInputSpaceSubstitution": {
           "type": "string",
           "enum": [
@@ -355,7 +374,89 @@
         "beads-git-graph.bdPath": {
           "type": "string",
           "default": "bd",
+          "scope": "machine",
           "description": "Path or command name for the Beads CLI executable used by the Beads view."
+        },
+        "beads-git-graph.agentModelOptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "default": [
+            "gpt-5-codex"
+          ],
+          "description": "Model preference choices shown before starting Copilot agent work. These values are recorded and included in the prompt; actual model availability depends on the launch provider."
+        },
+        "beads-git-graph.agentOllamaModelOptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "default": [],
+          "description": "Ollama model choices shown before generating a local text response. Add the exact model names installed in your Ollama runtime."
+        },
+        "beads-git-graph.agentHuggingFaceModelOptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "default": [],
+          "description": "Hugging Face Inference model choices. Add model IDs supported by your Inference Providers account."
+        },
+        "beads-git-graph.agentOpenAIModelOptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "default": [],
+          "description": "OpenAI Responses API model choices. Add model IDs enabled for your OpenAI project."
+        },
+        "beads-git-graph.agentAnthropicModelOptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "default": [],
+          "description": "Anthropic Messages API model choices. Add model IDs enabled for your Anthropic account."
+        },
+        "beads-git-graph.agentOllamaBaseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:11434",
+          "description": "Loopback-only Ollama base URL. Remote hosts are rejected before any prompt is sent."
+        },
+        "beads-git-graph.agentProviderTimeoutSeconds": {
+          "type": "number",
+          "minimum": 5,
+          "maximum": 600,
+          "default": 120,
+          "description": "Timeout in seconds for Ollama, Hugging Face, OpenAI, and Anthropic text-response requests."
+        },
+        "beads-git-graph.agentProviderMaxOutputTokens": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 32768,
+          "default": 2048,
+          "description": "Maximum requested output tokens for remote text-response APIs. Ollama uses its runtime defaults."
+        },
+        "beads-git-graph.agentParallelConcurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8,
+          "default": 4,
+          "description": "Maximum number of direct Ollama, Hugging Face, OpenAI, or Anthropic requests run concurrently. Beads and Git mutations remain serialized per workspace."
+        },
+        "beads-git-graph.agentArtifactRetentionCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 50,
+          "scope": "machine",
+          "description": "Maximum number of plain-text AI response artifacts retained in this workspace's VS Code extension storage. Oldest artifacts are deleted after a successful write."
         },
         "beads-git-graph.tabIconColourTheme": {
           "type": "string",
@@ -383,5 +484,22 @@
   "engines": {
     "vscode": "^1.120.0"
   },
-  "packageManager": "pnpm@10.29.3"
+  "packageManager": "pnpm@10.29.3",
+  "pnpm": {
+    "overrides": {
+      "brace-expansion": "5.0.8",
+      "postcss": "8.5.25"
+    }
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Git history and tracked Beads JSON/JSONL viewing remain available. AI execution, credential management, worktree creation, bd execution, and Git or Beads mutations require a trusted workspace.",
+      "restrictedConfigurations": [
+        "beads-git-graph.agentOllamaBaseUrl",
+        "beads-git-graph.bdPath",
+        "beads-git-graph.fetchOnGraphRefresh"
+      ]
+    }
+  }
 }

@@ -2,6 +2,63 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add a locally validated Plan Draft preview with dependency graph, Critical Path, parallel groups,
+  and exact Beads mutations.
+- Gate approved Plan Import on observed Beads write capabilities and report partial results without
+  claiming rollback.
+- Ask for a model preference before starting single or parallel Copilot agent work.
+- Show requested-model transitions for dependency-linked tasks and include upstream bead handoffs
+  in dependent task prompts.
+- Add a cross-model task-chain behavior test from Plan Draft through Beads import.
+- Add a current Plan Draft screenshot to the README.
+- Add provider/model selection for Copilot, local Ollama, Hugging Face Inference, OpenAI, and
+  Anthropic Claude.
+- Store cloud credentials in VS Code SecretStorage with environment fallbacks and require Workspace
+  Trust before provider execution.
+- Store direct API output as a local untrusted response artifact without applying it to a worktree.
+- Preserve provider/model handoffs through Plan Draft, Beads metadata, single starts, and parallel
+  starts, with a cross-provider workflow test.
+- Add bounded local response-artifact retention and a confirmed command to clear stored responses.
+- Add configurable fetch-on-Graph-refresh, last successful fetch time, and explicit local
+  remote-tracking labels for `origin/*` refs.
+
+### Fixed
+
+- Open task Details from both Manage and warning-free Graph views, preserve the selected task when
+  switching views, and give repeated task actions distinct accessible names.
+- Prevent duplicate Start AI, Start Parallel, Plan Import, merge, and sync requests in both the
+  webview and Extension Host; limit Start Parallel to currently visible ready tasks.
+- Disable Create, Close, and Sync unless the relevant Beads capabilities are confirmed, and explain
+  schema or missing-`bd sync` constraints instead of exposing actions that will fail.
+- Let page scrolling continue when Graph wheel zoom is already at its limit, and expose the filter
+  menu's expanded and menu-item state to assistive technology.
+- Keep the visible Table or Graph viewport fixed during live updates, avoid re-running Graph layout
+  for warning-only changes, and preserve runtime zoom, pan, node, and relationship geometry.
+- Stop animating the Sync warning button and preserve existing controls during in-place task
+  updates so buttons do not flash, move, or lose focus.
+- Make normal Graph dragging pan the zoomed canvas, keep box zoom on Option/Alt-drag, and render
+  both execution-dependency arrows and dashed parent-child lines after refresh.
+- Stop reporting a successful Beads sync when the installed CLI does not provide `bd sync`.
+- Disable Graph-view Start AI until `bd ready` confirms the task and its dependencies.
+- Recheck `bd ready` before worktree preparation and again immediately before Beads mutation.
+- Read handoff dependencies from a fresh `bd show` result instead of trusting webview metadata.
+- Validate Plan Draft model preferences consistently and quote untrusted task metadata in prompts.
+- Restrict Ollama endpoints to loopback hosts, fix cloud endpoints, redact provider failures, cap
+  response size, and confirm paid parallel fan-out before sending prompts.
+- Keep the Graph point under the pointer fixed during wheel, trackpad, button, and keyboard zoom;
+  preserve manual zoom when switching views or resizing; and center Fit and box-selection zoom.
+- Block AI requests when a non-mutating Beads probe reports an unsafe write/schema state, record
+  agent assignment and response metadata in one update, and preserve generated output on failure.
+- Enforce the provider response-size limit while streaming and distinguish invalid artifact
+  references from missing or unreadable stored artifacts.
+- Keep Restricted Mode read-only by blocking every `bd` process and Git/Beads mutation, machine-scope
+  `bdPath`, reject option-shaped Git refs, and disable Dolt event flushing for extension-started
+  Beads processes.
+- Pin packaging tools and patched DOMPurify, PostCSS, and brace-expansion versions; require frozen
+  CI installs and a High-severity dependency audit.
+
 ## [0.4.20260710] - 2026-07-08
 
 ### Fixed
