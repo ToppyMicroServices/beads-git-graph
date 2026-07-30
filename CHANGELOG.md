@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-30
+
 ### Added
 
 - Add a locally validated Plan Draft preview with dependency graph, Critical Path, parallel groups,
@@ -440,7 +442,8 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260710...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260710...v0.6.0
 [0.4.20260710]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260709...v0.4.20260710
 [0.4.20260709]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260708...v0.4.20260709
 [0.4.20260708]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260706...v0.4.20260708
