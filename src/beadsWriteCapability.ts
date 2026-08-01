@@ -87,7 +87,11 @@ function classifyFailedProbe(
         migrationGateReason ?? (observed || "The Beads schema is incompatible with the active CLI.")
     };
   }
-  if (/unknown command|command not found|no such command|unknown flag/i.test(observed)) {
+  if (
+    /unknown command|command not found|no such command|unknown (?:flag|option)|unrecognized option|no such option|flag provided but not defined/i.test(
+      observed
+    )
+  ) {
     return {
       supported: false,
       state: "unsupported-command",
