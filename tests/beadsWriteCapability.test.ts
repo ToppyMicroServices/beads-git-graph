@@ -68,6 +68,21 @@ describe("Beads plan write capability", () => {
     expect(capability.reason).toContain("unknown command");
   });
 
+  it.each([
+    "unknown option '--metadata'",
+    "unrecognized option '--metadata'",
+    "no such option: --metadata",
+    "flag provided but not defined: -metadata"
+  ])("classifies an unsupported CLI option for: %s", async (message) => {
+    const capability = await probeBeadsWriteCapability(true, null, async () =>
+      result(1, "", message)
+    );
+
+    expect(capability.supported).toBe(false);
+    expect(capability.state).toBe("unsupported-command");
+    expect(capability.reason).toContain("metadata");
+  });
+
   it("disables import on a structured remote schema migration gate", async () => {
     const capability = await probeBeadsWriteCapability(true, null, async () =>
       result(

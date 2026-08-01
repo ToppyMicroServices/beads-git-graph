@@ -11,7 +11,16 @@ export type BeadsSyncCapability =
   | { supported: false; reason: string };
 
 function isUnknownSyncCommand(error: unknown) {
-  return error instanceof Error && /unknown command "sync"/i.test(error.message);
+  return error instanceof Error && /unknown command ["']?sync["']?/i.test(error.message);
+}
+
+function isUnsupportedFlushOption(error: unknown) {
+  return (
+    error instanceof Error &&
+    /(?:unknown (?:flag|option)|unrecognized option|no such option|flag provided but not defined)[^\n]*-+flush-only/i.test(
+      error.message
+    )
+  );
 }
 
 export async function probeBeadsSyncCapability(
@@ -41,7 +50,7 @@ export async function flushBeadsWorkspace(
     await runBdCommand(["sync", "--flush-only"], workspacePath);
     return { status: "flushed" };
   } catch (error) {
-    if (!isUnknownSyncCommand(error)) {
+    if (!isUnknownSyncCommand(error) && !isUnsupportedFlushOption(error)) {
       throw error;
     }
     return { status: "unsupported" };

@@ -117,4 +117,29 @@ describe("flushBeadsWorkspace", () => {
       status: "flushed"
     });
   });
+
+  it.each([
+    "unknown flag: --flush-only",
+    "unknown option '--flush-only'",
+    "unrecognized option '--flush-only'",
+    "flag provided but not defined: -flush-only"
+  ])("reports an unsupported flush option for: %s", async (message) => {
+    const runBdCommand = vi.fn(async () => {
+      throw new Error(message);
+    });
+
+    await expect(flushBeadsWorkspace(runBdCommand, "/tmp/demo")).resolves.toEqual({
+      status: "unsupported"
+    });
+  });
+
+  it("does not hide unrelated sync failures", async () => {
+    const runBdCommand = vi.fn(async () => {
+      throw new Error("database connection failed");
+    });
+
+    await expect(flushBeadsWorkspace(runBdCommand, "/tmp/demo")).rejects.toThrow(
+      "database connection failed"
+    );
+  });
 });
