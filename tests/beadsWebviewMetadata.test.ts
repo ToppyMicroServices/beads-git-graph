@@ -144,6 +144,12 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).not.toContain("min-height:620px");
     expect(beadsWebview).not.toContain("min-height:560px");
     expect(beadsWebview).toContain("#clearFilters{display:none;}");
+    expect(beadsWebview).toContain(
+      'body[data-view-mode="table"] .agentWriteWarning,body[data-view-mode="graph"] .agentWriteWarning{display:none;}'
+    );
+    expect(beadsWebview).toContain(
+      'body[data-view-mode="table"] #beadsErrors,body[data-view-mode="graph"] #beadsErrors{display:none;}'
+    );
     expect(beadsMain).toContain("getGraphRequiredSize");
     expect(beadsMain).toContain("getGraphViewportSize");
     expect(beadsWebview).toContain("graphLevelGuide");
