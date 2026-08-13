@@ -15,6 +15,7 @@ import {
 import type { BeadsWriteCapability } from "../src/beadsWriteCapability";
 import { renderPlanDraftPreview } from "../src/planPreview";
 import {
+  computeGraphBoundaryState,
   computePackedGraphLayout,
   computeVisibleGraphState,
   graphEdgeKey
@@ -867,6 +868,7 @@ const CLIENT_OWNED_STYLE_CLASSES = [
   "graphCanvas",
   "graphContent",
   "graphNode",
+  "graphBoundaryNode",
   "graphLevelGuide"
 ];
 
@@ -2038,6 +2040,12 @@ function getVisibleGraphNodes(pane: HTMLElement) {
   );
 }
 
+function getVisibleGraphLayoutNodes(pane: HTMLElement) {
+  return Array.from(pane.querySelectorAll<HTMLElement>(".graphLayoutNode[data-graph-id]")).filter(
+    (node) => node.style.display !== "none"
+  );
+}
+
 function updateGraphIssueDrawer(
   pane: HTMLElement,
   drawerSelector: string,
@@ -2075,19 +2083,35 @@ function updateGraphIssueDrawer(
 function refreshGraphDerivedState(pane: HTMLElement) {
   const visibleNodes = getVisibleGraphNodes(pane);
   const visibleIds = new Set(visibleNodes.map((node) => node.dataset.graphId || ""));
-  const candidateEdges = Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge")).map(
-    (edge) => ({
-      fromId: edge.dataset.fromId || "",
-      toId: edge.dataset.toId || ""
-    })
-  );
+  const candidateEdges = Array.from(
+    pane.querySelectorAll<HTMLElement>(".graphEdge:not([data-graph-boundary])")
+  ).map((edge) => ({
+    fromId: edge.dataset.fromId || "",
+    toId: edge.dataset.toId || ""
+  }));
   const graphState = computeVisibleGraphState(visibleIds, candidateEdges);
+  const boundaryState = computeGraphBoundaryState(visibleIds, graphState.edges);
   const criticalIds = new Set(graphState.criticalPathIds);
+  const maximumTaskLevel = Math.max(0, ...graphState.levelsById.values());
+  const endLevel = maximumTaskLevel + 2;
+
+  for (const boundaryNode of Array.from(
+    pane.querySelectorAll<HTMLElement>(".graphBoundaryNode[data-graph-boundary]")
+  )) {
+    boundaryNode.style.display = visibleNodes.length > 0 ? "" : "none";
+    boundaryNode.dataset.graphLevel =
+      boundaryNode.dataset.graphBoundary === "start" ? "0" : String(endLevel);
+  }
+  const endGuide = pane.querySelector<HTMLElement>('.graphLevelGuide[data-graph-boundary="end"]');
+  if (endGuide !== null) {
+    endGuide.dataset.graphLevel = String(endLevel);
+    endGuide.hidden = visibleNodes.length === 0;
+  }
 
   for (const node of visibleNodes) {
     const graphId = node.dataset.graphId || "";
     const critical = criticalIds.has(graphId);
-    node.dataset.graphLevel = String(graphState.levelsById.get(graphId) ?? 0);
+    node.dataset.graphLevel = String((graphState.levelsById.get(graphId) ?? 0) + 1);
     node.dataset.critical = critical ? "1" : "0";
     node.classList.toggle("criticalGraphNode", critical);
     const badge = node.querySelector<HTMLElement>(".criticalBadge");
@@ -2107,6 +2131,19 @@ function refreshGraphDerivedState(pane: HTMLElement) {
     }
   }
   for (const edge of Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge"))) {
+    const boundary = edge.dataset.graphBoundary;
+    if (boundary === "start") {
+      edge.hidden = !boundaryState.startIds.has(edge.dataset.toId || "");
+      edge.dataset.critical = "0";
+      continue;
+    }
+    if (boundary === "end") {
+      edge.hidden = !boundaryState.endIds.has(edge.dataset.fromId || "");
+      edge.dataset.critical = "0";
+      continue;
+    }
+    edge.hidden =
+      !visibleIds.has(edge.dataset.fromId || "") || !visibleIds.has(edge.dataset.toId || "");
     edge.dataset.critical = graphState.criticalEdgeKeys.has(
       graphEdgeKey(edge.dataset.fromId || "", edge.dataset.toId || "")
     )
@@ -2163,7 +2200,7 @@ function layoutGraphPane(pane: HTMLElement) {
   if (canvas === null || content === null || pane.offsetParent === null) {
     return;
   }
-  const visibleNodes = getVisibleGraphNodes(pane);
+  const visibleNodes = getVisibleGraphLayoutNodes(pane);
   const layout = computePackedGraphLayout(
     visibleNodes.map((node) => ({
       id: node.dataset.graphId || "",
@@ -2260,7 +2297,7 @@ function getGraphViewportSize(scroller: HTMLElement) {
 function getGraphRequiredSize(pane: HTMLElement, base: { width: number; height: number }) {
   let width = base.width;
   let height = base.height;
-  for (const node of Array.from(pane.querySelectorAll<HTMLElement>(".graphNode"))) {
+  for (const node of Array.from(pane.querySelectorAll<HTMLElement>(".graphLayoutNode"))) {
     if (node.style.display === "none") {
       continue;
     }
@@ -2821,13 +2858,14 @@ function renderDependencyGraphOverlays() {
     overlay.style.height = `${height}px`;
 
     const nodesById = new Map(
-      Array.from(pane.querySelectorAll<HTMLElement>(".graphNode[data-graph-id]"))
+      Array.from(pane.querySelectorAll<HTMLElement>(".graphLayoutNode[data-graph-id]"))
         .filter((node) => node.style.display !== "none")
         .map((node) => [node.dataset.graphId || "", node])
     );
     const markerId = `dependencyArrow-${paneIndex}`;
+    const boundaryMarkerId = `boundaryDependencyArrow-${paneIndex}`;
     const criticalMarkerId = `criticalDependencyArrow-${paneIndex}`;
-    const markerDefs = `<defs><marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="dependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${criticalMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="criticalDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker></defs>`;
+    const markerDefs = `<defs><marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="dependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${boundaryMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="boundaryDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${criticalMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="criticalDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker></defs>`;
     const getConnectionPath = (fromNode: HTMLElement, toNode: HTMLElement) => {
       const fromRect = fromNode.getBoundingClientRect();
       const toRect = toNode.getBoundingClientRect();
@@ -2851,6 +2889,9 @@ function renderDependencyGraphOverlays() {
     }
     let paths = "";
     for (const edge of Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge"))) {
+      if (edge.hidden) {
+        continue;
+      }
       const fromNode = nodesById.get(edge.dataset.fromId || "");
       const toNode = nodesById.get(edge.dataset.toId || "");
       if (fromNode === undefined || toNode === undefined) {
@@ -2858,9 +2899,15 @@ function renderDependencyGraphOverlays() {
       }
 
       const d = getConnectionPath(fromNode, toNode);
+      const boundaryClass = edge.dataset.graphBoundary ? " boundaryDependencyPath" : "";
       const criticalClass = edge.dataset.critical === "1" ? " criticalDependencyPath" : "";
-      const arrowId = edge.dataset.critical === "1" ? criticalMarkerId : markerId;
-      paths += `<path class="dependencyPath${criticalClass}" marker-end="url(#${arrowId})" d="${d}" />`;
+      const arrowId =
+        edge.dataset.critical === "1"
+          ? criticalMarkerId
+          : edge.dataset.graphBoundary
+            ? boundaryMarkerId
+            : markerId;
+      paths += `<path class="dependencyPath${boundaryClass}${criticalClass}" marker-end="url(#${arrowId})" d="${d}" />`;
     }
     overlay.innerHTML = markerDefs + parentPaths + paths;
   }

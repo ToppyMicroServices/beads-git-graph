@@ -147,9 +147,8 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain(
       'body[data-view-mode="table"] .agentWriteWarning,body[data-view-mode="graph"] .agentWriteWarning{display:none;}'
     );
-    expect(beadsWebview).toContain(
-      'body[data-view-mode="table"] #beadsErrors,body[data-view-mode="graph"] #beadsErrors{display:none;}'
-    );
+    expect(beadsWebview).toContain("#beadsErrors{display:none!important;}");
+    expect(beadsWebview).toContain('<div id="beadsErrors" hidden>');
     expect(beadsMain).toContain("getGraphRequiredSize");
     expect(beadsMain).toContain("getGraphViewportSize");
     expect(beadsWebview).toContain("graphLevelGuide");
@@ -157,6 +156,10 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("No blockers");
     expect(beadsWebview).toContain("After deps");
     expect(beadsWebview).toContain("graphNodes");
+    expect(beadsWebview).toContain("graphBoundaryNode");
+    expect(beadsWebview).toContain('data-graph-boundary="start"');
+    expect(beadsWebview).toContain('data-graph-boundary="end"');
+    expect(beadsWebview).toContain("Start / End flow");
     expect(beadsWebview).toContain("data-graph-lane");
     expect(beadsWebview).toContain("data-epic-id");
     expect(beadsWebview).toContain("data-depth");
@@ -284,6 +287,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("data-graph-action");
     expect(beadsMain).toContain("refreshGraphDerivedState");
     expect(beadsMain).toContain("computeVisibleGraphState");
+    expect(beadsMain).toContain("computeGraphBoundaryState");
     expect(beadsMain).toContain("layoutGraphPane");
     expect(beadsMain).toContain("computePackedGraphLayout");
     expect(beadsMain).toContain("node.offsetHeight");
