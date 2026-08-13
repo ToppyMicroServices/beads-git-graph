@@ -1028,6 +1028,8 @@ section{margin-bottom:12px;}
 body[data-view-mode="graph"] .tableWrap,body[data-view-mode="control"] .tableWrap{display:none;}
 body[data-view-mode="table"] .graphPane,body[data-view-mode="control"] .graphPane{display:none;}
 body[data-view-mode="table"] .agentWorkQueue,body[data-view-mode="graph"] .agentWorkQueue{display:none;}
+body[data-view-mode="table"] .agentWriteWarning,body[data-view-mode="graph"] .agentWriteWarning{display:none;}
+body[data-view-mode="table"] #beadsErrors,body[data-view-mode="graph"] #beadsErrors{display:none;}
 body[data-view-mode="plan"] #beadsWorkspaceViews{display:none;}
 body:not([data-view-mode="plan"]) #planDraftView{display:none;}
 body:not([data-view-mode="control"]) #parallelBatchResult{display:none;}
