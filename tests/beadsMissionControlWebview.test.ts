@@ -158,6 +158,14 @@ describe("Agent Project Manager webview", () => {
     expect(html).toContain('<button id="controlView" type="button">Manage</button>');
     expect(html).toContain("Agent Work Queue");
     expect(html).toContain('<div class="agentWorkDetailsHost"></div>');
+    expect(html).toContain(
+      'data-graph-boundary="start" data-from-id="__beads_flow_start__" data-to-id="queue-1"'
+    );
+    expect(html).toContain(
+      'data-graph-boundary="end" data-from-id="queue-1" data-to-id="__beads_flow_end__"'
+    );
+    expect(html).toContain("Ready work begins");
+    expect(html).toContain("All paths complete");
 
     for (const lane of ["attention", "review", "running", "queue", "done"]) {
       expect(html).toContain(`data-work-lane="${lane}"`);
@@ -372,6 +380,11 @@ describe("Agent Project Manager webview", () => {
 
     expect(html).toContain("<strong>AI actions disabled</strong>");
     expect(html).toContain("Beads schema v49 is incompatible with v53.");
+    const queueStart = html.indexOf('<div class="agentWorkQueue"');
+    const diagnosticStart = html.indexOf('<div class="warnings agentWriteWarning">');
+    expect(queueStart).toBeGreaterThan(-1);
+    expect(diagnosticStart).toBeGreaterThan(queueStart);
+    expect(html).toContain('<div id="beadsErrors" hidden>');
     const startButton = getTagContaining(
       getAgentCard(html, "ready-1"),
       "button",

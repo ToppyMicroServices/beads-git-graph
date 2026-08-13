@@ -10,6 +10,11 @@ export interface VisibleGraphState {
   criticalEdgeKeys: Set<string>;
 }
 
+export interface GraphBoundaryState {
+  startIds: Set<string>;
+  endIds: Set<string>;
+}
+
 export interface GraphLayoutNode {
   id: string;
   level: number;
@@ -34,6 +39,27 @@ export interface GraphLayoutResult {
 
 export function graphEdgeKey(fromId: string, toId: string) {
   return `${fromId}\0${toId}`;
+}
+
+export function computeGraphBoundaryState(
+  nodeIds: Iterable<string>,
+  edges: Iterable<VisibleGraphEdge>
+): GraphBoundaryState {
+  const visibleIds = new Set(nodeIds);
+  const incomingIds = new Set<string>();
+  const outgoingIds = new Set<string>();
+  for (const edge of edges) {
+    if (!visibleIds.has(edge.fromId) || !visibleIds.has(edge.toId)) {
+      continue;
+    }
+    outgoingIds.add(edge.fromId);
+    incomingIds.add(edge.toId);
+  }
+
+  return {
+    startIds: new Set(Array.from(visibleIds).filter((id) => !incomingIds.has(id))),
+    endIds: new Set(Array.from(visibleIds).filter((id) => !outgoingIds.has(id)))
+  };
 }
 
 export function computeVisibleGraphState(

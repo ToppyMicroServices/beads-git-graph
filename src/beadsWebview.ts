@@ -31,6 +31,9 @@ const GRAPH_LEVEL_COLUMN_GAP = 24;
 const GRAPH_LANE_GAP = 30;
 const GRAPH_PADDING_X = 28;
 const GRAPH_PADDING_Y = 44;
+const GRAPH_BOUNDARY_NODE_HEIGHT_ESTIMATE = 62;
+const GRAPH_START_ID = "__beads_flow_start__";
+const GRAPH_END_ID = "__beads_flow_end__";
 
 function getRawAssigneeLabel(item: BeadItem) {
   return item.assignee.trim() !== "" && item.assignee !== "-" ? item.assignee.trim() : "";
@@ -344,7 +347,8 @@ function renderAgentWorkQueue(
   workspacePath: string,
   agentAliases: ReadonlyMap<string, string>,
   writeAvailable: boolean,
-  writeUnavailableReason: string
+  writeUnavailableReason: string,
+  diagnosticHtml: string
 ) {
   const queue = buildAgentWorkQueue(items);
   const overview = AGENT_WORK_LANES.map(
@@ -366,7 +370,7 @@ function renderAgentWorkQueue(
     return `<div class="agentWorkLane" data-work-lane="${lane}"><div class="agentWorkLaneHeader"><span>${AGENT_WORK_LANE_LABELS[lane]}</span><span class="agentWorkLaneCount">${queue.counts[lane]}</span></div><div class="agentWorkLaneCards">${cards}<div class="agentWorkLaneEmpty"${queue.counts[lane] === 0 ? "" : " hidden"}>No matching work</div></div></div>`;
   }).join("");
 
-  return `<div class="agentWorkQueue" data-workspace-path="${escapeHtml(workspacePath)}"><div class="agentWorkQueueHeader"><div><div class="agentWorkQueueTitle">Agent Work Queue</div><div class="agentWorkQueueHint">Derived from Beads status and recorded Git/PR metadata. “Recorded in progress” is not live-agent monitoring.</div></div><div class="agentWorkOverview">${overview}</div></div><div class="agentWorkDetailsHost"></div><div class="agentWorkLanes">${lanes}</div></div>`;
+  return `<div class="agentWorkQueue" data-workspace-path="${escapeHtml(workspacePath)}">${diagnosticHtml}<div class="agentWorkQueueHeader"><div><div class="agentWorkQueueTitle">Agent Work Queue</div><div class="agentWorkQueueHint">Derived from Beads status and recorded Git/PR metadata. “Recorded in progress” is not live-agent monitoring.</div></div><div class="agentWorkOverview">${overview}</div></div><div class="agentWorkDetailsHost"></div><div class="agentWorkLanes">${lanes}</div></div>`;
 }
 
 function renderBeadsDependencyGraph(
@@ -397,12 +401,22 @@ function renderBeadsDependencyGraph(
     nodesByLevel.set(node.level, nodes);
   }
 
-  const edgeHtml = graph.edges
+  const dependencyEdgeHtml = graph.edges
     .map(
       (edge) =>
         `<span class="graphEdge" data-from-id="${escapeHtml(edge.fromId)}" data-to-id="${escapeHtml(edge.toId)}" data-critical="${edge.critical ? "1" : "0"}"></span>`
     )
     .join("");
+  const boundaryEdgeHtml = graph.nodes
+    .flatMap((node) => {
+      const id = node.item.id;
+      return [
+        `<span class="graphEdge" data-graph-boundary="start" data-from-id="${GRAPH_START_ID}" data-to-id="${escapeHtml(id)}" data-critical="0"${blockersById.has(id) ? " hidden" : ""}></span>`,
+        `<span class="graphEdge" data-graph-boundary="end" data-from-id="${escapeHtml(id)}" data-to-id="${GRAPH_END_ID}" data-critical="0"${blocksById.has(id) ? " hidden" : ""}></span>`
+      ];
+    })
+    .join("");
+  const edgeHtml = dependencyEdgeHtml + boundaryEdgeHtml;
   const levelCount = maxLevel + 1;
   const levelLayouts = Array.from({ length: levelCount }, (_, level) => {
     const nodes = nodesByLevel.get(level) ?? [];
@@ -413,25 +427,29 @@ function renderBeadsDependencyGraph(
 
     return { nodes, rowCount, columnCount, width, x: 0 };
   });
-  let nextLevelX = GRAPH_PADDING_X;
+  const startLevelX = GRAPH_PADDING_X;
+  let nextLevelX = startLevelX + GRAPH_NODE_WIDTH + GRAPH_LEVEL_GAP;
   for (const layout of levelLayouts) {
     layout.x = nextLevelX;
     nextLevelX += layout.width + GRAPH_LEVEL_GAP;
   }
+  const endLevelX = nextLevelX;
   const graphRowCount = Math.max(1, ...levelLayouts.map((layout) => layout.rowCount));
-  const graphWidth = nextLevelX - GRAPH_LEVEL_GAP + GRAPH_PADDING_X;
-  const graphHeight =
-    GRAPH_PADDING_Y * 2 +
-    graphRowCount * GRAPH_NODE_HEIGHT_ESTIMATE +
-    Math.max(0, graphRowCount - 1) * GRAPH_LANE_GAP;
-  const levelGuideHtml = Array.from({ length: levelCount }, (_, level) => {
+  const graphBodyHeight =
+    graphRowCount * GRAPH_NODE_HEIGHT_ESTIMATE + Math.max(0, graphRowCount - 1) * GRAPH_LANE_GAP;
+  const graphWidth = endLevelX + GRAPH_NODE_WIDTH + GRAPH_PADDING_X;
+  const graphHeight = GRAPH_PADDING_Y * 2 + graphBodyHeight;
+  const boundaryNodeY =
+    GRAPH_PADDING_Y + Math.max(0, (graphBodyHeight - GRAPH_BOUNDARY_NODE_HEIGHT_ESTIMATE) / 2);
+  const taskLevelGuideHtml = Array.from({ length: levelCount }, (_, level) => {
     const layout = levelLayouts[level];
     const x = layout.x + layout.width / 2;
     const label = level === 0 ? "Ready" : `L${level + 1}`;
     const detail = level === 0 ? "No blockers" : "After deps";
 
-    return `<span class="graphLevelGuide" data-graph-level="${level}" style="--graph-guide-x:${x}px"><span class="graphLevelLabel"><strong>${label}</strong><small>${detail}</small></span></span>`;
+    return `<span class="graphLevelGuide" data-graph-level="${level + 1}" data-graph-task-level="${level}" style="--graph-guide-x:${x}px"><span class="graphLevelLabel"><strong>${label}</strong><small>${detail}</small></span></span>`;
   }).join("");
+  const levelGuideHtml = `<span class="graphLevelGuide graphBoundaryGuide" data-graph-level="0" data-graph-boundary="start" style="--graph-guide-x:${startLevelX + GRAPH_NODE_WIDTH / 2}px"><span class="graphLevelLabel"><strong>Start</strong><small>Flow begins</small></span></span>${taskLevelGuideHtml}<span class="graphLevelGuide graphBoundaryGuide" data-graph-level="${maxLevel + 2}" data-graph-boundary="end" style="--graph-guide-x:${endLevelX + GRAPH_NODE_WIDTH / 2}px"><span class="graphLevelLabel"><strong>End</strong><small>Flow complete</small></span></span>`;
   const nodeHtml = Array.from({ length: levelCount }, (_, level) => {
     const layout = levelLayouts[level];
     const rowOffset =
@@ -536,10 +554,11 @@ function renderBeadsDependencyGraph(
         ]
           .filter((badge) => badge !== "")
           .join("");
-        return `<div class="graphNode ${node.critical ? "criticalGraphNode" : ""}${dependencyWarning === "" ? "" : " dependencyWarningGraphNode"}${mergeRiskWarning === "" ? "" : " mergeRiskGraphNode"}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" data-parent-id="${escapeHtml(parentId)}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" style="${initialDisplay}--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span><span class="criticalBadge"${node.critical ? "" : " hidden"}>Critical path</span></div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${graphBadges}</div>${dependencyWarning === "" ? "" : `<div class="graphWarning">${escapeHtml(dependencyWarning)}</div>`}${mergeRiskWarning === "" ? "" : `<div class="graphWarning graphMergeRisk">${escapeHtml(mergeRiskWarning)}</div>`}${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="graphDetailsBead" type="button" data-graph-details-id="${escapeHtml(item.id)}" data-graph-details-workspace="${escapeHtml(workspacePath)}" aria-label="${escapeHtml(`Details for ${taskActionContext}`)}">Details</button>${actionHtml}</div></div>`;
+        return `<div class="graphNode graphLayoutNode ${node.critical ? "criticalGraphNode" : ""}${dependencyWarning === "" ? "" : " dependencyWarningGraphNode"}${mergeRiskWarning === "" ? "" : " mergeRiskGraphNode"}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level + 1}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" data-parent-id="${escapeHtml(parentId)}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" style="${initialDisplay}--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span><span class="criticalBadge"${node.critical ? "" : " hidden"}>Critical path</span></div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${graphBadges}</div>${dependencyWarning === "" ? "" : `<div class="graphWarning">${escapeHtml(dependencyWarning)}</div>`}${mergeRiskWarning === "" ? "" : `<div class="graphWarning graphMergeRisk">${escapeHtml(mergeRiskWarning)}</div>`}${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="graphDetailsBead" type="button" data-graph-details-id="${escapeHtml(item.id)}" data-graph-details-workspace="${escapeHtml(workspacePath)}" aria-label="${escapeHtml(`Details for ${taskActionContext}`)}">Details</button>${actionHtml}</div></div>`;
       })
       .join("");
   }).join("");
+  const boundaryNodeHtml = `<div class="graphBoundaryNode graphLayoutNode" data-graph-id="${GRAPH_START_ID}" data-graph-boundary="start" data-graph-level="0" style="--graph-x:${startLevelX}px;--graph-y:${boundaryNodeY}px"><span class="graphBoundaryIcon" aria-hidden="true">▶</span><strong>Start</strong><small>Ready work begins</small></div><div class="graphBoundaryNode graphLayoutNode" data-graph-id="${GRAPH_END_ID}" data-graph-boundary="end" data-graph-level="${maxLevel + 2}" style="--graph-x:${endLevelX}px;--graph-y:${boundaryNodeY}px"><span class="graphBoundaryIcon" aria-hidden="true">✓</span><strong>End</strong><small>All paths complete</small></div>`;
   const dependencyWarningSummary =
     dependencyWarnings.size > 0
       ? `<span class="summaryPill dependencyWarningSummary">${dependencyWarnings.size} warnings</span>`
@@ -573,10 +592,10 @@ function renderBeadsDependencyGraph(
   const criticalSummary = `<span class="summaryPill criticalSummary" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}"${graph.criticalPathIds.length > 0 ? "" : " hidden"}>${graph.criticalPathIds.length} critical</span>`;
   const criticalPathHtml = `<div class="graphPathStrip${graph.criticalPathIds.length > 0 ? "" : " emptyCriticalPath"}"><span>Critical Path</span><strong class="graphPathValue" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}">${graph.criticalPathIds.length > 0 ? escapeHtml(graph.criticalPathIds.join(" -> ")) : "No dependency path yet"}</strong></div>`;
   const graphLegendHtml =
-    '<div class="graphLegend"><span class="dependencyLegend">Dependency</span><span class="criticalLegend">Critical path</span><span class="parentLegend">Parent</span><span class="riskLegend">Merge/worktree risk</span></div>';
+    '<div class="graphLegend"><span class="flowLegend">Start / End flow</span><span class="dependencyLegend">Dependency</span><span class="criticalLegend">Critical path</span><span class="parentLegend">Parent</span><span class="riskLegend">Merge/worktree risk</span></div>';
   const graphIssuesHtml = `<div class="graphIssueStack">${dependencyWarningHtml}${mergeRiskHtml}</div>`;
 
-  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">Point anywhere and wheel to zoom there · Drag to pan · Option/Alt+drag a box to zoom · Double-click to fit</div></div><div class="graphHeaderActions"><div class="workspaceSummary"><span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="fit">Fit</button></div></div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to pan, Option or Alt drag a box to zoom, use arrow keys to pan, and press zero to fit."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
+  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">Point anywhere and wheel to zoom there · Drag to pan · Option/Alt+drag a box to zoom · Double-click to fit</div></div><div class="graphHeaderActions"><div class="workspaceSummary"><span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="fit">Fit</button></div></div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to pan, Option or Alt drag a box to zoom, use arrow keys to pan, and press zero to fit."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${boundaryNodeHtml}${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
 }
 
 export function renderBeadsWebviewHtml(
@@ -877,14 +896,15 @@ export function renderBeadsWebviewHtml(
           group.workspacePath,
           agentAliases,
           writeAvailable,
-          writeUnavailableReason
+          writeUnavailableReason,
+          writeCapabilityWarning
         );
         const parallelAction =
           parallelStartTargets.length > 1
             ? `<button class="startParallelBeads workspaceAction" type="button" data-start-parallel-workspace="${escapeHtml(group.workspacePath)}" data-start-parallel-items="${encodeJsonData(parallelStartTargets)}" data-start-parallel-skipped="${encodeJsonData(skippedParallelTargets)}" title="${escapeHtml(writeAvailable ? `Assign and start the parallel-ready tasks currently visible through filters${skippedParallelTargets.length > 0 ? `; ${skippedParallelTargets.length} visible active task(s) may be skipped with reasons` : ""}` : writeUnavailableReason)}" aria-label="${escapeHtml(`Start ${parallelStartTargets.length} currently visible parallel-ready tasks in ${workspaceTitle}`)}"${writeAvailable ? "" : " disabled"}>${parallelStartTargets.length} Start Parallel</button>`
             : "";
 
-        return `<section data-workspace-path="${escapeHtml(group.workspacePath)}" data-write-available="${workspaceWriteAvailable ? "1" : "0"}" data-write-unavailable-reason="${escapeHtml(workspaceWriteUnavailableReason)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceHeaderRight"><div class="workspaceSummary">${workspaceSummary}</div>${parallelAction}</div></div>${writeCapabilityWarning}<div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated"> </span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div>${graphHtml}${agentWorkQueueHtml}</section>`;
+        return `<section data-workspace-path="${escapeHtml(group.workspacePath)}" data-write-available="${workspaceWriteAvailable ? "1" : "0"}" data-write-unavailable-reason="${escapeHtml(workspaceWriteUnavailableReason)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceHeaderRight"><div class="workspaceSummary">${workspaceSummary}</div>${parallelAction}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated"> </span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div>${graphHtml}${agentWorkQueueHtml}</section>`;
       })
       .join("");
     const emptyHtml = result.emptyWorkspaces
@@ -1029,7 +1049,7 @@ body[data-view-mode="graph"] .tableWrap,body[data-view-mode="control"] .tableWra
 body[data-view-mode="table"] .graphPane,body[data-view-mode="control"] .graphPane{display:none;}
 body[data-view-mode="table"] .agentWorkQueue,body[data-view-mode="graph"] .agentWorkQueue{display:none;}
 body[data-view-mode="table"] .agentWriteWarning,body[data-view-mode="graph"] .agentWriteWarning{display:none;}
-body[data-view-mode="table"] #beadsErrors,body[data-view-mode="graph"] #beadsErrors{display:none;}
+#beadsErrors{display:none!important;}
 body[data-view-mode="plan"] #beadsWorkspaceViews{display:none;}
 body:not([data-view-mode="plan"]) #planDraftView{display:none;}
 body:not([data-view-mode="control"]) #parallelBatchResult{display:none;}
@@ -1200,6 +1220,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphLegend{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin:0;}
 .graphLegend span{display:inline-flex;align-items:center;gap:5px;min-height:18px;padding:1px 7px;border-radius:999px;border:1px solid var(--vscode-panel-border);font-size:10px;font-weight:700;color:var(--vscode-descriptionForeground);background:rgba(128,128,128,.08);}
 .graphLegend span::before{content:"";width:14px;height:0;border-top:2px solid currentColor;}
+.flowLegend{color:var(--vscode-textLink-foreground,#3b82f6)!important;}
 .dependencyLegend{color:rgba(148,163,184,.95)!important;}
 .criticalLegend{color:var(--vscode-charts-pink,#ec4899)!important;}
 .criticalLegend::before{border-top-width:3px!important;}
@@ -1217,9 +1238,11 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphZoomSelection{position:absolute;z-index:6;border:1px solid var(--vscode-focusBorder,#3b82f6);background:rgba(59,130,246,.16);box-shadow:0 0 0 1px rgba(59,130,246,.18) inset;pointer-events:none;}
 .dependencyOverlay{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none;overflow:visible;}
 .dependencyPath{fill:none;stroke:rgba(148,163,184,.8);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
+.dependencyPath.boundaryDependencyPath{stroke:var(--vscode-textLink-foreground,#3b82f6);stroke-width:1.8;}
 .dependencyPath.criticalDependencyPath{stroke:var(--vscode-charts-pink,#ec4899);stroke-width:2;}
 .graphParentPath{fill:none;stroke:var(--vscode-textLink-foreground,#3b82f6);stroke-width:1.4;stroke-dasharray:6 5;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
 .dependencyArrowHead{fill:rgba(148,163,184,.88);}
+.boundaryDependencyArrowHead{fill:var(--vscode-textLink-foreground,#3b82f6);}
 .criticalDependencyArrowHead{fill:var(--vscode-charts-pink,#ec4899);}
 .graphLevelGuide{position:absolute;top:0;bottom:18px;left:var(--graph-guide-x);z-index:0;border-left:1px dashed rgba(128,128,128,.28);}
 .graphLevelLabel{position:absolute;top:10px;left:8px;display:grid;gap:1px;min-width:82px;color:var(--vscode-descriptionForeground);letter-spacing:0;}
@@ -1227,6 +1250,10 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphLevelLabel small{font-size:10px;font-weight:650;line-height:1.15;color:var(--vscode-descriptionForeground);}
 .graphNodes{position:absolute;inset:0;z-index:2;}
 .graphNode{box-sizing:border-box;position:absolute;left:var(--graph-x);top:var(--graph-y);width:var(--graph-node-width,280px);border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));padding:8px;box-shadow:0 1px 3px rgba(0,0,0,.12);}
+.graphBoundaryNode{box-sizing:border-box;position:absolute;left:var(--graph-x);top:var(--graph-y);display:grid;grid-template-columns:32px 1fr;grid-template-rows:auto auto;column-gap:9px;align-items:center;width:var(--graph-node-width,280px);min-height:62px;padding:9px 12px;border:1px solid var(--vscode-focusBorder,var(--vscode-textLink-foreground,#3b82f6));border-radius:999px;background:color-mix(in srgb,var(--vscode-textLink-foreground,#3b82f6) 12%,var(--vscode-editor-background));box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.graphBoundaryIcon{grid-row:1 / 3;display:grid;place-items:center;width:30px;height:30px;border-radius:999px;background:var(--vscode-textLink-foreground,#3b82f6);color:var(--vscode-button-foreground,#fff);font-size:13px;font-weight:800;}
+.graphBoundaryNode strong{font-size:13px;line-height:1.2;}
+.graphBoundaryNode small{color:var(--vscode-descriptionForeground);font-size:10px;font-weight:650;line-height:1.2;}
 .graphNode.criticalGraphNode{border-color:rgba(236,72,153,.62);box-shadow:inset 3px 0 0 var(--vscode-charts-pink,#ec4899), 0 1px 3px rgba(0,0,0,.12);}
 .graphNode.dependencyWarningGraphNode{border-color:rgba(245,158,11,.58);box-shadow:inset 3px 0 0 var(--vscode-editorWarning-foreground,#f59e0b), 0 1px 3px rgba(0,0,0,.12);}
 .graphNode.mergeRiskGraphNode{border-color:rgba(239,68,68,.58);box-shadow:inset 3px 0 0 var(--vscode-errorForeground,#ef4444), 0 1px 3px rgba(0,0,0,.12);}
@@ -1399,7 +1426,7 @@ code{font-family:var(--vscode-editor-font-family);}
 <div id="beadsWorkspaceViews">${bodyHtml}</div>
 ${planDraftHtml}
 <div id="beadsWarnings">${warningHtml}</div>
-<div id="beadsErrors">${errorHtml}</div>
+<div id="beadsErrors" hidden>${errorHtml}</div>
 <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

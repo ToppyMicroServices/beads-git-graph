@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  computeGraphBoundaryState,
   computePackedGraphLayout,
   computeVisibleGraphState,
   graphEdgeKey
@@ -33,6 +34,27 @@ describe("visible beads graph state", () => {
 
   it("does not report isolated nodes as a dependency path", () => {
     expect(computeVisibleGraphState(["ready"], []).criticalPathIds).toEqual([]);
+  });
+
+  it("connects roots to Start and leaves to End", () => {
+    const boundary = computeGraphBoundaryState(
+      ["root-a", "root-b", "middle", "leaf"],
+      [
+        { fromId: "root-a", toId: "middle" },
+        { fromId: "root-b", toId: "middle" },
+        { fromId: "middle", toId: "leaf" }
+      ]
+    );
+
+    expect(boundary.startIds).toEqual(new Set(["root-a", "root-b"]));
+    expect(boundary.endIds).toEqual(new Set(["leaf"]));
+  });
+
+  it("connects every isolated task through Start and End", () => {
+    const boundary = computeGraphBoundaryState(["parallel-a", "parallel-b"], []);
+
+    expect(boundary.startIds).toEqual(new Set(["parallel-a", "parallel-b"]));
+    expect(boundary.endIds).toEqual(new Set(["parallel-a", "parallel-b"]));
   });
 });
 
