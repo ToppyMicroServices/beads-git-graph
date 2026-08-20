@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-08-21
+
+### Added
+
+- Show a Graph minimap with the current viewport, and mark dependency cycles and missing or
+  filtered dependencies without silently turning them into roots.
+- Add focused regression coverage for filtered viewport recovery, cycle-aware graph projection,
+  dependency relation labels, centered boundaries, and card-avoiding line routes.
+
+### Fixed
+
+- Keep a readable task in view when a status filter replaces an off-screen graph selection while
+  preserving the user's zoom level and normal live-update viewport continuity.
+- Center Start and End vertically, route dependency arrows outside task cards, and retain
+  dependency lines after filtering and refresh.
+- Replace the ambiguous Ready/root and Critical Path labels with visible-dependency and Longest
+  Chain wording; suppress the chain when a dependency cycle makes it undefined.
+- Debounce resize presentation work, reveal keyboard-focused cards, and keep Graph wheel gestures
+  contained even at the zoom limits.
+
 ## [0.6.0] - 2026-07-30
 
 ### Added

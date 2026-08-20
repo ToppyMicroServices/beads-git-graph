@@ -8,6 +8,8 @@ export interface GraphSize {
   height: number;
 }
 
+export interface GraphRect extends GraphPoint, GraphSize {}
+
 export type GraphPointerGesture = "pan" | "select" | "none";
 
 export function getGraphPointerGesture(
@@ -43,6 +45,62 @@ export function computeCenteredGraphPan(viewport: GraphSize, scaledContent: Grap
     x: (viewport.width - scaledContent.width) / 2,
     y: (viewport.height - scaledContent.height) / 2
   };
+}
+
+export function computeGraphPanToCenterRect(
+  viewport: GraphSize,
+  rect: GraphRect,
+  zoom: number
+): GraphPoint {
+  return {
+    x: viewport.width / 2 - (rect.x + rect.width / 2) * zoom,
+    y: viewport.height / 2 - (rect.y + rect.height / 2) * zoom
+  };
+}
+
+export function isGraphRectVisible(
+  rect: GraphRect,
+  pan: GraphPoint,
+  zoom: number,
+  viewport: GraphSize,
+  minimumVisibleSize: number
+) {
+  const left = pan.x + rect.x * zoom;
+  const top = pan.y + rect.y * zoom;
+  const right = left + rect.width * zoom;
+  const bottom = top + rect.height * zoom;
+  const visibleWidth = Math.max(0, Math.min(viewport.width, right) - Math.max(0, left));
+  const visibleHeight = Math.max(0, Math.min(viewport.height, bottom) - Math.max(0, top));
+  const requiredWidth = Math.min(minimumVisibleSize, rect.width * zoom, viewport.width);
+  const requiredHeight = Math.min(minimumVisibleSize, rect.height * zoom, viewport.height);
+  return visibleWidth >= requiredWidth && visibleHeight >= requiredHeight;
+}
+
+export function computeGraphPanToRevealRect(
+  rect: GraphRect,
+  pan: GraphPoint,
+  zoom: number,
+  viewport: GraphSize,
+  padding: number
+): GraphPoint {
+  const left = pan.x + rect.x * zoom;
+  const top = pan.y + rect.y * zoom;
+  const right = left + rect.width * zoom;
+  const bottom = top + rect.height * zoom;
+  let x = pan.x;
+  let y = pan.y;
+
+  if (left < padding) {
+    x += padding - left;
+  } else if (right > viewport.width - padding) {
+    x -= right - (viewport.width - padding);
+  }
+  if (top < padding) {
+    y += padding - top;
+  } else if (bottom > viewport.height - padding) {
+    y -= bottom - (viewport.height - padding);
+  }
+  return { x, y };
 }
 
 export function clampGraphPanForVisibility(

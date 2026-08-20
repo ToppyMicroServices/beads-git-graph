@@ -164,8 +164,8 @@ describe("Agent Project Manager webview", () => {
     expect(html).toContain(
       'data-graph-boundary="end" data-from-id="queue-1" data-to-id="__beads_flow_end__"'
     );
-    expect(html).toContain("Ready work begins");
-    expect(html).toContain("All paths complete");
+    expect(html).toContain("Visible flow begins");
+    expect(html).toContain("Visible flow complete");
 
     for (const lane of ["attention", "review", "running", "queue", "done"]) {
       expect(html).toContain(`data-work-lane="${lane}"`);
@@ -220,6 +220,48 @@ describe("Agent Project Manager webview", () => {
 
     expect(html).toContain("Start &lt;unsafe&gt; &amp; &quot;quoted&quot; work");
     expect(html).not.toContain("<unsafe>");
+  });
+
+  it("keeps hidden and missing dependencies visible and reports cycles", () => {
+    const workspacePath = "/tmp/graph-diagnostics";
+    const result: BeadLoadResult = {
+      groups: [
+        {
+          workspace: "Graph diagnostics",
+          workspacePath,
+          items: [
+            makeBead({ id: "missing-task", dependencyIds: ["gone"] }),
+            makeBead({ id: "done", status: "closed" }),
+            makeBead({ id: "after-done", dependencyIds: ["done"] }),
+            makeBead({ id: "cycle-a", dependencyIds: ["cycle-b"] }),
+            makeBead({ id: "cycle-b", dependencyIds: ["cycle-a"] })
+          ]
+        }
+      ],
+      emptyWorkspaces: [],
+      unavailableWorkspaces: [],
+      bdExecutableStatus: { available: true, command: "bd", message: null },
+      ...supportedCapabilities("Graph diagnostics", workspacePath),
+      errors: [],
+      warnings: []
+    };
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      result
+    );
+
+    expect(html).toContain("Missing dependency: gone.");
+    expect(html).toContain("gone (missing)");
+    expect(html).toContain('data-missing-related-ids="%5B%22gone%22%5D"');
+    expect(html).toContain("done (hidden)");
+    expect(html).toContain("Dependency cycle includes this task.");
+    expect(html).toContain("Unavailable: dependency cycle detected");
+    expect(html).toContain('data-cycle="1"');
+    expect(html).toContain("cycleBadge");
   });
 
   it("enables Start AI only when bd ready confirms the task", () => {
@@ -591,7 +633,7 @@ describe("Agent Project Manager webview", () => {
       " disabled"
     );
     expect(after).toContain("<span>Depends</span><strong");
-    expect(after).toContain(">research</strong>");
+    expect(after).toContain(">research (hidden)</strong>");
   });
 
   it("disables state-changing actions without bd and explains derived merge work", () => {

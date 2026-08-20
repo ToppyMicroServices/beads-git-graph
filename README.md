@@ -1,7 +1,7 @@
 # Beads Git Graph
 
 [![MIT License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](./LICENSE)
-[![Version 0.6.1](https://img.shields.io/badge/version-0.6.1-0366d6?style=flat-square)](./CHANGELOG.md)
+[![Version 0.6.2](https://img.shields.io/badge/version-0.6.2-0366d6?style=flat-square)](./CHANGELOG.md)
 
 A local-first project manager for coordinating dependency-linked work across different AI providers
 and requested models, with Git graph and Beads issue tools in one VS Code extension.

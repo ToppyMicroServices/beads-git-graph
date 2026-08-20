@@ -7,6 +7,16 @@ import {
   resolveAgentProviderId
 } from "../src/agentProvider";
 import {
+  buildObstacleAvoidingGraphPath,
+  computeCenteredBoundaryY,
+  computeGraphBoundaryState,
+  computePackedGraphLayout,
+  computeVisibleGraphState,
+  formatGraphRelationPartition,
+  graphEdgeKey,
+  partitionGraphRelationIds
+} from "../src/beadsGraphModel";
+import {
   type BeadsHostMessage,
   type BeadsRequestMessage,
   isBeadsHostMessage,
@@ -14,12 +24,6 @@ import {
 } from "../src/beadsProtocol";
 import type { BeadsWriteCapability } from "../src/beadsWriteCapability";
 import { renderPlanDraftPreview } from "../src/planPreview";
-import {
-  computeGraphBoundaryState,
-  computePackedGraphLayout,
-  computeVisibleGraphState,
-  graphEdgeKey
-} from "./beadsGraphModel";
 import {
   DEFAULT_ACTIVE_STATUSES,
   getDetailsReadinessLabel,
@@ -30,7 +34,10 @@ import {
   clampGraphPanForVisibility,
   computeAnchoredGraphPan,
   computeCenteredGraphPan,
-  getGraphPointerGesture
+  computeGraphPanToCenterRect,
+  computeGraphPanToRevealRect,
+  getGraphPointerGesture,
+  isGraphRectVisible
 } from "./graphViewportTransform";
 import { createPlanDraftController, type PlanDraftPreviewState } from "./planDraftController";
 
@@ -151,6 +158,8 @@ const GRAPH_PADDING_X = 28;
 const GRAPH_PADDING_Y = 44;
 const GRAPH_KEYBOARD_PAN_STEP = 40;
 const GRAPH_MINIMUM_VISIBLE_SIZE = 48;
+const GRAPH_NODE_VISIBILITY_MINIMUM = 12;
+const GRAPH_FOCUS_PADDING = 16;
 const PLAN_DRAFT_EXAMPLE = JSON.stringify(
   {
     version: 1,
@@ -215,6 +224,7 @@ let graphSelection: GraphSelectionState | null = null;
 let graphPanGesture: GraphPanGestureState | null = null;
 let graphTransformSaveTimer: number | null = null;
 let scrollStateSaveTimer: number | null = null;
+let graphResizeFrame: number | null = null;
 const graphZoomAnchors = new WeakMap<HTMLElement, GraphZoomAnchor>();
 const initializedGraphPanes = new WeakSet<HTMLElement>();
 const dynamicallyBoundElements = new WeakSet<EventTarget>();
@@ -1645,6 +1655,13 @@ function refreshRowVisibility(options: { refreshGraph?: boolean; renderHierarchy
       ? `${visibleCount} / ${rows.length} beads shown`
       : `${visibleCount} / ${matchingCount} matching beads shown`;
   stats.title = `${rows.length} total beads`;
+  const nextGraphIds = new Set(
+    rows.filter((row) => row.style.display !== "none").map((row) => row.dataset.id || "")
+  );
+  const revealFilteredGraphs =
+    activeViewMode === "graph"
+      ? getGraphWorkspaceKeysNeedingReveal(nextGraphIds)
+      : new Set<string>();
   refreshGraphNodeVisibility();
   refreshAgentWorkQueueVisibility();
   refreshParallelStartActions();
@@ -1653,7 +1670,7 @@ function refreshRowVisibility(options: { refreshGraph?: boolean; renderHierarchy
   }
   if (activeViewMode === "graph" && shouldRefreshGraph) {
     refreshGraphPresentation();
-    updateGraphViewportPreservingTransform();
+    updateGraphViewportPreservingTransform(true, revealFilteredGraphs);
   }
   if (shouldRefreshGraph) {
     renderDependencyGraphOverlays();
@@ -2092,6 +2109,7 @@ function refreshGraphDerivedState(pane: HTMLElement) {
   const graphState = computeVisibleGraphState(visibleIds, candidateEdges);
   const boundaryState = computeGraphBoundaryState(visibleIds, graphState.edges);
   const criticalIds = new Set(graphState.criticalPathIds);
+  const cycleIds = graphState.cycleIds;
   const maximumTaskLevel = Math.max(0, ...graphState.levelsById.values());
   const endLevel = maximumTaskLevel + 2;
 
@@ -2111,22 +2129,34 @@ function refreshGraphDerivedState(pane: HTMLElement) {
   for (const node of visibleNodes) {
     const graphId = node.dataset.graphId || "";
     const critical = criticalIds.has(graphId);
+    const cycle = cycleIds.has(graphId);
     node.dataset.graphLevel = String((graphState.levelsById.get(graphId) ?? 0) + 1);
     node.dataset.critical = critical ? "1" : "0";
+    node.dataset.cycle = cycle ? "1" : "0";
     node.classList.toggle("criticalGraphNode", critical);
+    node.classList.toggle("cycleGraphNode", cycle);
     const badge = node.querySelector<HTMLElement>(".criticalBadge");
     if (badge !== null) {
       badge.hidden = !critical;
+    }
+    const cycleBadge = node.querySelector<HTMLElement>(".cycleBadge");
+    if (cycleBadge !== null) {
+      cycleBadge.hidden = !cycle;
     }
     for (const relation of Array.from(
       node.querySelectorAll<HTMLElement>(".graphRelation[data-related-ids]")
     )) {
       const relatedIds = decodeEncodedJson<string[]>(relation.dataset.relatedIds) ?? [];
-      const visibleRelatedIds = relatedIds.filter((id) => visibleIds.has(id));
-      relation.hidden = visibleRelatedIds.length === 0;
+      const missingIds = new Set(
+        decodeEncodedJson<string[]>(relation.dataset.missingRelatedIds) ?? []
+      );
+      const partition = partitionGraphRelationIds(relatedIds, visibleIds, missingIds);
+      relation.hidden = relatedIds.length === 0;
+      relation.classList.toggle("hasHiddenRelation", partition.hiddenIds.length > 0);
+      relation.classList.toggle("hasMissingRelation", partition.missingIds.length > 0);
       const value = relation.querySelector<HTMLElement>(".graphRelationValue");
       if (value !== null) {
-        value.textContent = visibleRelatedIds.join(", ");
+        value.textContent = formatGraphRelationPartition(partition);
       }
     }
   }
@@ -2135,16 +2165,23 @@ function refreshGraphDerivedState(pane: HTMLElement) {
     if (boundary === "start") {
       edge.hidden = !boundaryState.startIds.has(edge.dataset.toId || "");
       edge.dataset.critical = "0";
+      edge.dataset.cycle = "0";
       continue;
     }
     if (boundary === "end") {
       edge.hidden = !boundaryState.endIds.has(edge.dataset.fromId || "");
       edge.dataset.critical = "0";
+      edge.dataset.cycle = "0";
       continue;
     }
     edge.hidden =
       !visibleIds.has(edge.dataset.fromId || "") || !visibleIds.has(edge.dataset.toId || "");
     edge.dataset.critical = graphState.criticalEdgeKeys.has(
+      graphEdgeKey(edge.dataset.fromId || "", edge.dataset.toId || "")
+    )
+      ? "1"
+      : "0";
+    edge.dataset.cycle = graphState.cycleEdgeKeys.has(
       graphEdgeKey(edge.dataset.fromId || "", edge.dataset.toId || "")
     )
       ? "1"
@@ -2159,15 +2196,27 @@ function refreshGraphDerivedState(pane: HTMLElement) {
   const pathLabel = graphState.criticalPathIds.join(" -> ");
   if (criticalSummary !== null) {
     criticalSummary.hidden = graphState.criticalPathIds.length === 0;
-    criticalSummary.textContent = `${graphState.criticalPathIds.length} critical`;
+    criticalSummary.textContent = `${graphState.criticalPathIds.length} chain`;
     criticalSummary.title = pathLabel;
+  }
+  const cycleSummary = pane.querySelector<HTMLElement>(".cycleSummary");
+  if (cycleSummary !== null) {
+    cycleSummary.hidden = cycleIds.size === 0;
+    cycleSummary.textContent = `${cycleIds.size} cycle`;
+    cycleSummary.title = Array.from(cycleIds).join(", ");
   }
   const pathStrip = pane.querySelector<HTMLElement>(".graphPathStrip");
   const pathValue = pane.querySelector<HTMLElement>(".graphPathValue");
   if (pathStrip !== null && pathValue !== null) {
+    const cycleDetected = cycleIds.size > 0;
     const empty = graphState.criticalPathIds.length === 0;
     pathStrip.classList.toggle("emptyCriticalPath", empty);
-    pathValue.textContent = empty ? "No dependency path yet" : pathLabel;
+    pathStrip.classList.toggle("cycleGraphPath", cycleDetected);
+    pathValue.textContent = cycleDetected
+      ? "Unavailable: dependency cycle detected"
+      : empty
+        ? "No dependency path yet"
+        : pathLabel;
     pathValue.title = pathLabel;
   }
 
@@ -2221,7 +2270,10 @@ function layoutGraphPane(pane: HTMLElement) {
     const position = positions.get(node.dataset.graphId || "");
     if (position !== undefined) {
       node.style.setProperty("--graph-x", `${position.x}px`);
-      node.style.setProperty("--graph-y", `${position.y}px`);
+      const y = node.classList.contains("graphBoundaryNode")
+        ? computeCenteredBoundaryY(layout.height, node.offsetHeight)
+        : position.y;
+      node.style.setProperty("--graph-y", `${y}px`);
     }
   }
   const levelCenters = new Map(layout.levels.map((level) => [level.level, level.centerX]));
@@ -2307,6 +2359,148 @@ function getGraphRequiredSize(pane: HTMLElement, base: { width: number; height: 
   return { width, height };
 }
 
+function getGraphNodeRect(node: HTMLElement) {
+  return {
+    x: node.offsetLeft,
+    y: node.offsetTop,
+    width: node.offsetWidth,
+    height: node.offsetHeight
+  };
+}
+
+function getGraphRectBounds(rects: ReturnType<typeof getGraphNodeRect>[]) {
+  if (rects.length === 0) {
+    return null;
+  }
+  const left = Math.min(...rects.map((rect) => rect.x));
+  const top = Math.min(...rects.map((rect) => rect.y));
+  const right = Math.max(...rects.map((rect) => rect.x + rect.width));
+  const bottom = Math.max(...rects.map((rect) => rect.y + rect.height));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+function getGraphWorkspaceKeysNeedingReveal(ids: ReadonlySet<string>) {
+  const workspaceKeys = new Set<string>();
+  for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
+    const scroller = getGraphScroller(pane);
+    if (pane.offsetParent === null || scroller === null) {
+      continue;
+    }
+    const transform = getGraphTransform(pane);
+    const viewport = getGraphViewportSize(scroller);
+    const matchingNodes = Array.from(
+      pane.querySelectorAll<HTMLElement>(".graphNode[data-graph-id]")
+    ).filter((node) => ids.has(node.dataset.graphId || ""));
+    if (
+      matchingNodes.length > 0 &&
+      !matchingNodes.some((node) => {
+        const id = node.dataset.graphId || "";
+        return (
+          node.style.display !== "none" &&
+          ids.has(id) &&
+          isGraphRectVisible(
+            getGraphNodeRect(node),
+            transform.pan,
+            transform.zoom,
+            viewport,
+            GRAPH_NODE_VISIBILITY_MINIMUM
+          )
+        );
+      })
+    ) {
+      workspaceKeys.add(getGraphWorkspaceKey(pane));
+    }
+  }
+  return workspaceKeys;
+}
+
+function renderGraphMiniMap(pane: HTMLElement) {
+  const miniMap = pane.querySelector<SVGSVGElement>(".graphMiniMap");
+  const scroller = getGraphScroller(pane);
+  const content = getGraphContent(pane);
+  if (miniMap === null || scroller === null || content === null) {
+    return;
+  }
+
+  const width = Math.max(1, content.offsetWidth);
+  const height = Math.max(1, content.offsetHeight);
+  const nodesById = new Map(
+    getVisibleGraphLayoutNodes(pane).map((node) => [node.dataset.graphId || "", node])
+  );
+  const namespace = "http://www.w3.org/2000/svg";
+  const fragment = document.createDocumentFragment();
+  const edgeGroup = document.createElementNS(namespace, "g");
+  edgeGroup.setAttribute("class", "graphMiniMapEdges");
+  for (const edge of Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge"))) {
+    if (edge.hidden) {
+      continue;
+    }
+    const fromNode = nodesById.get(edge.dataset.fromId || "");
+    const toNode = nodesById.get(edge.dataset.toId || "");
+    if (fromNode === undefined || toNode === undefined) {
+      continue;
+    }
+    const from = getGraphNodeRect(fromNode);
+    const to = getGraphNodeRect(toNode);
+    const line = document.createElementNS(namespace, "line");
+    line.setAttribute("x1", String(from.x + from.width));
+    line.setAttribute("y1", String(from.y + from.height / 2));
+    line.setAttribute("x2", String(to.x));
+    line.setAttribute("y2", String(to.y + to.height / 2));
+    line.setAttribute(
+      "class",
+      edge.dataset.cycle === "1"
+        ? "graphMiniMapEdge cycle"
+        : edge.dataset.critical === "1"
+          ? "graphMiniMapEdge chain"
+          : "graphMiniMapEdge"
+    );
+    edgeGroup.append(line);
+  }
+  fragment.append(edgeGroup);
+
+  const nodeGroup = document.createElementNS(namespace, "g");
+  nodeGroup.setAttribute("class", "graphMiniMapNodes");
+  for (const node of nodesById.values()) {
+    const rect = getGraphNodeRect(node);
+    const element = document.createElementNS(namespace, "rect");
+    element.setAttribute("x", String(rect.x));
+    element.setAttribute("y", String(rect.y));
+    element.setAttribute("width", String(rect.width));
+    element.setAttribute("height", String(rect.height));
+    element.setAttribute(
+      "class",
+      node.classList.contains("graphBoundaryNode")
+        ? "graphMiniMapNode boundary"
+        : node.dataset.cycle === "1"
+          ? "graphMiniMapNode cycle"
+          : node.dataset.critical === "1"
+            ? "graphMiniMapNode chain"
+            : "graphMiniMapNode"
+    );
+    nodeGroup.append(element);
+  }
+  fragment.append(nodeGroup);
+
+  const transform = getGraphTransform(pane);
+  const viewport = getGraphViewportSize(scroller);
+  const viewportLeft = Math.max(0, -transform.pan.x / transform.zoom);
+  const viewportTop = Math.max(0, -transform.pan.y / transform.zoom);
+  const viewportRight = Math.min(width, (viewport.width - transform.pan.x) / transform.zoom);
+  const viewportBottom = Math.min(height, (viewport.height - transform.pan.y) / transform.zoom);
+  const viewportRect = document.createElementNS(namespace, "rect");
+  viewportRect.setAttribute("x", String(viewportLeft));
+  viewportRect.setAttribute("y", String(viewportTop));
+  viewportRect.setAttribute("width", String(Math.max(0, viewportRight - viewportLeft)));
+  viewportRect.setAttribute("height", String(Math.max(0, viewportBottom - viewportTop)));
+  viewportRect.setAttribute("class", "graphMiniMapViewport");
+  fragment.append(viewportRect);
+
+  miniMap.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  miniMap.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  miniMap.replaceChildren(fragment);
+}
+
 function saveGraphTransforms() {
   const workspaceTransforms = { ...graphTransforms };
   delete workspaceTransforms.__legacy__;
@@ -2382,6 +2576,7 @@ function applyGraphZoomToPane(pane: HTMLElement) {
   if (zoomValue !== null) {
     zoomValue.textContent = `${Math.round(transform.zoom * 100)}%`;
   }
+  renderGraphMiniMap(pane);
 }
 
 function applyGraphZoomToAll() {
@@ -2450,7 +2645,10 @@ function hasPersistedGraphTransform(pane: HTMLElement) {
   );
 }
 
-function updateGraphViewportPreservingTransform(clampPan: boolean = true) {
+function updateGraphViewportPreservingTransform(
+  clampPan: boolean = true,
+  revealWorkspaceKeys: ReadonlySet<string> = new Set<string>()
+) {
   for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
     if (pane.offsetParent === null) {
       continue;
@@ -2459,17 +2657,68 @@ function updateGraphViewportPreservingTransform(clampPan: boolean = true) {
       fitGraphToPane(pane, false);
     } else {
       const transform = getGraphTransform(pane);
-      if (clampPan) {
-        setGraphTransform(pane, {
-          ...transform,
-          pan: clampGraphPanForPane(pane, transform.pan, transform.zoom)
-        });
+      const scroller = getGraphScroller(pane);
+      const taskRects = getVisibleGraphNodes(pane).map(getGraphNodeRect);
+      const viewport = scroller === null ? null : getGraphViewportSize(scroller);
+      const hasVisibleTask =
+        viewport !== null &&
+        taskRects.some((rect) =>
+          isGraphRectVisible(
+            rect,
+            transform.pan,
+            transform.zoom,
+            viewport,
+            GRAPH_NODE_VISIBILITY_MINIMUM
+          )
+        );
+      const taskBounds = getGraphRectBounds(taskRects);
+      let nextPan = transform.pan;
+      if (
+        viewport !== null &&
+        taskBounds !== null &&
+        (revealWorkspaceKeys.has(getGraphWorkspaceKey(pane)) || (clampPan && !hasVisibleTask))
+      ) {
+        const taskGroupFits =
+          taskBounds.width * transform.zoom <= viewport.width - GRAPH_FOCUS_PADDING * 2 &&
+          taskBounds.height * transform.zoom <= viewport.height - GRAPH_FOCUS_PADDING * 2;
+        const revealRect = taskGroupFits ? taskBounds : taskRects[0];
+        nextPan = clampGraphPanForPane(
+          pane,
+          computeGraphPanToCenterRect(viewport, revealRect, transform.zoom),
+          transform.zoom
+        );
+      } else if (clampPan) {
+        nextPan = clampGraphPanForPane(pane, transform.pan, transform.zoom);
       }
+      setGraphTransform(pane, { ...transform, pan: nextPan });
       applyGraphZoomToPane(pane);
       initializedGraphPanes.add(pane);
     }
   }
   saveGraphTransforms();
+}
+
+function ensureGraphNodeVisible(pane: HTMLElement, node: HTMLElement) {
+  const scroller = getGraphScroller(pane);
+  if (scroller === null || node.style.display === "none") {
+    return;
+  }
+  const transform = getGraphTransform(pane);
+  const viewport = getGraphViewportSize(scroller);
+  const rect = getGraphNodeRect(node);
+  if (
+    isGraphRectVisible(rect, transform.pan, transform.zoom, viewport, GRAPH_NODE_VISIBILITY_MINIMUM)
+  ) {
+    return;
+  }
+  const pan = clampGraphPanForPane(
+    pane,
+    computeGraphPanToRevealRect(rect, transform.pan, transform.zoom, viewport, GRAPH_FOCUS_PADDING),
+    transform.zoom
+  );
+  setGraphTransform(pane, { ...transform, pan });
+  applyGraphZoomToPane(pane);
+  scheduleGraphTransformSave();
 }
 
 function rememberGraphZoomAnchor(
@@ -2540,9 +2789,8 @@ function zoomGraphFromWheel(pane: HTMLElement, event: WheelEvent) {
   const zoomFactor = Math.exp(-boundedDeltaPixels * 0.002);
   const nextZoom = normalizeGraphZoom(transform.zoom * zoomFactor);
   const anchor = rememberGraphZoomAnchor(pane, event.clientX, event.clientY);
-  if (setGraphZoom(pane, nextZoom, anchor ?? undefined)) {
-    event.preventDefault();
-  }
+  event.preventDefault();
+  setGraphZoom(pane, nextZoom, anchor ?? undefined);
 }
 
 function isGraphInteractiveTarget(target: EventTarget | null) {
@@ -2849,8 +3097,6 @@ function renderDependencyGraphOverlays() {
       continue;
     }
 
-    const contentRect = content.getBoundingClientRect();
-    const transform = getGraphTransform(pane);
     const width = Math.max(1, Math.round(content.offsetWidth));
     const height = Math.max(1, Math.round(content.offsetHeight));
     overlay.setAttribute("viewBox", `0 0 ${width} ${height}`);
@@ -2865,27 +3111,38 @@ function renderDependencyGraphOverlays() {
     const markerId = `dependencyArrow-${paneIndex}`;
     const boundaryMarkerId = `boundaryDependencyArrow-${paneIndex}`;
     const criticalMarkerId = `criticalDependencyArrow-${paneIndex}`;
-    const markerDefs = `<defs><marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="dependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${boundaryMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="boundaryDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${criticalMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="criticalDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker></defs>`;
-    const getConnectionPath = (fromNode: HTMLElement, toNode: HTMLElement) => {
-      const fromRect = fromNode.getBoundingClientRect();
-      const toRect = toNode.getBoundingClientRect();
-      const x1 = (fromRect.right - contentRect.left) / transform.zoom;
-      const y1 = (fromRect.top - contentRect.top + fromRect.height / 2) / transform.zoom;
-      const x2 = (toRect.left - contentRect.left) / transform.zoom;
-      const y2 = (toRect.top - contentRect.top + toRect.height / 2) / transform.zoom;
-      const gap = Math.max(18, Math.abs(x2 - x1) * 0.34);
-      return x2 >= x1
-        ? `M${x1.toFixed(1)} ${y1.toFixed(1)} C${(x1 + gap).toFixed(1)} ${y1.toFixed(1)} ${(x2 - gap).toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`
-        : `M${x1.toFixed(1)} ${y1.toFixed(1)} C${(x1 + gap).toFixed(1)} ${y1.toFixed(1)} ${(x1 + gap).toFixed(1)} ${(y1 + y2) / 2} ${(x1 + 12).toFixed(1)} ${(y1 + y2) / 2} S${(x2 - gap).toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+    const cycleMarkerId = `cycleDependencyArrow-${paneIndex}`;
+    const markerDefs = `<defs><marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="dependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${boundaryMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="boundaryDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${criticalMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="criticalDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${cycleMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="cycleDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker></defs>`;
+    const getConnectionPath = (fromNode: HTMLElement, toNode: HTMLElement, routeIndex: number) => {
+      const fromRect = getGraphNodeRect(fromNode);
+      const toRect = getGraphNodeRect(toNode);
+      return buildObstacleAvoidingGraphPath(
+        {
+          left: fromRect.x,
+          top: fromRect.y,
+          right: fromRect.x + fromRect.width,
+          bottom: fromRect.y + fromRect.height
+        },
+        {
+          left: toRect.x,
+          top: toRect.y,
+          right: toRect.x + toRect.width,
+          bottom: toRect.y + toRect.height
+        },
+        height,
+        routeIndex
+      );
     };
     let parentPaths = "";
+    let routeIndex = 0;
     for (const childNode of nodesById.values()) {
       const parentId = childNode.dataset.parentId || "";
       const parentNode = nodesById.get(parentId);
       if (parentNode === undefined) {
         continue;
       }
-      parentPaths += `<path class="graphParentPath" d="${getConnectionPath(parentNode, childNode)}" />`;
+      parentPaths += `<path class="graphParentPath" d="${getConnectionPath(parentNode, childNode, routeIndex)}" />`;
+      routeIndex += 1;
     }
     let paths = "";
     for (const edge of Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge"))) {
@@ -2898,18 +3155,23 @@ function renderDependencyGraphOverlays() {
         continue;
       }
 
-      const d = getConnectionPath(fromNode, toNode);
+      const d = getConnectionPath(fromNode, toNode, routeIndex);
+      routeIndex += 1;
       const boundaryClass = edge.dataset.graphBoundary ? " boundaryDependencyPath" : "";
       const criticalClass = edge.dataset.critical === "1" ? " criticalDependencyPath" : "";
+      const cycleClass = edge.dataset.cycle === "1" ? " cycleDependencyPath" : "";
       const arrowId =
-        edge.dataset.critical === "1"
-          ? criticalMarkerId
-          : edge.dataset.graphBoundary
-            ? boundaryMarkerId
-            : markerId;
-      paths += `<path class="dependencyPath${boundaryClass}${criticalClass}" marker-end="url(#${arrowId})" d="${d}" />`;
+        edge.dataset.cycle === "1"
+          ? cycleMarkerId
+          : edge.dataset.critical === "1"
+            ? criticalMarkerId
+            : edge.dataset.graphBoundary
+              ? boundaryMarkerId
+              : markerId;
+      paths += `<path class="dependencyPath${boundaryClass}${criticalClass}${cycleClass}" data-from-id="${edge.dataset.fromId || ""}" data-to-id="${edge.dataset.toId || ""}" marker-end="url(#${arrowId})" d="${d}" />`;
     }
     overlay.innerHTML = markerDefs + parentPaths + paths;
+    renderGraphMiniMap(pane);
   }
 }
 
@@ -3122,14 +3384,20 @@ closeBeadAction.addEventListener("click", () => {
   vscode.postMessage({ command: "closeBead", issueId, workspacePath, title: item.title || "" });
 });
 window.addEventListener("resize", () => {
-  if (activeViewMode === "graph") {
-    refreshGraphPresentation();
-    updateGraphViewportPreservingTransform();
-  } else {
-    applyGraphZoomToAll();
+  if (graphResizeFrame !== null) {
+    window.cancelAnimationFrame(graphResizeFrame);
   }
-  renderHierarchyOverlays();
-  renderDependencyGraphOverlays();
+  graphResizeFrame = window.requestAnimationFrame(() => {
+    graphResizeFrame = null;
+    if (activeViewMode === "graph") {
+      refreshGraphPresentation();
+      updateGraphViewportPreservingTransform();
+    } else {
+      applyGraphZoomToAll();
+    }
+    renderHierarchyOverlays();
+    renderDependencyGraphOverlays();
+  });
 });
 window.addEventListener("scroll", () => {
   if (scrollStateSaveTimer !== null) {
@@ -3156,6 +3424,15 @@ function bindGraphPanes() {
       scroller.addEventListener("pointerup", (event) => handleGraphPointerEnd(pane, event));
       scroller.addEventListener("pointercancel", (event) => handleGraphPointerEnd(pane, event));
       scroller.addEventListener("keydown", (event) => handleGraphKeydown(pane, event));
+      scroller.addEventListener("focusin", (event) => {
+        const node =
+          event.target instanceof Element
+            ? event.target.closest<HTMLElement>(".graphNode[data-graph-id]")
+            : null;
+        if (node !== null) {
+          ensureGraphNodeVisible(pane, node);
+        }
+      });
       scroller.addEventListener("dblclick", (event) => {
         if (isGraphInteractiveTarget(event.target)) {
           return;

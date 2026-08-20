@@ -366,6 +366,38 @@ browser page. It verifies user-visible source behavior, but it does not exercise
 - **Evidence level:** compiled-source browser interaction plus pure gesture/transform tests and
   source assertions. Installed-VSIX repetition remains part of PM-006D/MAN-14.
 
+## Graph map reliability source-browser result — 2026-08-21
+
+- **Observed:** a 15-task fixture rendered 14 active task cards, 22 visible flow/dependency arrows,
+  two cycle cards, a missing-dependency label, a filtered-dependency label, and a viewport minimap.
+- **Observed:** sampled orthogonal segments from every visible dependency path crossed zero
+  unrelated task or boundary cards.
+- **Observed:** after zooming to `180%` and moving until no blocked task was visible, selecting the
+  Blocked preset preserved `180%`, brought a complete blocked-task card into view, retained all
+  three hidden blocker labels, and rendered six Start/End boundary arrows for the three visible
+  tasks.
+- **Observed:** Start and End used the same vertical position after the compact filtered layout;
+  the minimap continued to show the current viewport.
+- **Additional checks:** focused tests cover cycle condensation, missing/hidden relation text,
+  filtered viewport centering, keyboard focus reveal, boundary centering, and card-avoiding paths.
+- **Evidence level:** compiled-source browser preview plus pure and rendered-HTML tests. The
+  packaged Extension Host check below remains a separate release gate.
+
+## Packaged VSIX activation result — 2026-08-21
+
+- **Artifact:** `beads-git-graph-0.6.2.vsix`, SHA-256
+  `47bf7681dea9a04b44244d732c9656ef4ff24959d0888582552f903a6dd58c6a`.
+- **Package inspection:** the VSIX reports version `0.6.2` and contains the minimap, Longest Chain,
+  cycle, missing-dependency, and visible-dependency wording in the packaged bundles.
+- **Install/activation boundary:** the VSIX installed as
+  `toppymicroservices.beads-git-graph@0.6.2` in an isolated extension directory. VS Code 1.133.0
+  loaded that extracted package in an isolated Extension Host; activation, View/Refresh/Clear
+  Artifacts command registration, machine-scoped `bdPath`, default-enabled Graph fetch, and the
+  packaged Restricted Mode manifest passed before the Host exited with code 0.
+- **Boundary:** this verifies the packaged artifact and its activation contract. The Graph
+  interaction observations above remain compiled-source browser evidence; no Beads migration,
+  bootstrap, sync, provider call, or database write was performed.
+
 ## Stable viewport during live update result — 2026-07-28
 
 - **Observed:** with Graph at `173%`, manually panned, task Details open, and the page scrolled to

@@ -4,7 +4,10 @@ import {
   clampGraphPanForVisibility,
   computeAnchoredGraphPan,
   computeCenteredGraphPan,
-  getGraphPointerGesture
+  computeGraphPanToCenterRect,
+  computeGraphPanToRevealRect,
+  getGraphPointerGesture,
+  isGraphRectVisible
 } from "../web/graphViewportTransform";
 
 describe("graph viewport transforms", () => {
@@ -88,5 +91,40 @@ describe("graph viewport transforms", () => {
     expect(
       computeCenteredGraphPan({ width: 1_000, height: 700 }, { width: 760, height: 420 })
     ).toEqual({ x: 120, y: 140 });
+  });
+
+  it("recenters a surviving filtered group without changing zoom", () => {
+    const viewport = { width: 800, height: 500 };
+    const survivingBounds = { x: 900, y: 420, width: 252, height: 240 };
+    const zoom = 0.8;
+    const pan = computeGraphPanToCenterRect(viewport, survivingBounds, zoom);
+
+    expect(pan.x).toBeCloseTo(-420.8);
+    expect(pan.y).toBe(-182);
+    expect(isGraphRectVisible(survivingBounds, pan, zoom, viewport, 12)).toBe(true);
+  });
+
+  it("detects when a graph card has moved fully outside the viewport", () => {
+    expect(
+      isGraphRectVisible(
+        { x: 900, y: 420, width: 252, height: 160 },
+        { x: -1_400, y: -800 },
+        1,
+        { width: 800, height: 500 },
+        12
+      )
+    ).toBe(false);
+  });
+
+  it("reveals a keyboard-focused graph card with padding", () => {
+    expect(
+      computeGraphPanToRevealRect(
+        { x: 900, y: 420, width: 252, height: 160 },
+        { x: -1_000, y: -450 },
+        1,
+        { width: 800, height: 500 },
+        16
+      )
+    ).toEqual({ x: -884, y: -404 });
   });
 });
