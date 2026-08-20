@@ -69,11 +69,12 @@ describe("beads webview presentation metadata", () => {
   it("shows dependency graph controls and AI start actions", () => {
     expect(beadsWebview).toContain('id="graphView"');
     expect(beadsWebview).toContain("Execution Map");
-    expect(beadsWebview).toContain("Critical Path");
+    expect(beadsWebview).toContain("Longest Chain");
     expect(beadsWebview).toContain("graphPathStrip");
     expect(beadsWebview).toContain("graphMapFrame");
     expect(beadsWebview).toContain("graphMapHeader");
     expect(beadsWebview).toContain("graphMapHeaderMain");
+    expect(beadsWebview).toContain("graphMiniMap");
     expect(beadsWebview).toContain("No dependency path yet");
     expect(beadsWebview).toContain("graphIssueDrawer");
     expect(beadsWebview).toContain("graphIssueStack");
@@ -89,10 +90,12 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("graphLegend");
     expect(beadsWebview).toContain("dependencyLegend");
     expect(beadsWebview).toContain("criticalLegend");
+    expect(beadsWebview).toContain("cycleLegend");
     expect(beadsWebview).toContain("parentLegend");
     expect(beadsWebview).toContain("riskLegend");
     expect(beadsWebview).toContain("dependencyOverlay");
     expect(beadsWebview).toContain("criticalGraphNode");
+    expect(beadsWebview).toContain("cycleGraphNode");
     expect(beadsWebview).toContain("Start AI");
     expect(beadsWebview).toContain("Start Parallel");
     expect(beadsWebview).toContain("data-start-parallel-items");
@@ -153,13 +156,13 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("getGraphViewportSize");
     expect(beadsWebview).toContain("graphLevelGuide");
     expect(beadsWebview).toContain("graphLevelLabel");
-    expect(beadsWebview).toContain("No blockers");
-    expect(beadsWebview).toContain("After deps");
+    expect(beadsWebview).toContain("No visible dependency");
+    expect(beadsWebview).toContain("After visible deps");
     expect(beadsWebview).toContain("graphNodes");
     expect(beadsWebview).toContain("graphBoundaryNode");
     expect(beadsWebview).toContain('data-graph-boundary="start"');
     expect(beadsWebview).toContain('data-graph-boundary="end"');
-    expect(beadsWebview).toContain("Start / End flow");
+    expect(beadsWebview).toContain("Visible flow");
     expect(beadsWebview).toContain("data-graph-lane");
     expect(beadsWebview).toContain("data-epic-id");
     expect(beadsWebview).toContain("data-depth");
@@ -241,7 +244,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain('addEventListener("dblclick"');
     expect(beadsMain).toContain("passive: false");
     expect(beadsMain).toContain("event.preventDefault()");
-    expect(beadsMain).toContain("if (setGraphZoom(pane, nextZoom, anchor ?? undefined))");
+    expect(beadsMain).toContain("setGraphZoom(pane, nextZoom, anchor ?? undefined)");
     expect(beadsMain).toContain("normalizeOptionalDatasetValue");
     expect(beadsMain).toContain("postAssignStartBead");
     expect(beadsMain).toContain("markActionButtonsPending");
@@ -253,11 +256,12 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain('target.closest(".assignStartBead")');
     expect(beadsMain).toContain("marker-end");
     expect(beadsMain).toContain("criticalDependencyArrow");
+    expect(beadsMain).toContain("cycleDependencyArrow");
     expect(beadsMain).toContain('class="graphParentPath"');
     expect(beadsMain).toContain("childNode.dataset.parentId");
     expect(beadsWebview).toContain(".graphParentPath{");
     expect(beadsMain).toContain('markerWidth="6.5"');
-    expect(beadsMain).toContain("Math.max(18, Math.abs(x2 - x1) * 0.34)");
+    expect(beadsMain).toContain("buildObstacleAvoidingGraphPath");
     expect(beadsMain).toContain(
       "agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent)"
     );
@@ -288,6 +292,12 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("refreshGraphDerivedState");
     expect(beadsMain).toContain("computeVisibleGraphState");
     expect(beadsMain).toContain("computeGraphBoundaryState");
+    expect(beadsMain).toContain("computeGraphPanToCenterRect");
+    expect(beadsMain).toContain("computeGraphPanToRevealRect");
+    expect(beadsMain).toContain("isGraphRectVisible");
+    expect(beadsMain).toContain("renderGraphMiniMap");
+    expect(beadsMain).toContain("graphResizeFrame");
+    expect(beadsMain).toContain("window.requestAnimationFrame");
     expect(beadsMain).toContain("layoutGraphPane");
     expect(beadsMain).toContain("computePackedGraphLayout");
     expect(beadsMain).toContain("node.offsetHeight");

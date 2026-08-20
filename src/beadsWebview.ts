@@ -13,6 +13,11 @@ import {
   normalizeBeadStatus,
   normalizeBeadType
 } from "./beadsData";
+import {
+  computeGraphBoundaryState,
+  formatGraphRelationPartition,
+  partitionGraphRelationIds
+} from "./beadsGraphModel";
 import { beadUpdatedTimestamp, flattenBeadHierarchy } from "./beadsHierarchy";
 import {
   AGENT_WORK_LANES,
@@ -172,8 +177,12 @@ function hasNoDependencyIntent(item: BeadItem) {
     .some((label) => ["no-deps", "no-dependencies", "independent"].includes(label));
 }
 
-function buildDependencyLintWarnings(items: BeadItem[]) {
+function buildDependencyLintWarnings(
+  items: BeadItem[],
+  cycleIds: ReadonlySet<string> = new Set<string>()
+) {
   const siblingCounts = new Map<string, number>();
+  const knownIds = new Set(items.map((item) => item.id));
   for (const item of items) {
     const parentId = item.parentId.trim();
     if (parentId !== "") {
@@ -183,6 +192,19 @@ function buildDependencyLintWarnings(items: BeadItem[]) {
 
   const warnings = new Map<string, string>();
   for (const item of items) {
+    const structuralWarnings: string[] = [];
+    const missingDependencyIds = item.dependencyIds.filter((id) => !knownIds.has(id));
+    if (missingDependencyIds.length > 0) {
+      structuralWarnings.push(`Missing dependency: ${missingDependencyIds.join(", ")}.`);
+    }
+    if (cycleIds.has(item.id)) {
+      structuralWarnings.push("Dependency cycle includes this task.");
+    }
+    if (structuralWarnings.length > 0) {
+      warnings.set(item.id, structuralWarnings.join(" "));
+      continue;
+    }
+
     const status = normalizeBeadStatus(item.status);
     if (
       item.synthetic ||
@@ -382,17 +404,45 @@ function renderBeadsDependencyGraph(
 ) {
   const items = hierarchyItems.map((entry) => entry.item);
   const graph = buildBeadDependencyGraph(items);
-  const dependencyWarnings = buildDependencyLintWarnings(items);
+  const dependencyWarnings = buildDependencyLintWarnings(items, graph.cycleIds);
   const mergeRiskWarnings = buildMergeRiskWarnings(items);
   const maxLevel = Math.max(0, ...graph.nodes.map((node) => node.level));
   const nodesByLevel = new Map<number, typeof graph.nodes>();
-  const blockersById = new Map<string, string[]>();
   const blocksById = new Map<string, string[]>();
   const itemsById = new Map(items.map((item) => [item.id, item]));
   const hierarchyById = new Map(hierarchyItems.map((entry) => [entry.item.id, entry]));
+  const defaultVisibleIds = new Set(
+    items
+      .filter((item) => isDefaultVisibleStatus(normalizeBeadStatus(item.status)))
+      .map((item) => item.id)
+  );
+  const boundaryState = computeGraphBoundaryState(
+    items.map((item) => item.id),
+    graph.edges
+  );
+
+  const renderGraphRelation = (
+    label: string,
+    relatedIds: string[],
+    missingIds: string[] = [],
+    extraClass: string = ""
+  ) => {
+    if (relatedIds.length === 0) {
+      return "";
+    }
+    const partition = partitionGraphRelationIds(relatedIds, defaultVisibleIds, new Set(missingIds));
+    const relationClasses = [
+      "graphRelation",
+      extraClass,
+      partition.hiddenIds.length > 0 ? "hasHiddenRelation" : "",
+      partition.missingIds.length > 0 ? "hasMissingRelation" : ""
+    ]
+      .filter((value) => value !== "")
+      .join(" ");
+    return `<div class="${relationClasses}" data-related-ids="${encodeJsonData(relatedIds)}" data-missing-related-ids="${encodeJsonData(missingIds)}"><span>${escapeHtml(label)}</span><strong class="graphRelationValue">${escapeHtml(formatGraphRelationPartition(partition))}</strong></div>`;
+  };
 
   for (const edge of graph.edges) {
-    blockersById.set(edge.toId, [...(blockersById.get(edge.toId) ?? []), edge.fromId]);
     blocksById.set(edge.fromId, [...(blocksById.get(edge.fromId) ?? []), edge.toId]);
   }
   for (const node of graph.nodes) {
@@ -404,15 +454,15 @@ function renderBeadsDependencyGraph(
   const dependencyEdgeHtml = graph.edges
     .map(
       (edge) =>
-        `<span class="graphEdge" data-from-id="${escapeHtml(edge.fromId)}" data-to-id="${escapeHtml(edge.toId)}" data-critical="${edge.critical ? "1" : "0"}"></span>`
+        `<span class="graphEdge" data-from-id="${escapeHtml(edge.fromId)}" data-to-id="${escapeHtml(edge.toId)}" data-critical="${edge.critical ? "1" : "0"}" data-cycle="${edge.cycle ? "1" : "0"}"></span>`
     )
     .join("");
   const boundaryEdgeHtml = graph.nodes
     .flatMap((node) => {
       const id = node.item.id;
       return [
-        `<span class="graphEdge" data-graph-boundary="start" data-from-id="${GRAPH_START_ID}" data-to-id="${escapeHtml(id)}" data-critical="0"${blockersById.has(id) ? " hidden" : ""}></span>`,
-        `<span class="graphEdge" data-graph-boundary="end" data-from-id="${escapeHtml(id)}" data-to-id="${GRAPH_END_ID}" data-critical="0"${blocksById.has(id) ? " hidden" : ""}></span>`
+        `<span class="graphEdge" data-graph-boundary="start" data-from-id="${GRAPH_START_ID}" data-to-id="${escapeHtml(id)}" data-critical="0" data-cycle="0"${boundaryState.startIds.has(id) ? "" : " hidden"}></span>`,
+        `<span class="graphEdge" data-graph-boundary="end" data-from-id="${escapeHtml(id)}" data-to-id="${GRAPH_END_ID}" data-critical="0" data-cycle="0"${boundaryState.endIds.has(id) ? "" : " hidden"}></span>`
       ];
     })
     .join("");
@@ -444,12 +494,12 @@ function renderBeadsDependencyGraph(
   const taskLevelGuideHtml = Array.from({ length: levelCount }, (_, level) => {
     const layout = levelLayouts[level];
     const x = layout.x + layout.width / 2;
-    const label = level === 0 ? "Ready" : `L${level + 1}`;
-    const detail = level === 0 ? "No blockers" : "After deps";
+    const label = level === 0 ? "Root" : `L${level + 1}`;
+    const detail = level === 0 ? "No visible dependency" : "After visible deps";
 
     return `<span class="graphLevelGuide" data-graph-level="${level + 1}" data-graph-task-level="${level}" style="--graph-guide-x:${x}px"><span class="graphLevelLabel"><strong>${label}</strong><small>${detail}</small></span></span>`;
   }).join("");
-  const levelGuideHtml = `<span class="graphLevelGuide graphBoundaryGuide" data-graph-level="0" data-graph-boundary="start" style="--graph-guide-x:${startLevelX + GRAPH_NODE_WIDTH / 2}px"><span class="graphLevelLabel"><strong>Start</strong><small>Flow begins</small></span></span>${taskLevelGuideHtml}<span class="graphLevelGuide graphBoundaryGuide" data-graph-level="${maxLevel + 2}" data-graph-boundary="end" style="--graph-guide-x:${endLevelX + GRAPH_NODE_WIDTH / 2}px"><span class="graphLevelLabel"><strong>End</strong><small>Flow complete</small></span></span>`;
+  const levelGuideHtml = `<span class="graphLevelGuide graphBoundaryGuide" data-graph-level="0" data-graph-boundary="start" style="--graph-guide-x:${startLevelX + GRAPH_NODE_WIDTH / 2}px"><span class="graphLevelLabel"><strong>Start</strong><small>Visible flow begins</small></span></span>${taskLevelGuideHtml}<span class="graphLevelGuide graphBoundaryGuide" data-graph-level="${maxLevel + 2}" data-graph-boundary="end" style="--graph-guide-x:${endLevelX + GRAPH_NODE_WIDTH / 2}px"><span class="graphLevelLabel"><strong>End</strong><small>Visible flow complete</small></span></span>`;
   const nodeHtml = Array.from({ length: levelCount }, (_, level) => {
     const layout = levelLayouts[level];
     const rowOffset =
@@ -481,22 +531,20 @@ function renderBeadsDependencyGraph(
         const executionStateLabel = getExecutionStateLabel(item, normalizedStatus, derivedMerge);
         const dependencyWarning = dependencyWarnings.get(item.id) ?? "";
         const mergeRiskWarning = mergeRiskWarnings.get(item.id) ?? "";
-        const blockers = (blockersById.get(item.id) ?? []).sort((a, b) => a.localeCompare(b));
         const blocks = (blocksById.get(item.id) ?? []).sort((a, b) => a.localeCompare(b));
+        const missingDependencyIds = item.dependencyIds
+          .filter((id) => !itemsById.has(id))
+          .sort((a, b) => a.localeCompare(b));
         const hierarchyEntry = hierarchyById.get(item.id);
         const parentId = hierarchyEntry?.parentId ?? item.parentId.trim();
         const epicId = hierarchyEntry?.epicId ?? "";
         const depth = hierarchyEntry?.depth ?? 0;
         const dependencyLines = [
           parentId !== "" && itemsById.has(parentId)
-            ? `<div class="graphRelation graphParentRelation" data-related-ids="${encodeJsonData([parentId])}"><span>Parent</span><strong class="graphRelationValue">${escapeHtml(parentId)}</strong></div>`
+            ? renderGraphRelation("Parent", [parentId], [], "graphParentRelation")
             : "",
-          blockers.length > 0
-            ? `<div class="graphRelation" data-related-ids="${encodeJsonData(blockers)}"><span>Depends</span><strong class="graphRelationValue">${escapeHtml(blockers.join(", "))}</strong></div>`
-            : "",
-          blocks.length > 0
-            ? `<div class="graphRelation" data-related-ids="${encodeJsonData(blocks)}"><span>Blocks</span><strong class="graphRelationValue">${escapeHtml(blocks.join(", "))}</strong></div>`
-            : ""
+          renderGraphRelation("Depends", item.dependencyIds, missingDependencyIds),
+          renderGraphRelation("Blocks", blocks)
         ]
           .filter((line) => line !== "")
           .join("");
@@ -554,11 +602,11 @@ function renderBeadsDependencyGraph(
         ]
           .filter((badge) => badge !== "")
           .join("");
-        return `<div class="graphNode graphLayoutNode ${node.critical ? "criticalGraphNode" : ""}${dependencyWarning === "" ? "" : " dependencyWarningGraphNode"}${mergeRiskWarning === "" ? "" : " mergeRiskGraphNode"}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level + 1}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" data-parent-id="${escapeHtml(parentId)}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" style="${initialDisplay}--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span><span class="criticalBadge"${node.critical ? "" : " hidden"}>Critical path</span></div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${graphBadges}</div>${dependencyWarning === "" ? "" : `<div class="graphWarning">${escapeHtml(dependencyWarning)}</div>`}${mergeRiskWarning === "" ? "" : `<div class="graphWarning graphMergeRisk">${escapeHtml(mergeRiskWarning)}</div>`}${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="graphDetailsBead" type="button" data-graph-details-id="${escapeHtml(item.id)}" data-graph-details-workspace="${escapeHtml(workspacePath)}" aria-label="${escapeHtml(`Details for ${taskActionContext}`)}">Details</button>${actionHtml}</div></div>`;
+        return `<div class="graphNode graphLayoutNode ${node.critical ? "criticalGraphNode" : ""}${node.cycle ? " cycleGraphNode" : ""}${dependencyWarning === "" ? "" : " dependencyWarningGraphNode"}${mergeRiskWarning === "" ? "" : " mergeRiskGraphNode"}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level + 1}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" data-cycle="${node.cycle ? "1" : "0"}" data-parent-id="${escapeHtml(parentId)}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" style="${initialDisplay}--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span><span class="criticalBadge"${node.critical ? "" : " hidden"}>Longest chain</span><span class="cycleBadge"${node.cycle ? "" : " hidden"}>Cycle</span></div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${graphBadges}</div>${dependencyWarning === "" ? "" : `<div class="graphWarning">${escapeHtml(dependencyWarning)}</div>`}${mergeRiskWarning === "" ? "" : `<div class="graphWarning graphMergeRisk">${escapeHtml(mergeRiskWarning)}</div>`}${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="graphDetailsBead" type="button" data-graph-details-id="${escapeHtml(item.id)}" data-graph-details-workspace="${escapeHtml(workspacePath)}" aria-label="${escapeHtml(`Details for ${taskActionContext}`)}">Details</button>${actionHtml}</div></div>`;
       })
       .join("");
   }).join("");
-  const boundaryNodeHtml = `<div class="graphBoundaryNode graphLayoutNode" data-graph-id="${GRAPH_START_ID}" data-graph-boundary="start" data-graph-level="0" style="--graph-x:${startLevelX}px;--graph-y:${boundaryNodeY}px"><span class="graphBoundaryIcon" aria-hidden="true">▶</span><strong>Start</strong><small>Ready work begins</small></div><div class="graphBoundaryNode graphLayoutNode" data-graph-id="${GRAPH_END_ID}" data-graph-boundary="end" data-graph-level="${maxLevel + 2}" style="--graph-x:${endLevelX}px;--graph-y:${boundaryNodeY}px"><span class="graphBoundaryIcon" aria-hidden="true">✓</span><strong>End</strong><small>All paths complete</small></div>`;
+  const boundaryNodeHtml = `<div class="graphBoundaryNode graphLayoutNode" data-graph-id="${GRAPH_START_ID}" data-graph-boundary="start" data-graph-level="0" style="--graph-x:${startLevelX}px;--graph-y:${boundaryNodeY}px"><span class="graphBoundaryIcon" aria-hidden="true">▶</span><strong>Start</strong><small>Visible flow begins</small></div><div class="graphBoundaryNode graphLayoutNode" data-graph-id="${GRAPH_END_ID}" data-graph-boundary="end" data-graph-level="${maxLevel + 2}" style="--graph-x:${endLevelX}px;--graph-y:${boundaryNodeY}px"><span class="graphBoundaryIcon" aria-hidden="true">✓</span><strong>End</strong><small>Visible flow complete</small></div>`;
   const dependencyWarningSummary =
     dependencyWarnings.size > 0
       ? `<span class="summaryPill dependencyWarningSummary">${dependencyWarnings.size} warnings</span>`
@@ -589,13 +637,20 @@ function renderBeadsDependencyGraph(
           )
           .join("")}</div></details>`
       : "";
-  const criticalSummary = `<span class="summaryPill criticalSummary" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}"${graph.criticalPathIds.length > 0 ? "" : " hidden"}>${graph.criticalPathIds.length} critical</span>`;
-  const criticalPathHtml = `<div class="graphPathStrip${graph.criticalPathIds.length > 0 ? "" : " emptyCriticalPath"}"><span>Critical Path</span><strong class="graphPathValue" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}">${graph.criticalPathIds.length > 0 ? escapeHtml(graph.criticalPathIds.join(" -> ")) : "No dependency path yet"}</strong></div>`;
+  const criticalSummary = `<span class="summaryPill criticalSummary" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}"${graph.criticalPathIds.length > 0 ? "" : " hidden"}>${graph.criticalPathIds.length} chain</span>`;
+  const cycleSummary = `<span class="summaryPill cycleSummary"${graph.cycleIds.size > 0 ? "" : " hidden"}>${graph.cycleIds.size} cycle</span>`;
+  const pathUnavailable = graph.cycleIds.size > 0;
+  const pathText = pathUnavailable
+    ? "Unavailable: dependency cycle detected"
+    : graph.criticalPathIds.length > 0
+      ? graph.criticalPathIds.join(" -> ")
+      : "No dependency path yet";
+  const criticalPathHtml = `<div class="graphPathStrip${graph.criticalPathIds.length > 0 ? "" : " emptyCriticalPath"}${pathUnavailable ? " cycleGraphPath" : ""}"><span>Longest Chain</span><strong class="graphPathValue" title="${escapeHtml(pathText)}">${escapeHtml(pathText)}</strong></div>`;
   const graphLegendHtml =
-    '<div class="graphLegend"><span class="flowLegend">Start / End flow</span><span class="dependencyLegend">Dependency</span><span class="criticalLegend">Critical path</span><span class="parentLegend">Parent</span><span class="riskLegend">Merge/worktree risk</span></div>';
+    '<div class="graphLegend"><span class="flowLegend">Visible flow</span><span class="dependencyLegend">Dependency</span><span class="criticalLegend">Longest chain</span><span class="cycleLegend">Cycle</span><span class="parentLegend">Parent</span><span class="riskLegend">Merge/worktree risk</span></div>';
   const graphIssuesHtml = `<div class="graphIssueStack">${dependencyWarningHtml}${mergeRiskHtml}</div>`;
 
-  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">Point anywhere and wheel to zoom there · Drag to pan · Option/Alt+drag a box to zoom · Double-click to fit</div></div><div class="graphHeaderActions"><div class="workspaceSummary"><span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="fit">Fit</button></div></div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to pan, Option or Alt drag a box to zoom, use arrow keys to pan, and press zero to fit."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${boundaryNodeHtml}${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
+  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">Point anywhere and wheel to zoom there · Drag to pan · Option/Alt+drag a box to zoom · Double-click to fit</div></div><div class="graphHeaderActions"><div class="workspaceSummary"><span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${cycleSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="fit">Fit</button></div></div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div><svg class="graphMiniMap" role="img" aria-label="Graph overview. The outlined rectangle is the current viewport."></svg></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to pan, Option or Alt drag a box to zoom, use arrow keys to pan, and press zero to fit."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${boundaryNodeHtml}${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
 }
 
 export function renderBeadsWebviewHtml(
@@ -1185,7 +1240,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .parallelBatchMessage{min-width:0;color:var(--vscode-descriptionForeground);font-size:10px;line-height:1.35;overflow-wrap:anywhere;}
 .parallelBatchRetry{white-space:nowrap;background:transparent;color:var(--vscode-foreground);border-color:var(--vscode-panel-border);}
 .graphPane{position:relative;display:flex;flex-direction:column;height:clamp(360px,calc(100vh - 132px),900px);border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);overflow:hidden;padding:0;}
-.graphHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0;position:sticky;top:0;left:0;z-index:5;background:var(--vscode-editor-background);padding:10px 12px 8px;border-bottom:1px solid var(--vscode-panel-border);}
+.graphHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:0;position:sticky;top:0;left:0;z-index:5;background:var(--vscode-editor-background);padding:10px 12px 8px;border-bottom:1px solid var(--vscode-panel-border);}
 .graphHeaderActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
 .graphGestureHint{margin-top:2px;color:var(--vscode-descriptionForeground);font-size:10px;line-height:1.3;}
 .graphControls{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--vscode-panel-border);border-radius:6px;padding:2px;background:rgba(128,128,128,.08);}
@@ -1193,6 +1248,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphControls button:hover{background:rgba(128,128,128,.18);}
 .graphZoomValue{min-width:38px;text-align:center;color:var(--vscode-descriptionForeground);font-size:10px;font-variant-numeric:tabular-nums;}
 .criticalSummary{border-color:rgba(236,72,153,.5);color:var(--vscode-charts-pink,#ec4899);}
+.cycleSummary{border-color:rgba(168,85,247,.55);color:var(--vscode-charts-purple,#a855f7);}
 .dependencyWarningSummary{border-color:rgba(245,158,11,.55);color:var(--vscode-editorWarning-foreground,#f59e0b);}
 .mergeRiskSummary{border-color:rgba(239,68,68,.55);color:var(--vscode-errorForeground,#ef4444);}
 .graphIssueStack{display:grid;gap:6px;padding:8px 12px 0;}
@@ -1211,12 +1267,22 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .dependencyIssueDrawer summary{color:var(--vscode-editorWarning-foreground,#f59e0b);}
 .mergeRiskIssueDrawer summary{color:var(--vscode-errorForeground,#ef4444);}
 .graphMapFrame{display:flex;flex:1 1 auto;flex-direction:column;min-height:0;margin:10px 12px 12px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));overflow:hidden;}
-.graphMapHeader{display:grid;grid-template-columns:1fr;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--vscode-panel-border);background:rgba(128,128,128,.06);}
+.graphMapHeader{display:grid;grid-template-columns:minmax(0,1fr) 170px;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--vscode-panel-border);background:rgba(128,128,128,.06);}
 .graphMapHeaderMain{display:grid;gap:6px;min-width:0;}
+.graphMiniMap{box-sizing:border-box;width:170px;height:78px;border:1px solid var(--vscode-panel-border);border-radius:6px;background:var(--vscode-editor-background);}
+.graphMiniMapEdge{stroke:rgba(148,163,184,.72);stroke-width:1.25;vector-effect:non-scaling-stroke;}
+.graphMiniMapEdge.chain{stroke:var(--vscode-charts-pink,#ec4899);stroke-width:1.8;}
+.graphMiniMapEdge.cycle{stroke:var(--vscode-charts-purple,#a855f7);stroke-width:1.8;}
+.graphMiniMapNode{fill:color-mix(in srgb,var(--vscode-foreground) 36%,transparent);stroke:var(--vscode-panel-border);stroke-width:1;vector-effect:non-scaling-stroke;}
+.graphMiniMapNode.boundary{fill:color-mix(in srgb,var(--vscode-textLink-foreground,#3b82f6) 52%,transparent);}
+.graphMiniMapNode.chain{fill:color-mix(in srgb,var(--vscode-charts-pink,#ec4899) 65%,transparent);}
+.graphMiniMapNode.cycle{fill:color-mix(in srgb,var(--vscode-charts-purple,#a855f7) 65%,transparent);}
+.graphMiniMapViewport{fill:color-mix(in srgb,var(--vscode-focusBorder,#3b82f6) 12%,transparent);stroke:var(--vscode-focusBorder,#3b82f6);stroke-width:2;vector-effect:non-scaling-stroke;}
 .graphPathStrip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;min-width:0;}
 .graphPathStrip span{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--vscode-charts-pink,#ec4899);letter-spacing:0;}
 .graphPathStrip strong{font-size:11px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .emptyCriticalPath span,.emptyCriticalPath strong{color:var(--vscode-descriptionForeground);}
+.cycleGraphPath span,.cycleGraphPath strong{color:var(--vscode-charts-purple,#a855f7);}
 .graphLegend{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin:0;}
 .graphLegend span{display:inline-flex;align-items:center;gap:5px;min-height:18px;padding:1px 7px;border-radius:999px;border:1px solid var(--vscode-panel-border);font-size:10px;font-weight:700;color:var(--vscode-descriptionForeground);background:rgba(128,128,128,.08);}
 .graphLegend span::before{content:"";width:14px;height:0;border-top:2px solid currentColor;}
@@ -1224,9 +1290,12 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .dependencyLegend{color:rgba(148,163,184,.95)!important;}
 .criticalLegend{color:var(--vscode-charts-pink,#ec4899)!important;}
 .criticalLegend::before{border-top-width:3px!important;}
+.cycleLegend{color:var(--vscode-charts-purple,#a855f7)!important;}
+.cycleLegend::before{border-top-width:3px!important;border-top-style:dotted!important;}
 .parentLegend{color:var(--vscode-textLink-foreground,#3b82f6)!important;}
 .parentLegend::before{border-top-style:dashed!important;}
 .riskLegend{color:var(--vscode-errorForeground,#ef4444)!important;}
+.riskLegend::before{height:7px!important;border:1px solid currentColor!important;border-radius:2px;background:rgba(239,68,68,.12);}
 .graphWarningBand{display:flex;flex-wrap:wrap;gap:4px;margin:0;padding:0 8px 8px;max-height:92px;overflow:auto;}
 .graphWarningBand span{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border-radius:6px;border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.12);color:var(--vscode-editorWarning-foreground,#f59e0b);font-size:10px;font-weight:650;}
 .graphRiskBand{display:flex;flex-wrap:wrap;gap:4px;margin:0;padding:0 8px 8px;max-height:92px;overflow:auto;}
@@ -1240,10 +1309,12 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .dependencyPath{fill:none;stroke:rgba(148,163,184,.8);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
 .dependencyPath.boundaryDependencyPath{stroke:var(--vscode-textLink-foreground,#3b82f6);stroke-width:1.8;}
 .dependencyPath.criticalDependencyPath{stroke:var(--vscode-charts-pink,#ec4899);stroke-width:2;}
+.dependencyPath.cycleDependencyPath{stroke:var(--vscode-charts-purple,#a855f7);stroke-width:2;stroke-dasharray:4 3;}
 .graphParentPath{fill:none;stroke:var(--vscode-textLink-foreground,#3b82f6);stroke-width:1.4;stroke-dasharray:6 5;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
 .dependencyArrowHead{fill:rgba(148,163,184,.88);}
 .boundaryDependencyArrowHead{fill:var(--vscode-textLink-foreground,#3b82f6);}
 .criticalDependencyArrowHead{fill:var(--vscode-charts-pink,#ec4899);}
+.cycleDependencyArrowHead{fill:var(--vscode-charts-purple,#a855f7);}
 .graphLevelGuide{position:absolute;top:0;bottom:18px;left:var(--graph-guide-x);z-index:0;border-left:1px dashed rgba(128,128,128,.28);}
 .graphLevelLabel{position:absolute;top:10px;left:8px;display:grid;gap:1px;min-width:82px;color:var(--vscode-descriptionForeground);letter-spacing:0;}
 .graphLevelLabel strong{font-size:11px;font-weight:800;line-height:1.1;color:var(--vscode-foreground);}
@@ -1255,11 +1326,14 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphBoundaryNode strong{font-size:13px;line-height:1.2;}
 .graphBoundaryNode small{color:var(--vscode-descriptionForeground);font-size:10px;font-weight:650;line-height:1.2;}
 .graphNode.criticalGraphNode{border-color:rgba(236,72,153,.62);box-shadow:inset 3px 0 0 var(--vscode-charts-pink,#ec4899), 0 1px 3px rgba(0,0,0,.12);}
+.graphNode.cycleGraphNode{border-color:rgba(168,85,247,.68);box-shadow:inset 3px 0 0 var(--vscode-charts-purple,#a855f7), 0 1px 3px rgba(0,0,0,.12);}
 .graphNode.dependencyWarningGraphNode{border-color:rgba(245,158,11,.58);box-shadow:inset 3px 0 0 var(--vscode-editorWarning-foreground,#f59e0b), 0 1px 3px rgba(0,0,0,.12);}
 .graphNode.mergeRiskGraphNode{border-color:rgba(239,68,68,.58);box-shadow:inset 3px 0 0 var(--vscode-errorForeground,#ef4444), 0 1px 3px rgba(0,0,0,.12);}
-.graphNodeTop{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px;}
+.graphNodeTop{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;margin-bottom:5px;}
 .criticalBadge{display:inline-flex;align-items:center;min-height:17px;padding:1px 6px;border-radius:999px;border:1px solid rgba(236,72,153,.55);background:rgba(236,72,153,.14);color:var(--vscode-charts-pink,#ec4899);font-size:10px;font-weight:750;white-space:nowrap;}
 .criticalBadge[hidden]{display:none;}
+.cycleBadge{display:inline-flex;align-items:center;min-height:17px;padding:1px 6px;border-radius:999px;border:1px solid rgba(168,85,247,.58);background:rgba(168,85,247,.14);color:var(--vscode-charts-purple,#a855f7);font-size:10px;font-weight:750;white-space:nowrap;}
+.cycleBadge[hidden]{display:none;}
 .graphNodeTitle{font-size:12px;font-weight:700;line-height:1.3;margin:2px 0 7px;overflow-wrap:anywhere;}
 .graphNodeBadges{display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
 .graphWarning{margin-top:7px;padding:5px 6px;border-radius:6px;border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.12);color:var(--vscode-editorWarning-foreground,#f59e0b);font-size:10px;font-weight:650;line-height:1.35;}
@@ -1268,6 +1342,8 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphRelation{display:grid;grid-template-columns:54px minmax(0,1fr);gap:5px;font-size:10px;color:var(--vscode-descriptionForeground);line-height:1.35;}
 .graphRelation span{font-weight:700;color:var(--vscode-foreground);}
 .graphRelationValue{font:inherit;font-weight:400;overflow-wrap:anywhere;}
+.graphRelation.hasHiddenRelation .graphRelationValue{color:var(--vscode-editorWarning-foreground,#f59e0b);}
+.graphRelation.hasMissingRelation .graphRelationValue{color:var(--vscode-errorForeground,#ef4444);font-weight:650;}
 .graphParentRelation{border-left:2px dashed var(--vscode-textLink-foreground,#3b82f6);padding-left:5px;}
 .graphNodeActions{position:relative;z-index:3;display:flex;justify-content:flex-end;gap:6px;margin-top:8px;}
 .graphDetailsBead{height:24px;padding:0 8px;background:transparent;color:var(--vscode-foreground);border-color:var(--vscode-panel-border);}
@@ -1363,7 +1439,8 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
   .graphHeaderActions{justify-content:flex-start;}
   .graphIssueStack{padding:8px 0 0;}
   .graphMapFrame{margin:8px 0 0;}
-  .graphMapHeader{align-items:start;}
+  .graphMapHeader{grid-template-columns:1fr;align-items:start;}
+  .graphMiniMap{width:100%;height:68px;}
   .graphLegend{justify-content:flex-start;}
   .graphCanvas{min-height:100%;}
   .planDraftHeader{display:grid;}

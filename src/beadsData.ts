@@ -3,6 +3,7 @@ import {
   normalizeAgentProviderId,
   resolveAgentProviderId
 } from "./agentProvider";
+import { computeVisibleGraphState, graphEdgeKey } from "./beadsGraphModel";
 
 export interface BeadItem {
   id: string;
@@ -56,18 +57,21 @@ export interface BeadDependencyGraphNode {
   item: BeadItem;
   level: number;
   critical: boolean;
+  cycle: boolean;
 }
 
 export interface BeadDependencyGraphEdge {
   fromId: string;
   toId: string;
   critical: boolean;
+  cycle: boolean;
 }
 
 export interface BeadDependencyGraph {
   nodes: BeadDependencyGraphNode[];
   edges: BeadDependencyGraphEdge[];
   criticalPathIds: string[];
+  cycleIds: Set<string>;
 }
 
 export function beadsAsArray(parsed: unknown): unknown[] {
@@ -957,91 +961,30 @@ export function deriveParallelMergeItems(items: BeadItem[]) {
 
 export function buildBeadDependencyGraph(items: BeadItem[]): BeadDependencyGraph {
   const itemsById = new Map(items.map((item) => [item.id, item]));
-  const edges = items.flatMap((item) =>
+  const candidateEdges = items.flatMap((item) =>
     item.dependencyIds
       .filter((dependencyId) => itemsById.has(dependencyId))
-      .map((dependencyId) => ({ fromId: dependencyId, toId: item.id, critical: false }))
+      .map((dependencyId) => ({ fromId: dependencyId, toId: item.id }))
   );
-  const incomingById = new Map<string, string[]>();
-  const outgoingById = new Map<string, string[]>();
-  for (const item of items) {
-    incomingById.set(item.id, []);
-    outgoingById.set(item.id, []);
-  }
-  for (const edge of edges) {
-    incomingById.get(edge.toId)?.push(edge.fromId);
-    outgoingById.get(edge.fromId)?.push(edge.toId);
-  }
-
-  const levelCache = new Map<string, number>();
-  const resolveLevel = (id: string, visiting: Set<string>): number => {
-    const cached = levelCache.get(id);
-    if (cached !== undefined) {
-      return cached;
-    }
-    if (visiting.has(id)) {
-      levelCache.set(id, 0);
-      return 0;
-    }
-
-    visiting.add(id);
-    const blockers = incomingById.get(id) ?? [];
-    const level =
-      blockers.length === 0
-        ? 0
-        : Math.max(...blockers.map((blockerId) => resolveLevel(blockerId, visiting) + 1));
-    visiting.delete(id);
-    levelCache.set(id, level);
-    return level;
-  };
-
-  const longestPathCache = new Map<string, string[]>();
-  const resolveLongestPath = (id: string, visiting: Set<string>): string[] => {
-    const cached = longestPathCache.get(id);
-    if (cached !== undefined) {
-      return cached;
-    }
-    if (visiting.has(id)) {
-      return [id];
-    }
-
-    visiting.add(id);
-    const blockers = incomingById.get(id) ?? [];
-    const prefix = blockers
-      .map((blockerId) => resolveLongestPath(blockerId, visiting))
-      .sort((a, b) => b.length - a.length || a.join("|").localeCompare(b.join("|")))[0];
-    visiting.delete(id);
-
-    const path = prefix ? [...prefix, id] : [id];
-    longestPathCache.set(id, path);
-    return path;
-  };
-
-  const criticalPathIds =
-    edges.length === 0
-      ? []
-      : (items
-          .map((item) => resolveLongestPath(item.id, new Set<string>()))
-          .sort((a, b) => b.length - a.length || a.join("|").localeCompare(b.join("|")))[0] ?? []);
-  const criticalIds = new Set(criticalPathIds);
-  const criticalEdges = new Set<string>();
-  for (let i = 1; i < criticalPathIds.length; i += 1) {
-    criticalEdges.add(`${criticalPathIds[i - 1]}\u0000${criticalPathIds[i]}`);
-  }
+  const state = computeVisibleGraphState(itemsById.keys(), candidateEdges);
+  const criticalIds = new Set(state.criticalPathIds);
 
   return {
     nodes: items
       .map((item) => ({
         item,
-        level: resolveLevel(item.id, new Set<string>()),
-        critical: criticalIds.has(item.id)
+        level: state.levelsById.get(item.id) ?? 0,
+        critical: criticalIds.has(item.id),
+        cycle: state.cycleIds.has(item.id)
       }))
       .sort((a, b) => a.level - b.level || a.item.id.localeCompare(b.item.id)),
-    edges: edges.map((edge) => ({
+    edges: state.edges.map((edge) => ({
       ...edge,
-      critical: criticalEdges.has(`${edge.fromId}\u0000${edge.toId}`)
+      critical: state.criticalEdgeKeys.has(graphEdgeKey(edge.fromId, edge.toId)),
+      cycle: state.cycleEdgeKeys.has(graphEdgeKey(edge.fromId, edge.toId))
     })),
-    criticalPathIds
+    criticalPathIds: state.criticalPathIds,
+    cycleIds: state.cycleIds
   };
 }
 

@@ -575,8 +575,33 @@ describe("buildBeadHierarchy", () => {
     expect(graph.edges).toContainEqual({
       fromId: "neo-b",
       toId: "neo-c",
-      critical: true
+      critical: true,
+      cycle: false
     });
+  });
+
+  it("marks cyclic graph nodes and edges without choosing a critical path", () => {
+    const items = extractBeadItems([
+      {
+        id: "neo-a",
+        title: "A",
+        issue_type: "task",
+        dependencies: [{ depends_on_id: "neo-b", type: "blocks" }]
+      },
+      {
+        id: "neo-b",
+        title: "B",
+        issue_type: "task",
+        dependencies: [{ depends_on_id: "neo-a", type: "blocks" }]
+      }
+    ]);
+
+    const graph = buildBeadDependencyGraph(items);
+
+    expect(graph.criticalPathIds).toEqual([]);
+    expect(graph.cycleIds).toEqual(new Set(["neo-a", "neo-b"]));
+    expect(graph.nodes.every((node) => node.cycle)).toBe(true);
+    expect(graph.edges.every((edge) => edge.cycle && !edge.critical)).toBe(true);
   });
 
   it("marks multiple ready unblocked tasks as parallel candidates", () => {
