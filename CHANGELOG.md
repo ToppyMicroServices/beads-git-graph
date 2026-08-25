@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-08-26
+
 ### Added
 
 - Focus a new Graph viewport on recorded in-progress and `bd ready` tasks while preserving saved
@@ -11,11 +13,21 @@
 - Let direct providers create or replace one declared workspace artifact through a bounded
   generation, verifier, and explicit human-review flow.
 - Add a dependency-linked Ollama smoke test for the nominal 0.5B `qwen2.5-coder:0.5b` model.
+- Add regression coverage for Graph visibility, action settlement, keyboard focus, provider state,
+  and cross-platform VS Code CLI launch paths.
 
 ### Fixed
 
 - Keep provider completion separate from acceptance, reject refusal, generic, copied, unsafe, or
   colliding outputs, and leave tasks in progress after an approved edit is applied.
+- Preserve view selection, scroll position, Graph transforms, workspace-scoped collapse state, and
+  pending actions across refreshes without flashing or moving controls.
+- Keep Graph filtering independent from Table collapse, reduce minimap repaint work, and keep task
+  details and dependency overlays readable.
+- Order Manage work by readiness and priority, attach pending state to the correct task, and settle
+  Retry, Start, Merge, Sync, Create, Refresh, and Plan actions through the Extension Host.
+- Hide raw Beads CLI output, show provider validation state clearly, and repair package-and-install
+  on macOS, Linux, and Windows without shell-based command execution.
 
 ## [0.6.2] - 2026-08-21
 
@@ -477,7 +489,9 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.2...v0.6.3
+[0.6.2]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.0...v0.6.2
 [0.6.0]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260710...v0.6.0
 [0.4.20260710]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260709...v0.4.20260710
 [0.4.20260709]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260708...v0.4.20260709
