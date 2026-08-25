@@ -63,6 +63,9 @@ export function projectPlanDraftMutations(draft: PlanDraft): PlanMutation[] {
       "--set-metadata",
       `plan_draft_version=${draft.version}`
     ];
+    if (task.instructions !== undefined) {
+      args.push("--set-metadata", `task_instructions=${task.instructions}`);
+    }
     if (task.provider !== undefined) {
       args.push("--set-metadata", `provider=${task.provider}`);
     }

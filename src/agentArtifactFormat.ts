@@ -39,13 +39,13 @@ export function formatAgentResponseArtifact(values: {
     ...(values.verification === undefined
       ? []
       : [
-          `Agent verification: ${values.verification.accepted ? "passed" : "failed"} (not human approval)`,
-          `Verification model: ${metadataValue(values.verification.confirmedModel, 200)}`,
+          `Model content check: ${values.verification.accepted ? "passed" : "failed"} (not human approval; no commands or tests were run)`,
+          `Content-check model: ${metadataValue(values.verification.confirmedModel, 200)}`,
           `Generation attempts: ${Math.max(1, Math.round(values.verification.attempts))}`,
-          `Verification reason: ${metadataValue(values.verification.reason, 1_000)}`,
+          `Content-check reason: ${metadataValue(values.verification.reason, 1_000)}`,
           ...values.verification.evidence
             .slice(0, 20)
-            .map((evidence) => `Verification evidence: ${metadataValue(evidence, 500)}`),
+            .map((evidence) => `Content-check evidence: ${metadataValue(evidence, 500)}`),
           ...(values.verification.candidate === undefined
             ? []
             : [

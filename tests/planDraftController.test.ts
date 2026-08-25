@@ -36,17 +36,18 @@ describe("Plan Draft controller", () => {
     controller.setText(validText);
     controller.preview();
 
-    expect(controller.importPlan("/tmp/project", false)).toBe(false);
+    expect(controller.importPlan("/tmp/project", false, "import-client-1")).toBe(false);
     controller.setText(`${validText} `);
-    expect(controller.importPlan("/tmp/project", true)).toBe(false);
+    expect(controller.importPlan("/tmp/project", true, "import-client-1")).toBe(false);
     controller.preview();
-    expect(controller.importPlan("/tmp/project", true)).toBe(true);
+    expect(controller.importPlan("/tmp/project", true, "import-client-1")).toBe(true);
 
     expect(messages).toEqual([
       {
         command: "importPlanDraft",
         workspacePath: "/tmp/project",
-        draftText: `${validText} `
+        draftText: `${validText} `,
+        clientActionId: "import-client-1"
       }
     ]);
   });

@@ -63,9 +63,12 @@ describe("Beads plan write capability", () => {
       result(1, "", 'Error: unknown command "create" for "bd"')
     );
 
-    expect(capability.state).toBe("unsupported-command");
-    expect(capability.supported).toBe(false);
-    expect(capability.reason).toContain("unknown command");
+    expect(capability).toEqual({
+      supported: false,
+      state: "unsupported-command",
+      reason:
+        "The active Beads CLI does not support one or more commands or options required by this extension."
+    });
   });
 
   it.each([
@@ -78,9 +81,31 @@ describe("Beads plan write capability", () => {
       result(1, "", message)
     );
 
-    expect(capability.supported).toBe(false);
-    expect(capability.state).toBe("unsupported-command");
-    expect(capability.reason).toContain("metadata");
+    expect(capability).toEqual({
+      supported: false,
+      state: "unsupported-command",
+      reason:
+        "The active Beads CLI does not support one or more commands or options required by this extension."
+    });
+    expect(capability.reason).not.toContain(message);
+  });
+
+  it("does not expose raw CLI help or stderr in a failed probe reason", async () => {
+    const rawOutput = `fatal: capability probe failed
+Usage: bd create [flags]
+${"verbose diagnostic ".repeat(200)}`;
+    const capability = await probeBeadsWriteCapability(true, null, async () =>
+      result(2, "", rawOutput)
+    );
+
+    expect(capability).toEqual({
+      supported: false,
+      state: "probe-failed",
+      reason: "The Beads capability probe could not confirm a compatible CLI (exit code 2)."
+    });
+    expect(capability.reason).not.toContain("Usage:");
+    expect(capability.reason).not.toContain("verbose diagnostic");
+    expect(capability.reason).not.toContain("\n");
   });
 
   it("disables import on a structured remote schema migration gate", async () => {
@@ -134,6 +159,28 @@ describe("Beads agent write capability", () => {
     const capability = await probeBeadsAgentWriteCapability(true, null, async () =>
       result(
         1,
+        JSON.stringify({
+          remote_migrate_gate: {
+            current_version: 49,
+            latest_version: 53,
+            human_decision_required: true
+          }
+        })
+      )
+    );
+
+    expect(capability).toEqual({
+      supported: false,
+      state: "schema-mismatch",
+      reason: "Beads schema v49 is incompatible with v53; migration coordination is required."
+    });
+  });
+
+  it("summarizes a structured remote migration gate received on stderr", async () => {
+    const capability = await probeBeadsAgentWriteCapability(true, null, async () =>
+      result(
+        1,
+        "",
         JSON.stringify({
           remote_migrate_gate: {
             current_version: 49,

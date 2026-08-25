@@ -24,7 +24,7 @@ describe("agent response artifact", () => {
     );
   });
 
-  it("labels an agent verifier verdict separately from human approval", () => {
+  it("labels a model content check separately from human and external validation", () => {
     const artifact = formatAgentResponseArtifact({
       runId: "run-2",
       issueId: "task-2",
@@ -43,9 +43,11 @@ describe("agent response artifact", () => {
       }
     });
 
-    expect(artifact).toContain("Agent verification: passed (not human approval)");
+    expect(artifact).toContain(
+      "Model content check: passed (not human approval; no commands or tests were run)"
+    );
     expect(artifact).toContain("Generation attempts: 2");
-    expect(artifact).toContain("Verification reason: The required heading is present.");
+    expect(artifact).toContain("Content-check reason: The required heading is present.");
     expect(artifact).toContain("--- BEGIN PROPOSED FILE CONTENT ---\nverified content");
   });
 });

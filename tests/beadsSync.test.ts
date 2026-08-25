@@ -35,7 +35,7 @@ describe("probeBeadsSyncCapability", () => {
 
     await expect(probeBeadsSyncCapability(runBdCommand, "/tmp/demo")).resolves.toEqual({
       supported: false,
-      reason: "Unable to verify bd sync support: schema inspection failed"
+      reason: "Unable to verify bd sync support with the active Beads CLI."
     });
   });
 });

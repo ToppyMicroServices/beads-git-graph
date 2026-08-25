@@ -31,6 +31,13 @@ export interface BeadItem {
   model: string;
   ssot: string;
   artifact: string;
+  providerStatus?: string;
+  contentCheckStatus?: string;
+  acceptanceStatus?: string;
+  reviewStatus?: string;
+  outputPath?: string;
+  acceptanceCriteria?: string;
+  taskInstructions?: string;
   worktree: string;
   branch: string;
   pullRequest: string;
@@ -437,6 +444,14 @@ export function beadPickSyncRisk(record: Record<string, unknown>) {
   );
 }
 
+function beadPickExecutionField(
+  record: Record<string, unknown>,
+  keys: string[],
+  tokenPrefixes: string[]
+) {
+  return beadPickStructuredString(record, keys, tokenPrefixes);
+}
+
 export function beadPickParentId(record: Record<string, unknown>) {
   const explicitParentId = beadPickString(
     record,
@@ -644,6 +659,37 @@ export function toBeadItem(item: unknown): BeadItem | null {
     model: beadPickModel(record),
     ssot: beadPickSsot(record),
     artifact: beadPickArtifact(record),
+    providerStatus: beadPickExecutionField(
+      record,
+      ["provider_status", "providerStatus"],
+      ["provider-status"]
+    ),
+    contentCheckStatus: beadPickExecutionField(
+      record,
+      ["content_check_status", "contentCheckStatus"],
+      ["content-check-status"]
+    ),
+    acceptanceStatus: beadPickExecutionField(
+      record,
+      ["acceptance_status", "acceptanceStatus"],
+      ["acceptance-status"]
+    ),
+    reviewStatus: beadPickExecutionField(
+      record,
+      ["review_status", "reviewStatus"],
+      ["review-status"]
+    ),
+    outputPath: beadPickExecutionField(record, ["output_path", "outputPath"], ["output-path"]),
+    acceptanceCriteria: beadPickExecutionField(
+      record,
+      ["acceptance_criteria", "acceptanceCriteria", "acceptance"],
+      ["acceptance", "acceptance-criteria"]
+    ),
+    taskInstructions: beadPickExecutionField(
+      record,
+      ["task_instructions", "taskInstructions"],
+      ["task-instructions"]
+    ),
     worktree: beadPickWorktree(record),
     branch: beadPickBranch(record),
     pullRequest: beadPickPullRequest(record),
@@ -800,6 +846,30 @@ export function mergeBeadItems(primaryItems: BeadItem[], fallbackItems: BeadItem
       model: item.model.trim() !== "" ? item.model : fallback.model,
       ssot: item.ssot.trim() !== "" ? item.ssot : fallback.ssot,
       artifact: (item.artifact ?? "").trim() !== "" ? item.artifact : (fallback.artifact ?? ""),
+      providerStatus:
+        (item.providerStatus ?? "").trim() !== ""
+          ? item.providerStatus
+          : (fallback.providerStatus ?? ""),
+      contentCheckStatus:
+        (item.contentCheckStatus ?? "").trim() !== ""
+          ? item.contentCheckStatus
+          : (fallback.contentCheckStatus ?? ""),
+      acceptanceStatus:
+        (item.acceptanceStatus ?? "").trim() !== ""
+          ? item.acceptanceStatus
+          : (fallback.acceptanceStatus ?? ""),
+      reviewStatus:
+        (item.reviewStatus ?? "").trim() !== "" ? item.reviewStatus : (fallback.reviewStatus ?? ""),
+      outputPath:
+        (item.outputPath ?? "").trim() !== "" ? item.outputPath : (fallback.outputPath ?? ""),
+      acceptanceCriteria:
+        (item.acceptanceCriteria ?? "").trim() !== ""
+          ? item.acceptanceCriteria
+          : (fallback.acceptanceCriteria ?? ""),
+      taskInstructions:
+        (item.taskInstructions ?? "").trim() !== ""
+          ? item.taskInstructions
+          : (fallback.taskInstructions ?? ""),
       worktree: item.worktree.trim() !== "" ? item.worktree : fallback.worktree,
       branch: item.branch.trim() !== "" ? item.branch : fallback.branch,
       pullRequest: item.pullRequest.trim() !== "" ? item.pullRequest : fallback.pullRequest,

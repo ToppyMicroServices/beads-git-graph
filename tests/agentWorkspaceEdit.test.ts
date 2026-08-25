@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { type AgentProviderResponse } from "../src/agentProviderClient";
 import {
   applyAgentWorkspaceEdit,
+  buildAutonomousEditPrompt,
   candidateQualityProblem,
   copiedUpstreamArtifactProblem,
   findConflictingAgentOutputPathIssueIds,
@@ -76,6 +77,42 @@ describe("autonomous workspace edit contract", () => {
     });
   });
 
+  it("uses imported task instructions when the Beads description is empty", () => {
+    expect(
+      parseAgentTaskExecutionSpec(
+        {
+          id: "task-1",
+          title: "Write the report",
+          description: "",
+          acceptance_criteria: "Three recommendations are present.",
+          metadata: JSON.stringify({
+            task_instructions:
+              "Use the supplied evidence and write three numbered recommendations.",
+            output_path: "outputs/report.md"
+          })
+        },
+        "task-1"
+      )
+    ).toMatchObject({
+      description: "Use the supplied evidence and write three numbered recommendations."
+    });
+  });
+
+  it("includes the declared SSOT string without claiming its files are attached", () => {
+    const prompt = buildAutonomousEditPrompt({
+      task,
+      provider: "ollama",
+      model: "small-model",
+      ssot: "AGENTS.md, docs/decision.md",
+      dependencyIds: [],
+      currentContent: null,
+      upstreamArtifacts: []
+    });
+
+    expect(prompt).toContain('Declared SSOT reference string: "AGENTS.md, docs/decision.md"');
+    expect(prompt).toContain("Referenced file contents are not automatically attached");
+  });
+
   it.each([
     "../outside.md",
     "/tmp/outside.md",
@@ -114,7 +151,7 @@ describe("autonomous workspace edit contract", () => {
     expect(candidateQualityProblem("# Report\n\n1. First\n2. Second\n3. Third\n")).toBeNull();
   });
 
-  it("accepts only a structured verifier verdict", () => {
+  it("accepts only a structured model content-check verdict", () => {
     expect(
       parseAcceptanceVerification(
         '```json\n{"accepted":true,"reason":"All three are present","evidence":["1, 2, 3"]}\n```'
@@ -192,7 +229,7 @@ describe("autonomous workspace edit contract", () => {
     ).toContain("closely repeated upstream artifact upstream");
   });
 
-  it("retries a refusal and applies only a verifier-approved candidate", async () => {
+  it("retries a refusal and applies only a content-checked candidate", async () => {
     const request = vi
       .fn<(prompt: string) => Promise<AgentProviderResponse>>()
       .mockResolvedValueOnce(response("I cannot access the workspace."))
@@ -221,7 +258,7 @@ describe("autonomous workspace edit contract", () => {
     expect(request.mock.calls[2][0]).not.toContain("```markdown");
   });
 
-  it("does not approve a generic candidate when the verifier rejects both attempts", async () => {
+  it("does not approve a generic candidate when the content checker rejects both attempts", async () => {
     const request = vi
       .fn<(prompt: string) => Promise<AgentProviderResponse>>()
       .mockResolvedValueOnce(response("General advice without the requested list."))

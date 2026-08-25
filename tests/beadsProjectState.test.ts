@@ -105,6 +105,26 @@ describe("deriveAgentWorkItem", () => {
     });
   });
 
+  it("routes applied edits to external validation instead of unopened-response review", () => {
+    expect(
+      deriveAgentWorkItem(
+        makeBead({
+          status: "in_progress",
+          provider: "openai",
+          providerStatus: "edit_applied",
+          contentCheckStatus: "model_passed",
+          acceptanceStatus: "pending_external_validation",
+          reviewStatus: "human_approved",
+          artifact: "file:///tmp/response.txt"
+        })
+      )
+    ).toMatchObject({
+      lane: "review",
+      reason:
+        "The workspace edit was applied after human review; external validation is still pending"
+    });
+  });
+
   it("routes completed direct-provider response artifacts to review", () => {
     expect(
       deriveAgentWorkItem(
@@ -245,5 +265,39 @@ describe("buildAgentWorkQueue", () => {
     });
     expect(queue.total).toBe(6);
     expect(queue.lanes.queue.map((entry) => entry.item.id)).toEqual(["queued", "queued-second"]);
+  });
+
+  it("orders queued work by confirmed readiness, priority, and original order", () => {
+    const queue = buildAgentWorkQueue([
+      makeBead({ id: "unconfirmed-p0", priority: "P0" }),
+      makeBead({ id: "confirmed-p4", priority: "P4", readyByBd: true }),
+      makeBead({ id: "confirmed-p1-first", priority: "P1", readyByBd: true }),
+      makeBead({ id: "unconfirmed-p1", priority: "P1" }),
+      makeBead({ id: "confirmed-p1-second", priority: "P1", readyByBd: true })
+    ]);
+
+    expect(queue.lanes.queue.map((entry) => entry.item.id)).toEqual([
+      "confirmed-p1-first",
+      "confirmed-p1-second",
+      "confirmed-p4",
+      "unconfirmed-p0",
+      "unconfirmed-p1"
+    ]);
+  });
+
+  it("orders attention work by priority while preserving stable ties", () => {
+    const queue = buildAgentWorkQueue([
+      makeBead({ id: "p4", status: "blocked", priority: "P4" }),
+      makeBead({ id: "p2-first", status: "blocked", priority: "P2" }),
+      makeBead({ id: "p0", status: "blocked", priority: "P0" }),
+      makeBead({ id: "p2-second", status: "blocked", priority: "P2" })
+    ]);
+
+    expect(queue.lanes.attention.map((entry) => entry.item.id)).toEqual([
+      "p0",
+      "p2-first",
+      "p2-second",
+      "p4"
+    ]);
   });
 });

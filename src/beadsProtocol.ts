@@ -1,7 +1,7 @@
 import { normalizeAgentModelName } from "./agentModelSelection";
 import { type AgentProviderId, normalizeAgentProviderId } from "./agentProvider";
 
-export type BeadsRequestMessage =
+export type BeadsRequestMessage = (
   | { command: "refresh" }
   | { command: "openGitGraph" }
   | { command: "syncAllBeads" }
@@ -41,7 +41,8 @@ export type BeadsRequestMessage =
       workspacePath: string;
       title?: string;
       dependencies: BeadsExecutionTarget[];
-    };
+    }
+) & { clientActionId?: string };
 
 export interface BeadsExecutionTarget {
   issueId: string;
@@ -73,6 +74,10 @@ export interface ParallelExecutionOutcome extends BeadsExecutionTarget {
 }
 
 export type BeadsHostMessage =
+  | {
+      command: "actionSettled";
+      clientActionId: string;
+    }
   | {
       command: "beadsRenderUpdate";
       generation: number;
@@ -186,6 +191,9 @@ export function isBeadsRequestMessage(message: unknown): message is BeadsRequest
   }
 
   const record = message as Record<string, unknown>;
+  if (record.clientActionId !== undefined && !isBoundedOneLine(record.clientActionId, 100)) {
+    return false;
+  }
   switch (record.command) {
     case "refresh":
     case "openGitGraph":
@@ -266,6 +274,9 @@ export function isBeadsHostMessage(message: unknown): message is BeadsHostMessag
     return false;
   }
   const record = message as Record<string, unknown>;
+  if (record.command === "actionSettled") {
+    return isBoundedOneLine(record.clientActionId, 100);
+  }
   if (record.command === "beadsRenderUpdate") {
     return (
       Number.isInteger(record.generation) &&

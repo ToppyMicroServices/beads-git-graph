@@ -18,6 +18,7 @@ import {
   type AgentExecutionOutcomeStatus,
   type AgentProviderId,
   getAgentProviderDefinition,
+  normalizeAgentProviderId,
   resolveAgentProviderId
 } from "./agentProvider";
 import {
@@ -539,9 +540,24 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     return renderBeadsWebviewHtml(webview, this.extensionUri, result);
   }
 
-  private beginAction(actionKey: string, label: string) {
+  private postClientActionSettled(
+    clientActionId: string | undefined,
+    sourceWebview?: vscode.Webview
+  ) {
+    if (clientActionId !== undefined) {
+      this.postHostMessage({ command: "actionSettled", clientActionId }, sourceWebview);
+    }
+  }
+
+  private beginAction(
+    actionKey: string,
+    label: string,
+    clientActionId: string | undefined,
+    sourceWebview?: vscode.Webview
+  ) {
     if (this.inFlightActions.has(actionKey)) {
       vscode.window.showWarningMessage(`${label} is already in progress.`);
+      this.postClientActionSettled(clientActionId, sourceWebview);
       return false;
     }
     this.inFlightActions.add(actionKey);
@@ -552,12 +568,29 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     this.inFlightActions.delete(actionKey);
   }
 
+  private settleClientAction(
+    actionKey: string,
+    clientActionId: string | undefined,
+    sourceWebview?: vscode.Webview
+  ) {
+    this.finishAction(actionKey);
+    this.postClientActionSettled(clientActionId, sourceWebview);
+  }
+
   public async handleMessage(message: unknown, sourceWebview?: vscode.Webview) {
     if (!isBeadsRequestMessage(message)) {
       return;
     }
     if (message.command === "refresh") {
-      await this.refresh();
+      const actionKey = "refresh-beads";
+      if (!this.beginAction(actionKey, "Beads refresh", message.clientActionId, sourceWebview)) {
+        return;
+      }
+      try {
+        await this.refresh();
+      } finally {
+        this.settleClientAction(actionKey, message.clientActionId, sourceWebview);
+      }
       return;
     }
 
@@ -595,10 +628,11 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         vscode.window.showWarningMessage(
           "Refusing to import a Plan Draft outside an initialized workspace folder."
         );
+        this.postClientActionSettled(message.clientActionId, sourceWebview);
         return;
       }
       const actionKey = `import-plan:${workspacePath}`;
-      if (!this.beginAction(actionKey, "Plan import")) {
+      if (!this.beginAction(actionKey, "Plan import", message.clientActionId, sourceWebview)) {
         return;
       }
       try {
@@ -672,13 +706,13 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         );
         return;
       } finally {
-        this.finishAction(actionKey);
+        this.settleClientAction(actionKey, message.clientActionId, sourceWebview);
       }
     }
 
     if (message.command === "syncAllBeads") {
       const actionKey = "sync-all-beads";
-      if (!this.beginAction(actionKey, "Beads sync")) {
+      if (!this.beginAction(actionKey, "Beads sync", message.clientActionId, sourceWebview)) {
         return;
       }
       try {
@@ -718,7 +752,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           vscode.window.showWarningMessage("No Beads workspace was found to sync.");
         }
       } finally {
-        this.finishAction(actionKey);
+        this.settleClientAction(actionKey, message.clientActionId, sourceWebview);
       }
       return;
     }
@@ -729,11 +763,19 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         vscode.window.showWarningMessage(
           "Refusing to sync Beads data outside an initialized workspace folder."
         );
+        this.postClientActionSettled(message.clientActionId, sourceWebview);
         return;
       }
 
       const actionKey = `sync-beads:${workspacePath}`;
-      if (!this.beginAction(actionKey, `Beads sync for ${path.basename(workspacePath)}`)) {
+      if (
+        !this.beginAction(
+          actionKey,
+          `Beads sync for ${path.basename(workspacePath)}`,
+          message.clientActionId,
+          sourceWebview
+        )
+      ) {
         return;
       }
       try {
@@ -755,7 +797,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         const messageText = error instanceof Error ? error.message : "Unable to sync Beads data.";
         vscode.window.showErrorMessage(messageText);
       } finally {
-        this.finishAction(actionKey);
+        this.settleClientAction(actionKey, message.clientActionId, sourceWebview);
       }
       return;
     }
@@ -784,11 +826,12 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         vscode.window.showWarningMessage(
           "Refusing to create a bead outside an initialized workspace folder."
         );
+        this.postClientActionSettled(message.clientActionId, sourceWebview);
         return;
       }
 
       const actionKey = `create-bead:${workspacePath}`;
-      if (!this.beginAction(actionKey, "Bead creation")) {
+      if (!this.beginAction(actionKey, "Bead creation", message.clientActionId, sourceWebview)) {
         return;
       }
       try {
@@ -798,7 +841,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         const messageText = error instanceof Error ? error.message : "Unable to create bead.";
         vscode.window.showErrorMessage(messageText);
       } finally {
-        this.finishAction(actionKey);
+        this.settleClientAction(actionKey, message.clientActionId, sourceWebview);
       }
       return;
     }
@@ -816,11 +859,19 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
             "Refusing to close a bead outside an initialized workspace folder."
           );
         }
+        this.postClientActionSettled(message.clientActionId, sourceWebview);
         return;
       }
 
       const actionKey = `close-bead:${workspacePath}:${issueId}`;
-      if (!this.beginAction(actionKey, `Closing bead ${issueId}`)) {
+      if (
+        !this.beginAction(
+          actionKey,
+          `Closing bead ${issueId}`,
+          message.clientActionId,
+          sourceWebview
+        )
+      ) {
         return;
       }
       try {
@@ -841,7 +892,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         const messageText = error instanceof Error ? error.message : "Unable to close bead.";
         vscode.window.showErrorMessage(messageText);
       } finally {
-        this.finishAction(actionKey);
+        this.settleClientAction(actionKey, message.clientActionId, sourceWebview);
       }
       return;
     }
@@ -859,11 +910,19 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
             "Refusing to update a bead outside an initialized workspace folder."
           );
         }
+        this.postClientActionSettled(message.clientActionId, sourceWebview);
         return;
       }
 
       const actionKey = `start-bead:${workspacePath}:${issueId}`;
-      if (!this.beginAction(actionKey, `Starting bead ${issueId}`)) {
+      if (
+        !this.beginAction(
+          actionKey,
+          `Starting bead ${issueId}`,
+          message.clientActionId,
+          sourceWebview
+        )
+      ) {
         return;
       }
       try {
@@ -885,7 +944,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           vscode.window.showErrorMessage(messageText);
         }
       } finally {
-        this.finishAction(actionKey);
+        this.settleClientAction(actionKey, message.clientActionId, sourceWebview);
       }
       return;
     }
@@ -900,11 +959,14 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         vscode.window.showWarningMessage(
           "Refusing to start parallel beads outside an initialized workspace folder."
         );
+        this.postClientActionSettled(message.clientActionId, sourceWebview);
         return;
       }
 
       const actionKey = `start-parallel:${workspacePath}`;
-      if (!this.beginAction(actionKey, "Parallel AI start")) {
+      if (
+        !this.beginAction(actionKey, "Parallel AI start", message.clientActionId, sourceWebview)
+      ) {
         return;
       }
       try {
@@ -944,7 +1006,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           sourceWebview
         );
       } finally {
-        this.finishAction(actionKey);
+        this.settleClientAction(actionKey, message.clientActionId, sourceWebview);
       }
       return;
     }
@@ -962,11 +1024,19 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
             "Refusing to merge PRs outside an initialized workspace folder."
           );
         }
+        this.postClientActionSettled(message.clientActionId, sourceWebview);
         return;
       }
 
       const actionKey = `merge-parallel:${workspacePath}:${issueId}`;
-      if (!this.beginAction(actionKey, `Merging work for ${issueId}`)) {
+      if (
+        !this.beginAction(
+          actionKey,
+          `Merging work for ${issueId}`,
+          message.clientActionId,
+          sourceWebview
+        )
+      ) {
         return;
       }
       try {
@@ -981,7 +1051,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           error instanceof Error ? error.message : "Unable to merge parallel PRs.";
         vscode.window.showErrorMessage(messageText);
       } finally {
-        this.finishAction(actionKey);
+        this.settleClientAction(actionKey, message.clientActionId, sourceWebview);
       }
     }
   }
@@ -1279,7 +1349,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     if (openResult === "edit-applied") {
       const providerLabel = getAgentProviderDefinition(provider).label;
       vscode.window.showInformationMessage(
-        `${providerLabel} applied the reviewed, verifier-approved edit for ${issueId} with requested model ${model}. The task remains in progress until separately closed.`
+        `${providerLabel} applied the human-reviewed edit for ${issueId} with requested model ${model} after its model content check passed. External validation is still pending, and the task remains in progress until separately closed.`
       );
       return;
     }
@@ -1390,7 +1460,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         if (result.status === "review-required") {
           await this.openAgentResponseArtifact(capture.artifact);
           throw new Error(
-            `Acceptance verification did not pass after ${result.attempts} attempt(s): ${result.reason} No workspace file or Beads state was changed; the candidate was preserved for review.`
+            `The model content check did not pass after ${result.attempts} attempt(s): ${result.reason} No workspace file or Beads state was changed; the candidate was preserved for review.`
           );
         }
         const prepared: PreparedAgentExecution = {
@@ -1474,7 +1544,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
               `model=${values.model}`,
               `ssot=${values.ssot}`,
               "provider_status=edit_applied",
-              "acceptance_status=agent_passed",
+              "content_check_status=model_passed",
+              "acceptance_status=pending_external_validation",
               "review_status=human_approved",
               `output_path=${prepared.outputPath}`,
               `artifact_run=${prepared.artifact.runId}`,
@@ -1484,13 +1555,14 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
               `provider=${values.provider}`,
               `model=${values.model}`,
               "provider_status=edit_applied",
-              "acceptance_status=agent_passed",
+              "content_check_status=model_passed",
+              "acceptance_status=pending_external_validation",
               "review_status=human_approved",
               `output_path=${prepared.outputPath}`,
-              `verification_attempts=${prepared.attempts}`,
-              `verification_reason=${prepared.verificationReason}`,
+              `content_check_attempts=${prepared.attempts}`,
+              `content_check_reason=${prepared.verificationReason}`,
               ...prepared.verificationEvidence.map(
-                (evidence) => `verification_evidence=${evidence}`
+                (evidence) => `content_check_evidence=${evidence}`
               ),
               `artifact_run=${prepared.artifact.runId}`,
               `artifact=${prepared.artifact.reference}`
@@ -1916,7 +1988,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         return {
           ...candidate,
           status: "edit-applied",
-          message: "Reviewed, verifier-approved workspace edit applied; task remains in progress."
+          message:
+            "Human-reviewed workspace edit applied after the model content check passed; external validation remains pending."
         };
       case "session-opened":
         return { ...candidate, status: "session-started", message: "Copilot session opened." };
@@ -2083,22 +2156,18 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   private async pickAgentProviderPreference(currentProvider: string | undefined) {
-    const taskProvider = resolveAgentProviderId(currentProvider);
+    const taskProvider = normalizeAgentProviderId(currentProvider);
     const selected = await vscode.window.showQuickPick(
       AGENT_PROVIDERS.map((provider) => ({
         label: provider.label,
         description:
-          provider.id === taskProvider
-            ? currentProvider === undefined || currentProvider.trim() === ""
-              ? "Current/default provider"
-              : "Task provider preference"
-            : provider.description,
+          provider.id === taskProvider ? "Task provider preference" : provider.description,
         provider: provider.id
       })),
       {
         title: "AI provider",
         placeHolder:
-          "Copilot opens a coding session. Other providers generate a reviewable text artifact."
+          "Copilot opens a coding session. Other providers generate one bounded file proposal for review."
       }
     );
     return selected?.provider ?? null;
@@ -2157,14 +2226,23 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     overrideProvider: AgentProviderId | null;
     overrideModel: string | null;
   }> {
+    const canUsePerTaskAssignments = items.every(
+      (item) =>
+        normalizeAgentProviderId(item.provider) !== null &&
+        normalizeAgentModelName(item.model) !== null
+    );
     const selected = await vscode.window.showQuickPick(
       [
-        {
-          label: "Use each task's provider and model",
-          description: "Preserve every task-specific provider/model handoff",
-          choice: "per-task" as const,
-          provider: "copilot" as AgentProviderId
-        },
+        ...(canUsePerTaskAssignments
+          ? [
+              {
+                label: "Use each task's provider and model",
+                description: "Preserve every explicit task-specific provider/model handoff",
+                choice: "per-task" as const,
+                provider: "copilot" as AgentProviderId
+              }
+            ]
+          : []),
         ...AGENT_PROVIDERS.map((provider) => ({
           label: `Use ${provider.label} for every task`,
           description: provider.description,
@@ -2174,7 +2252,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       ],
       {
         title: "Provider for parallel work",
-        placeHolder: "Keep task-specific handoffs or override every selected task."
+        placeHolder: canUsePerTaskAssignments
+          ? "Keep explicit task handoffs or override every selected task."
+          : "Some tasks are unassigned. Choose one provider and model for this batch."
       }
     );
     if (selected === undefined) {
@@ -2304,9 +2384,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 Declared edit targets:
 ${targets}
 
-Up to ${Math.min(requests.length, concurrency)} tasks run concurrently. Each task may make two generation and two acceptance-verification calls (${maxCalls} provider calls maximum for this batch). Cloud providers may charge for every call.${hasLocal ? "\n\nOllama runs locally and may receive the current target-file content plus completed upstream artifact content." : ""}${hasCloud ? "\n\nCloud providers receive task fields and their own generated candidate for verification. They never receive existing workspace file content and may create only a target file that does not already exist." : ""}
+Up to ${Math.min(requests.length, concurrency)} tasks run concurrently. Each task may make two generation and two model content-check calls (${maxCalls} provider calls maximum for this batch). Cloud providers may charge for every call.${hasLocal ? "\n\nOllama runs locally and may receive the current target-file content plus completed upstream artifact content." : ""}${hasCloud ? "\n\nCloud providers receive task fields and their own generated candidate for model content checking. They never receive existing workspace file content and may create only a target file that does not already exist." : ""}
 
-A provider can write only its declared relative target after its verifier passes. Workspace escape, symlinks, protected files, oversized output, empty output, and refusal responses are rejected. No model-generated shell command is executed. Tasks remain in progress until separately closed.`
+A provider can write only its declared relative target after its model content check passes and you approve the proposed content. This check does not run commands or tests. Workspace escape, symlinks, protected files, oversized output, empty output, and refusal responses are rejected. No model-generated shell command is executed. Tasks remain in progress until separately validated and closed.`
       },
       action
     );
@@ -2325,7 +2405,12 @@ A provider can write only its declared relative target after its verifier passes
     }
     const action = "Apply Reviewed Edit";
     const selected = await vscode.window.showWarningMessage(
-      `Review the opened proposed file content for ${issueId} before applying it to ${outputPath}. The agent verifier passed, but this is not human acceptance and the task will remain in progress.`,
+      `Apply the reviewed proposal for ${issueId} to ${outputPath}?`,
+      {
+        modal: true,
+        detail:
+          "The model content check inspected only the proposed text. It did not run commands, tests, builds, or runtime checks. Applying records human content approval, while external validation remains pending and the task stays in progress."
+      },
       action,
       "Reject"
     );
@@ -3253,14 +3338,12 @@ A provider can write only its declared relative target after its verifier passes
   private async loadReadyItemIds(cwd: string, warnings: BeadWarning[]) {
     try {
       return await this.queryReadyItemIds(cwd);
-    } catch (error) {
+    } catch {
       warnings.push({
         source: path.join(cwd, ".beads"),
         workspacePath: cwd,
         message:
-          error instanceof Error
-            ? `Unable to infer parallel-ready tasks from bd ready: ${error.message}`
-            : "Unable to infer parallel-ready tasks from bd ready."
+          "Unable to infer ready tasks because bd ready failed. Task start readiness is unknown."
       });
       return new Set<string>();
     }

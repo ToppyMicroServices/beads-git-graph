@@ -51,6 +51,22 @@ describe("parsePlanDraft", () => {
     expect(result.draft).toEqual(input);
     expect(result.draft?.tasks[0]).not.toHaveProperty("provider");
     expect(result.draft?.tasks[0]).not.toHaveProperty("model");
+    expect(result.draft?.tasks[0]).not.toHaveProperty("instructions");
+  });
+
+  it("round-trips task instructions while accepting legacy drafts without them", () => {
+    const legacy = validDraft();
+    const parsedLegacy = parsePlanDraft(JSON.parse(JSON.stringify(legacy)) as unknown);
+    expect(parsedLegacy.errors).toEqual([]);
+    expect(parsedLegacy.draft).toEqual(legacy);
+
+    const current = validDraft();
+    current.tasks[0].instructions = "Update the parser and run its focused tests.";
+    const parsedCurrent = parsePlanDraft(JSON.parse(JSON.stringify(current)) as unknown);
+    expect(parsedCurrent.errors).toEqual([]);
+    expect(parsedCurrent.draft?.tasks[0].instructions).toBe(
+      "Update the parser and run its focused tests."
+    );
   });
 
   it("normalizes a known provider ID and rejects an unknown provider", () => {

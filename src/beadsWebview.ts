@@ -62,8 +62,17 @@ function getDisplayLabel(value: string, agentAliases: ReadonlyMap<string, string
   return anonymizeAgentIdentity(value, agentAliases);
 }
 
+function hasExplicitProvider(item: Pick<BeadItem, "provider" | "providerExplicit">) {
+  return (
+    item.providerExplicit === true ||
+    (item.providerExplicit === undefined && item.provider !== "copilot")
+  );
+}
+
 function getProviderLabel(item: BeadItem) {
-  return getAgentProviderDefinition(resolveAgentProviderId(item.provider)).label;
+  return hasExplicitProvider(item)
+    ? getAgentProviderDefinition(resolveAgentProviderId(item.provider)).label
+    : "Unassigned";
 }
 
 function isDerivedMergeTask(item: BeadItem) {
@@ -72,6 +81,18 @@ function isDerivedMergeTask(item: BeadItem) {
 
 function encodeJsonData(value: unknown) {
   return escapeHtml(encodeURIComponent(JSON.stringify(value)));
+}
+
+function renderWorkspaceCreateAction(
+  workspacePath: string,
+  workspaceTitle: string,
+  writeAvailable: boolean,
+  unavailableReason: string
+) {
+  const label = writeAvailable
+    ? `Create task in ${workspaceTitle}`
+    : `Task creation unavailable in ${workspaceTitle}: ${unavailableReason}`;
+  return `<button class="workspaceCreateBead workspaceAction workspaceCreateAction" type="button" data-create-workspace="${escapeHtml(workspacePath)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"${writeAvailable ? "" : " disabled"}>+ Create task</button>`;
 }
 
 function renderArtifactAction(artifactUri: string) {
@@ -96,7 +117,7 @@ function isDefaultVisibleStatus(status: string) {
 }
 
 function isCodingSessionProvider(item: BeadItem) {
-  return resolveAgentProviderId(item.provider) === "copilot";
+  return hasExplicitProvider(item) && resolveAgentProviderId(item.provider) === "copilot";
 }
 
 function getWorktreeLabel(item: BeadItem) {
@@ -133,6 +154,13 @@ function hasBlockingSyncRisk(item: BeadItem) {
   );
 }
 
+function normalizeRecordedState(value: string | undefined) {
+  return (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
 function getExecutionStateLabel(item: BeadItem, normalizedStatus: string, derivedMerge: boolean) {
   if (derivedMerge) {
     return normalizedStatus === "open" ? "Merge ready" : "Waiting PRs";
@@ -148,7 +176,16 @@ function getExecutionStateLabel(item: BeadItem, normalizedStatus: string, derive
   }
   if (
     normalizedStatus === "in_progress" &&
-    !isCodingSessionProvider(item) &&
+    hasExplicitProvider(item) &&
+    resolveAgentProviderId(item.provider) !== "copilot" &&
+    normalizeRecordedState(item.providerStatus) === "edit_applied"
+  ) {
+    return "Validation pending";
+  }
+  if (
+    normalizedStatus === "in_progress" &&
+    hasExplicitProvider(item) &&
+    resolveAgentProviderId(item.provider) !== "copilot" &&
     item.artifact.trim() !== ""
   ) {
     return "Response ready";
@@ -354,7 +391,7 @@ function renderAgentWorkCard(
       : entry.readiness !== "confirmed"
         ? "Start is unavailable until bd ready confirms this task."
         : "Choose a provider and requested model, attach SSOT/context, and start this bead.";
-    primaryAction = `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-provider="${escapeHtml(item.provider)}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(item.ssot.trim())}" data-assign-start-worktree="${escapeHtml(isCodingSessionProvider(item) ? item.worktree.trim() : "")}" title="${escapeHtml(startTitle)}" aria-label="${escapeHtml(`Start AI for ${taskActionContext}`)}"${startDisabled ? " disabled" : ""}>Start AI</button>`;
+    primaryAction = `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-provider="${escapeHtml(hasExplicitProvider(item) ? item.provider : "")}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(item.ssot.trim())}" data-assign-start-worktree="${escapeHtml(isCodingSessionProvider(item) ? item.worktree.trim() : "")}" title="${escapeHtml(startTitle)}" aria-label="${escapeHtml(`Start AI for ${taskActionContext}`)}"${startDisabled ? " disabled" : ""}>Start AI</button>`;
   } else if (
     entry.lane === "queue" &&
     item.syntheticKind === "parallel-pr-merge" &&
@@ -592,7 +629,7 @@ function renderBeadsDependencyGraph(
         const taskActionContext = `${item.id}: ${item.title}`;
         const actionHtml = derivedMerge
           ? `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="${escapeHtml(writeAvailable ? "Check agent worktrees, auto-merge their PRs, then sync Beads." : writeUnavailableReason)}" aria-label="${escapeHtml(`Merge PRs for ${taskActionContext}`)}"${writeAvailable ? "" : " disabled"}>Merge PRs</button>`
-          : `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-provider="${escapeHtml(item.provider)}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(ssotLabel)}" data-assign-start-worktree="${escapeHtml(isCodingSessionProvider(item) ? item.worktree.trim() : "")}" title="${escapeHtml(assignTitle)}" aria-label="${escapeHtml(`Start AI for ${taskActionContext}`)}"${assignDisabled}>Start AI</button>`;
+          : `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-provider="${escapeHtml(hasExplicitProvider(item) ? item.provider : "")}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(ssotLabel)}" data-assign-start-worktree="${escapeHtml(isCodingSessionProvider(item) ? item.worktree.trim() : "")}" title="${escapeHtml(assignTitle)}" aria-label="${escapeHtml(`Start AI for ${taskActionContext}`)}"${assignDisabled}>Start AI</button>`;
         const graphBadges = [
           executionStateLabel === "" || graphWorkFocus !== "none"
             ? ""
@@ -682,7 +719,7 @@ function renderBeadsDependencyGraph(
     '<div class="graphLegend"><span class="runningLegend">Now (recorded)</span><span class="nextReadyLegend">Next ready</span><span class="flowLegend">Visible flow</span><span class="dependencyLegend">Dependency</span><span class="criticalLegend">Longest chain</span><span class="cycleLegend">Cycle</span><span class="parentLegend">Parent</span><span class="riskLegend">Merge/worktree risk</span></div>';
   const graphIssuesHtml = `<div class="graphIssueStack">${dependencyWarningHtml}${mergeRiskHtml}</div>`;
 
-  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">A new viewport focuses Now/Next; saved views keep their position · Point anywhere and wheel to zoom there · Drag to pan · Option/Alt+drag a box to zoom · Double-click to fit all</div></div><div class="graphHeaderActions"><div class="workspaceSummary">${graphWorkSummary}<span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${cycleSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="focus" title="Center recorded in-progress and ready-next tasks"${runningCount + nextReadyCount === 0 ? " disabled" : ""}>Focus</button><button type="button" data-graph-action="fit">Fit all</button></div></div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div><svg class="graphMiniMap" role="img" aria-label="Graph overview. The outlined rectangle is the current viewport."></svg></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to pan, Option or Alt drag a box to zoom, use arrow keys to pan, press F to focus Now and Next, and press zero to fit all."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${boundaryNodeHtml}${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
+  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">A new viewport focuses Now/Next; saved views keep their position · Point anywhere and wheel to zoom there · Drag to pan · Option/Alt+drag a box to zoom · Double-click to fit all</div></div><div class="graphHeaderActions"><div class="workspaceSummary">${graphWorkSummary}<span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${cycleSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="focus" title="Center recorded in-progress and ready-next tasks"${runningCount + nextReadyCount === 0 ? " disabled" : ""}>Focus</button><button type="button" data-graph-action="fit">Fit all</button></div></div></div>${graphIssuesHtml}<div class="graphDetailsHost"></div><div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div><svg class="graphMiniMap" role="img" aria-label="Graph overview. The outlined rectangle is the current viewport."></svg></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to pan, Option or Alt drag a box to zoom, use arrow keys to pan, press F to focus Now and Next, and press zero to fit all."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${boundaryNodeHtml}${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
 }
 
 export function renderBeadsWebviewHtml(
@@ -792,8 +829,8 @@ export function renderBeadsWebviewHtml(
             : parallelReadyCandidates.map((item) => ({
                 issueId: item.id,
                 title: item.title,
-                provider: item.provider,
-                model: item.model,
+                ...(hasExplicitProvider(item) ? { provider: item.provider } : {}),
+                ...(item.model.trim() === "" ? {} : { model: item.model }),
                 ssot: item.ssot,
                 worktree: isCodingSessionProvider(item) ? item.worktree : ""
               }));
@@ -968,7 +1005,7 @@ export function renderBeadsWebviewHtml(
               childCount > 0
                 ? `<button class="collapseToggle" type="button" aria-expanded="true" title="Toggle subprojects"><span class="collapseIcon" aria-hidden="true">▾</span></button>`
                 : '<span class="collapseSpacer" aria-hidden="true"></span>';
-            return `<tr class="${rowClasses}"${initialRowStyle} data-id="${escapeHtml(item.id)}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-details-id="${escapeHtml(detailsId)}" data-parent-id="${escapeHtml(parentId ?? "")}" data-epic-id="${escapeHtml(epicId ?? "")}" data-bead-type="${escapeHtml(normalizedType)}" data-depth="${depth}" data-child-count="${childCount}" data-order-index="${orderIndex}" data-guide-columns="${guideColumns.map((value) => (value ? "1" : "0")).join("")}" data-last-sibling="${isLastSibling ? "1" : "0"}" data-status="${escapeHtml(normalizedStatus)}" data-parallelizable="${item.parallelizable ? "1" : "0"}" data-parallel-source="${escapeHtml(item.parallelizableSource)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(serializedItem)))}" data-updated-ts="${updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td class="parallelCell">${parallelCell}</td><td><div class="titleCell" style="--tree-width:${treeWidth}px">${hierarchyToggle}<div class="titleContent"><div class="beadId">${escapeHtml(item.id)}</div><button class="beadTitle beadDetailsButton" type="button" aria-expanded="false" aria-controls="${escapeHtml(detailsId)}">${escapeHtml(item.title)}</button>${executionBadges === "" ? "" : `<div class="beadMeta">${executionBadges}</div>`}</div></div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
+            return `<tr class="${rowClasses}"${initialRowStyle} data-id="${escapeHtml(item.id)}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-details-id="${escapeHtml(detailsId)}" data-parent-id="${escapeHtml(parentId ?? "")}" data-epic-id="${escapeHtml(epicId ?? "")}" data-bead-type="${escapeHtml(normalizedType)}" data-depth="${depth}" data-child-count="${childCount}" data-order-index="${orderIndex}" data-guide-columns="${guideColumns.map((value) => (value ? "1" : "0")).join("")}" data-last-sibling="${isLastSibling ? "1" : "0"}" data-status="${escapeHtml(normalizedStatus)}" data-parallelizable="${item.parallelizable ? "1" : "0"}" data-parallel-source="${escapeHtml(item.parallelizableSource)}" data-item="${escapeHtml(encodeURIComponent(JSON.stringify(serializedItem)))}" data-updated-ts="${updatedTs}" data-type-sort="${typeSortOrder}" data-priority-sort="${Number.isNaN(prioritySortOrder) ? 9 : prioritySortOrder}"><td><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span></td><td class="parallelCell">${parallelCell}</td><td><div class="titleCell" style="--tree-width:${treeWidth}px">${hierarchyToggle}<div class="titleContent"><div class="beadId">${escapeHtml(item.id)}</div><button class="beadTitle beadDetailsButton" type="button" aria-expanded="false" aria-controls="${escapeHtml(detailsId)}">${escapeHtml(item.title)}</button>${executionBadges === "" ? "" : `<div class="beadMeta">${executionBadges}</div>`}</div><button class="rowActionsButton" type="button" aria-haspopup="menu" aria-controls="rowContextMenu" aria-expanded="false" aria-label="${escapeHtml(`Actions for ${item.id}: ${item.title}`)}" title="Task actions">•••</button></div></td><td><div class="statusCell"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(statusLabel)}</span>${progressLabel === "" ? "" : `<span class="progressText">${escapeHtml(progressLabel)}</span>`}</div></td><td><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span></td><td class="updatedCell" title="${escapeHtml(item.updatedAt)}">${escapeHtml(shortUpdated)}</td></tr>`;
           })
           .join("");
         const graphHtml = renderBeadsDependencyGraph(
@@ -986,12 +1023,18 @@ export function renderBeadsWebviewHtml(
           writeUnavailableReason,
           writeCapabilityWarning
         );
+        const createAction = renderWorkspaceCreateAction(
+          group.workspacePath,
+          workspaceTitle,
+          workspaceWriteAvailable,
+          workspaceWriteUnavailableReason
+        );
         const parallelAction =
           parallelStartTargets.length > 1
             ? `<button class="startParallelBeads workspaceAction" type="button" data-start-parallel-workspace="${escapeHtml(group.workspacePath)}" data-start-parallel-items="${encodeJsonData(parallelStartTargets)}" data-start-parallel-skipped="${encodeJsonData(skippedParallelTargets)}" title="${escapeHtml(writeAvailable ? `Assign and start the parallel-ready tasks currently visible through filters${skippedParallelTargets.length > 0 ? `; ${skippedParallelTargets.length} visible active task(s) may be skipped with reasons` : ""}` : writeUnavailableReason)}" aria-label="${escapeHtml(`Start ${parallelStartTargets.length} currently visible parallel-ready tasks in ${workspaceTitle}`)}"${writeAvailable ? "" : " disabled"}>${parallelStartTargets.length} Start Parallel</button>`
             : "";
 
-        return `<section data-workspace-path="${escapeHtml(group.workspacePath)}" data-write-available="${workspaceWriteAvailable ? "1" : "0"}" data-write-unavailable-reason="${escapeHtml(workspaceWriteUnavailableReason)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceHeaderRight"><div class="workspaceSummary">${workspaceSummary}</div>${parallelAction}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated"> </span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div>${graphHtml}${agentWorkQueueHtml}</section>`;
+        return `<section data-workspace-path="${escapeHtml(group.workspacePath)}" data-write-available="${workspaceWriteAvailable ? "1" : "0"}" data-write-unavailable-reason="${escapeHtml(workspaceWriteUnavailableReason)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceHeaderRight"><div class="workspaceSummary">${workspaceSummary}</div>${createAction}${parallelAction}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th aria-sort="none"><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th aria-sort="none"><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th aria-sort="none"><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated"> </span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div>${graphHtml}${agentWorkQueueHtml}</section>`;
       })
       .join("");
     const emptyHtml = result.emptyWorkspaces
@@ -1008,7 +1051,14 @@ export function renderBeadsWebviewHtml(
             : capability?.supported === false
               ? `Beads changes are disabled: ${capability.reason}`
               : "Beads changes are disabled because write capability is unconfirmed.";
-        return `<section data-workspace-path="${escapeHtml(workspace.workspacePath)}" data-write-available="${writeAvailable ? "1" : "0"}" data-write-unavailable-reason="${escapeHtml(unavailableReason)}">${showWorkspaceLabel ? `<div class="meta"><strong>${escapeHtml(workspace.workspace)}</strong></div>` : ""}<div class="empty">Beads is initialized, but no issues exist yet. Run <code>bd create &quot;Title&quot;</code> to add one.</div></section>`;
+        const workspaceTitle = showWorkspaceLabel ? workspace.workspace : "Beads";
+        const createAction = renderWorkspaceCreateAction(
+          workspace.workspacePath,
+          workspaceTitle,
+          writeAvailable,
+          unavailableReason
+        );
+        return `<section data-workspace-path="${escapeHtml(workspace.workspacePath)}" data-write-available="${writeAvailable ? "1" : "0"}" data-write-unavailable-reason="${escapeHtml(unavailableReason)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceHeaderRight">${createAction}</div></div><div class="empty">No tasks exist yet. Use <strong>Create task</strong> to add the first one.${writeAvailable ? "" : `<div class="emptyActionReason">${escapeHtml(unavailableReason)}</div>`}</div></section>`;
       })
       .join("");
     const unavailableHtml = result.unavailableWorkspaces
@@ -1065,7 +1115,7 @@ export function renderBeadsWebviewHtml(
               `<option value="${escapeHtml(workspacePath)}" data-plan-capability="${escapeHtml(encodeURIComponent(JSON.stringify(capability)))}">${escapeHtml(workspace)}</option>`
           )
           .join("");
-  const planDraftHtml = `<section id="planDraftView" aria-label="AI task planning"><div class="planDraftHeader"><div><div class="workspaceName">AI Plan &amp; Parallel Run</div><p>Turn one goal into dependency-linked tasks, review the draft, then import and run only ready work.</p></div><label>Target workspace<select id="planDraftWorkspace"${planImportCapabilities.length === 0 ? " disabled" : ""}>${planWorkspaceOptions}</select></label></div><ol class="planFlow" aria-label="Planning workflow"><li><strong>1</strong><span>Describe goal</span></li><li><strong>2</strong><span>Review AI draft</span></li><li><strong>3</strong><span>Import to Beads</span></li><li><strong>4</strong><span>Run ready tasks</span></li></ol><div class="planGoalComposer"><label for="planGoalText">What should this project accomplish?</label><textarea id="planGoalText" maxlength="4000" placeholder="Example: Compare three implementation approaches, build the selected one, and have a separate AI review the result."></textarea><div class="planGoalActions"><button id="generatePlanDraftWithAi" type="button"${planImportCapabilities.length === 0 ? ' title="Open an initialized Beads workspace first." disabled' : ""}>Generate task plan with AI</button><span id="planGenerationStatus" role="status" aria-live="polite">Nothing is sent until you choose Generate and approve the provider request.</span></div><p class="planPrivacyHint">AI generation creates an editable local draft only. It never imports tasks or writes Beads automatically. Do not include credentials or other secrets; response artifacts and imported Beads records are stored as plain text and Beads records may be Git-tracked.</p></div><details class="planAdvanced"><summary>Advanced: view or edit Plan Draft JSON</summary><div class="planDraftEditor"><label for="planDraftText">Draft JSON</label><textarea id="planDraftText" spellcheck="false" placeholder="Generate a draft, paste version 1 JSON, or load the example."></textarea><div class="planDraftEditorActions"><button id="loadPlanDraftExample" type="button">Load example</button><button id="previewPlanDraft" type="button">Preview edited JSON</button></div></div></details><div id="planDraftPreview" aria-live="polite"><div class="empty">Generate or preview a draft to see tasks, validation errors, dependency levels, Critical Path, parallel candidates, provider/model transitions, and pending mutations.</div></div></section>`;
+  const planDraftHtml = `<section id="planDraftView" aria-label="AI task planning"><div class="planDraftHeader"><div><div class="workspaceName">AI Plan &amp; Parallel Run</div><p>Turn one goal into dependency-linked tasks, review the draft, then import and run only ready work.</p></div><label>Target workspace<select id="planDraftWorkspace"${planImportCapabilities.length === 0 ? " disabled" : ""}>${planWorkspaceOptions}</select></label></div><ol class="planFlow" aria-label="Planning workflow"><li><strong>1</strong><span>Describe goal</span></li><li><strong>2</strong><span>Review AI draft</span></li><li><strong>3</strong><span>Import to Beads</span></li><li><strong>4</strong><span>Run ready tasks</span></li></ol><div class="planGoalComposer"><label for="planGoalText">What should this project accomplish?</label><textarea id="planGoalText" maxlength="4000" placeholder="Example: Compare three implementation approaches, build the selected one, and have a separate AI review the result."></textarea><div class="planGoalActions"><button id="generatePlanDraftWithAi" type="button"${planImportCapabilities.length === 0 ? ' title="Open an initialized Beads workspace first." disabled' : ""}>Generate task plan with AI</button><span id="planGenerationStatus" role="status" aria-live="polite">Nothing is sent until you choose Generate and approve the provider request.</span></div><p class="planPrivacyHint">AI generation creates an editable local draft only. It never imports tasks or writes Beads automatically. Do not include credentials or other secrets; response artifacts and imported Beads records are stored as plain text and Beads records may be Git-tracked.</p></div><details class="planAdvanced"><summary>Advanced: view or edit Plan Draft JSON</summary><div class="planDraftEditor"><label for="planDraftText">Draft JSON</label><textarea id="planDraftText" spellcheck="false" placeholder="Generate a draft, paste version 1 JSON, or load the example."></textarea><div class="planDraftEditorActions"><button id="loadPlanDraftExample" type="button">Load example</button><button id="previewPlanDraft" type="button">Preview edited JSON</button></div></div></details><div id="planDraftPreview" tabindex="-1" aria-label="Plan draft preview"><div class="empty">Generate or preview a draft to see tasks, validation errors, dependency levels, the longest dependency chain, parallel candidates, provider/model transitions, and pending mutations.</div></div></section>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1080,7 +1130,10 @@ body[data-view-mode="loading"]>*{visibility:hidden;}
 .toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px;margin-bottom:6px;padding:6px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));box-shadow:0 1px 4px rgba(0,0,0,.12);}
 .toolbarMain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;}
 .toolbarActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:0 0 auto;}
-.toolbarStatsRow{display:flex;justify-content:flex-end;margin:0 0 8px;}
+.toolbarStatsRow{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;}
+.filterEmptyState{display:flex;align-items:center;gap:8px;min-width:0;color:var(--vscode-descriptionForeground);font-size:11px;}
+.filterEmptyState[hidden]{display:none;}
+.filterEmptyState button{min-height:22px;padding:1px 8px;background:transparent;color:var(--vscode-textLink-foreground);border-color:var(--vscode-panel-border);}
 .viewToggle{display:inline-flex;border:1px solid var(--vscode-panel-border);border-radius:6px;overflow:hidden;background:rgba(128,128,128,.08);}
 .viewToggle button{height:24px;border:none;border-radius:0;background:transparent;color:var(--vscode-foreground);padding:0 9px;}
 .viewToggle button.active{background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-weight:700;}
@@ -1110,11 +1163,12 @@ button:focus-visible,select:focus-visible,.graphScroller:focus-visible{outline:1
 .actionBtn{display:inline-flex;align-items:center;justify-content:center;height:24px;padding:0 10px;border-radius:6px;background:rgba(128,128,128,.1);border:1px solid rgba(128,128,128,.5);gap:6px;transition:border-color .18s ease, background-color .18s ease, box-shadow .18s ease;}
 .actionBtn:hover:not(:disabled){background:rgba(128,128,128,.2);}
 .actionBtn:disabled,.workspaceAction:disabled,.warningAction:disabled{opacity:.45;cursor:default;}
+button[data-pending-action="1"]:disabled{opacity:.72;cursor:progress;}
 #syncBeads{min-width:68px;}
 body[data-bd-available="1"][data-has-sync-warnings="1"] #syncBeads{border-color:var(--vscode-editorWarning-foreground, #f59e0b);background:rgba(245,158,11,.18);}
 body[data-bd-available="1"][data-has-sync-warnings="1"] #syncBeads .toolbarActionLabel{font-weight:700;}
 #openGitGraph{min-width:74px;}
-#refresh{width:80px;font-size:14px;line-height:1;}
+#refresh{width:auto;min-width:80px;font-size:14px;line-height:1;}
 .toolbarIcon{display:block;color:var(--vscode-button-foreground);}
 .toolbarIcon.switchIcon{width:18px;height:18px;}
 .toolbarIcon.refreshIcon{width:18px;height:18px;}
@@ -1124,6 +1178,7 @@ body[data-bd-available="1"][data-has-sync-warnings="1"] #syncBeads .toolbarActio
 .workspaceHeaderRight{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;min-width:0;}
 .workspaceSummary{display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap;}
 .workspaceAction{height:22px;padding:0 8px;border-radius:6px;border-color:rgba(34,197,94,.55);background:rgba(34,197,94,.16);color:var(--vscode-testing-iconPassed,#22c55e);font-weight:750;white-space:nowrap;}
+.workspaceCreateAction{border-color:var(--vscode-panel-border);background:rgba(128,128,128,.1);color:var(--vscode-foreground);}
 .summaryPill{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border:1px solid var(--vscode-panel-border);border-radius:999px;background:rgba(128,128,128,.1);color:var(--vscode-descriptionForeground);font-size:10px;font-weight:600;white-space:nowrap;}
 .activeSummary{border-color:rgba(59,130,246,.4);color:var(--vscode-textLink-foreground,#3b82f6);}
 .blockedSummary{border-color:rgba(239,68,68,.5);color:var(--vscode-errorForeground,#ef4444);}
@@ -1163,6 +1218,8 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .beadId{font-size:10px;color:var(--vscode-descriptionForeground);margin-bottom:2px;}
 .titleCell{position:relative;display:flex;align-items:flex-start;gap:6px;min-width:0;padding-left:calc(var(--tree-width, 0px) + 4px);}
 .titleContent{min-width:0;flex:1 1 auto;}
+.rowActionsButton{display:inline-flex;align-items:center;justify-content:center;flex:0 0 26px;width:26px;height:22px;margin-top:0;padding:0;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--vscode-descriptionForeground);font-size:11px;letter-spacing:-1px;}
+.rowActionsButton:hover,.rowActionsButton:focus-visible{border-color:var(--vscode-panel-border);background:rgba(128,128,128,.12);color:var(--vscode-foreground);}
 .collapseToggle{display:inline-flex;align-items:center;justify-content:center;flex:0 0 18px;width:18px;height:18px;margin-top:1px;padding:0;border-radius:5px;border:1px solid transparent;background:transparent;color:var(--vscode-descriptionForeground);}
 .collapseToggle:hover{border-color:var(--vscode-panel-border);background:rgba(128,128,128,.12);}
 .collapseToggle[aria-expanded="false"] .collapseIcon{transform:rotate(-90deg);}
@@ -1212,6 +1269,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .priority-p3{background:#22c55e;color:#fff;}
 .priority-p4{background:#6b7280;color:#fff;}
 .empty{font-size:12px;line-height:1.5;opacity:.9;}
+.emptyActionReason{margin-top:6px;color:var(--vscode-descriptionForeground);font-size:11px;}
 .updatedCell{font-size:10px;white-space:nowrap;text-align:right;}
 .warnings,.errors{margin-top:10px;padding-top:8px;border-top:1px solid var(--vscode-panel-border);font-size:12px;}
 .warnings ul,.errors ul{margin:6px 0 0;padding-left:18px;}
@@ -1287,13 +1345,15 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .cycleSummary{border-color:rgba(168,85,247,.55);color:var(--vscode-charts-purple,#a855f7);}
 .dependencyWarningSummary{border-color:rgba(245,158,11,.55);color:var(--vscode-editorWarning-foreground,#f59e0b);}
 .mergeRiskSummary{border-color:rgba(239,68,68,.55);color:var(--vscode-errorForeground,#ef4444);}
-.graphIssueStack{display:grid;gap:6px;padding:8px 12px 0;}
-.graphIssueStack:empty,.agentWorkDetailsHost:empty{display:none;}
+.graphIssueStack{position:absolute;z-index:8;left:16px;bottom:16px;display:grid;gap:6px;width:min(400px,calc(50% - 24px));max-height:calc(100% - 116px);padding:0;overflow:auto;pointer-events:none;}
+.graphIssueStack:empty,.graphDetailsHost:empty,.agentWorkDetailsHost:empty{display:none;}
+.graphDetailsHost{position:absolute;z-index:9;top:88px;right:16px;bottom:16px;display:flex;align-items:flex-end;width:min(440px,calc(100% - 32px));pointer-events:none;}
+.graphDetailsHost .graphSelectedDetails{width:100%;max-height:100%;pointer-events:auto;}
 .agentWorkDetailsHost{display:grid;gap:6px;margin:8px 0 10px;}
 .graphSelectedDetails{position:relative;max-height:min(300px,38vh);overflow:auto;border:1px solid var(--vscode-focusBorder,var(--vscode-panel-border));border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 4px 14px rgba(0,0,0,.18);}
 .graphSelectedDetails .details{border:0;border-radius:0;}
 .graphSelectedDetailsClose{position:sticky;z-index:2;top:6px;float:right;margin:6px 6px -32px 0;width:26px;height:26px;padding:0;border-radius:999px;background:var(--vscode-button-secondaryBackground,var(--vscode-button-background));color:var(--vscode-button-secondaryForeground,var(--vscode-button-foreground));}
-.graphIssueDrawer{border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));}
+.graphIssueDrawer{border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));box-shadow:0 4px 14px rgba(0,0,0,.18);pointer-events:auto;}
 .graphIssueDrawer summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:28px;padding:4px 8px;cursor:pointer;list-style:none;font-size:11px;font-weight:750;color:var(--vscode-descriptionForeground);}
 .graphIssueDrawer summary::-webkit-details-marker{display:none;}
 .graphIssueDrawer summary::before{content:"";width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:5px solid currentColor;opacity:.8;}
@@ -1416,6 +1476,11 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 #planGenerationStatus{min-width:180px;flex:1;color:var(--vscode-descriptionForeground);font-size:11px;}
 #planGenerationStatus[data-status="error"]{color:var(--vscode-errorForeground);}
 #planGenerationStatus[data-status="success"]{color:var(--vscode-testing-iconPassed,#3fb950);}
+.planDependencyFlow{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px;padding:7px 9px;border:1px solid var(--vscode-panel-border);border-radius:7px;background:rgba(128,128,128,.06);}
+.planDependencyFlow span{overflow-wrap:anywhere;color:var(--vscode-descriptionForeground);}
+.planExecutionWarnings{padding:8px 10px;border:1px solid rgba(245,158,11,.58);border-radius:7px;background:rgba(245,158,11,.12);color:var(--vscode-editorWarning-foreground,#f59e0b);}
+.planExecutionWarnings ul{margin:6px 0 0;padding-left:20px;}
+.planExecutionWarnings li{margin:3px 0;}
 .planPrivacyHint{margin:0;color:var(--vscode-descriptionForeground);font-size:11px;}
 .planAdvanced{margin-top:10px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);}
 .planAdvanced>summary{cursor:pointer;padding:9px 12px;font-weight:700;}
@@ -1434,7 +1499,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .planDraftSummary h2{margin:0 0 8px;font-size:16px;}
 .planDraftStats{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px;}
 .planDraftStats span{padding:2px 7px;border:1px solid var(--vscode-panel-border);border-radius:999px;font-size:11px;}
-.planPathSummary,.planParallelSummary,.planModelTransitionSummary{display:grid;grid-template-columns:190px minmax(0,1fr);gap:8px;margin:5px 0;}
+.planPathSummary,.planParallelSummary,.planProviderTransitionSummary,.planDependencyFlow{display:grid;grid-template-columns:190px minmax(0,1fr);gap:8px;margin:5px 0;}
 .planDraftGraph{display:flex;align-items:stretch;gap:12px;overflow-x:auto;margin:12px 0;padding:10px;border:1px solid var(--vscode-panel-border);border-radius:7px;}
 .planDraftLevel{display:grid;align-content:start;gap:6px;min-width:180px;}
 .planDraftLevelLabel{font-size:10px;font-weight:750;color:var(--vscode-descriptionForeground);text-transform:uppercase;}
@@ -1490,7 +1555,9 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
   .graphPane{height:clamp(320px,calc(100vh - 118px),820px);padding:8px;}
   .graphHeader{position:relative;padding:8px;margin:-8px -8px 0;}
   .graphHeaderActions{justify-content:flex-start;}
-  .graphIssueStack{padding:8px 0 0;}
+  .graphIssueStack{top:104px;right:8px;bottom:auto;left:8px;width:auto;max-height:28%;padding:0;}
+  .graphDetailsHost{inset:auto 0 0;width:auto;height:min(62%,520px);}
+  .graphDetailsHost .graphSelectedDetails{max-height:100%;border-right:0;border-bottom:0;border-left:0;border-radius:10px 10px 0 0;box-shadow:0 -8px 24px rgba(0,0,0,.28);}
   .graphMapFrame{margin:8px 0 0;}
   .graphMapHeader{grid-template-columns:1fr;align-items:start;}
   .graphMiniMap{width:100%;height:68px;}
@@ -1500,7 +1567,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
   .planDraftHeader label{min-width:0;}
   .planFlow{grid-template-columns:repeat(2,minmax(0,1fr));}
   .planGoalActions{align-items:stretch;}
-  .planPathSummary,.planParallelSummary,.planModelTransitionSummary{grid-template-columns:1fr;gap:2px;}
+  .planPathSummary,.planParallelSummary,.planModelTransitionSummary,.planProviderTransitionSummary,.planDependencyFlow{grid-template-columns:1fr;gap:2px;}
   .planDraftEditor textarea{min-height:180px;}
 }
 code{font-family:var(--vscode-editor-font-family);}
@@ -1515,7 +1582,7 @@ code{font-family:var(--vscode-editor-font-family);}
       <button id="controlView" type="button">Manage</button>
       <button id="planView" type="button">Plan</button>
     </div>
-    <select id="preset" class="preset">
+    <select id="preset" class="preset" aria-label="Task status filter preset">
       <option value="default" selected>Default (Active + Unknown)</option>
       <option value="open">Open</option>
       <option value="wip">WIP</option>
@@ -1547,10 +1614,11 @@ code{font-family:var(--vscode-editor-font-family);}
       <svg class="toolbarIcon refreshIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path fill="currentColor" d="M12 5a7 7 0 1 0 6.65 9.5a1 1 0 1 0-1.9-.63A5 5 0 1 1 12 7h1.59l-1.3 1.29a1 1 0 1 0 1.42 1.42l3-3a1 1 0 0 0 0-1.42l-3-3a1 1 0 1 0-1.42 1.42L13.59 5H12Z"/>
       </svg>
+      <span class="toolbarActionLabel">Refresh</span>
     </button>
   </div>
 </div>
-<div class="toolbarStatsRow"><div class="stats" id="stats"></div></div>
+<div class="toolbarStatsRow"><div id="filterEmptyState" class="filterEmptyState" role="status" hidden><span>No tasks match the current status filters.</span><button id="resetEmptyFilters" type="button">Reset filters</button></div><div class="stats" id="stats" role="status" aria-live="polite"></div></div>
 <div id="rowContextMenu" class="contextMenu" role="menu"><button id="createBeadAction" type="button" role="menuitem">Create</button><button id="closeBeadAction" type="button" role="menuitem">Close</button></div>
 <section id="parallelBatchResult" class="parallelBatchResult" aria-label="Latest AI task batch" aria-live="polite" hidden></section>
 <div id="beadsWorkspaceViews">${bodyHtml}</div>

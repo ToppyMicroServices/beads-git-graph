@@ -11,6 +11,7 @@ export type PlanDraftPriority = (typeof PLAN_DRAFT_PRIORITIES)[number];
 export interface PlanDraftTask {
   id: string;
   title: string;
+  instructions?: string;
   priority: PlanDraftPriority;
   acceptanceCriteria: string[];
   dependencyIds: string[];
@@ -127,6 +128,15 @@ function parseTask(
   const id = readString(value, "id", `${taskPath}.id`, errors);
   const taskId = id ?? undefined;
   const title = readString(value, "title", `${taskPath}.title`, errors, taskId);
+  const instructions = value.instructions;
+  if (instructions !== undefined && typeof instructions !== "string") {
+    errors.push({
+      code: "invalid-field",
+      path: `${taskPath}.instructions`,
+      message: `${taskPath}.instructions must be a string when provided`,
+      ...(taskId === undefined ? {} : { taskId })
+    });
+  }
   const acceptanceCriteria = readStringArray(
     value,
     "acceptanceCriteria",
@@ -196,6 +206,7 @@ function parseTask(
     ssot === null ||
     provider === null ||
     outputPath === null ||
+    (instructions !== undefined && typeof instructions !== "string") ||
     (model !== undefined && typeof model !== "string")
   ) {
     return null;
@@ -204,6 +215,7 @@ function parseTask(
   return {
     id,
     title,
+    ...(instructions === undefined ? {} : { instructions }),
     priority,
     acceptanceCriteria,
     dependencyIds,
@@ -305,6 +317,9 @@ export function validatePlanDraft(draft: PlanDraft): PlanDraftValidationError[] 
     const taskPath = `tasks[${index}]`;
     validateNonEmptyString(task.id, `${taskPath}.id`, errors, task.id);
     validateNonEmptyString(task.title, `${taskPath}.title`, errors, task.id);
+    if (task.instructions !== undefined) {
+      validateNonEmptyString(task.instructions, `${taskPath}.instructions`, errors, task.id);
+    }
     validateStringList(task.acceptanceCriteria, `${taskPath}.acceptanceCriteria`, errors, task.id);
     validateStringList(task.ssot, `${taskPath}.ssot`, errors, task.id);
     if (task.outputPath !== undefined) {
