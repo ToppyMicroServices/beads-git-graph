@@ -1,4 +1,5 @@
 import { normalizeAgentModelName } from "./agentModelSelection";
+import { normalizeAgentOutputPath } from "./agentOutputPath";
 import { type AgentProviderId, normalizeAgentProviderId } from "./agentProvider";
 
 export const PLAN_DRAFT_VERSION = 1 as const;
@@ -14,6 +15,7 @@ export interface PlanDraftTask {
   acceptanceCriteria: string[];
   dependencyIds: string[];
   ssot: string[];
+  outputPath?: string;
   provider?: AgentProviderId;
   model?: string;
 }
@@ -27,6 +29,7 @@ export interface PlanDraft {
 export type PlanDraftValidationCode =
   | "invalid-field"
   | "duplicate-task-id"
+  | "duplicate-output-path"
   | "missing-dependency"
   | "self-dependency"
   | "cyclic-dependency";
@@ -160,6 +163,18 @@ function parseTask(
     });
   }
 
+  const outputPathValue = value.outputPath;
+  const outputPath =
+    outputPathValue === undefined ? undefined : normalizeAgentOutputPath(outputPathValue);
+  if (outputPathValue !== undefined && outputPath === null) {
+    errors.push({
+      code: "invalid-field",
+      path: `${taskPath}.outputPath`,
+      message: `${taskPath}.outputPath must be a safe relative workspace file path when provided`,
+      ...(taskId === undefined ? {} : { taskId })
+    });
+  }
+
   const providerValue = value.provider;
   const provider =
     providerValue === undefined ? undefined : normalizeAgentProviderId(providerValue);
@@ -180,6 +195,7 @@ function parseTask(
     dependencyIds === null ||
     ssot === null ||
     provider === null ||
+    outputPath === null ||
     (model !== undefined && typeof model !== "string")
   ) {
     return null;
@@ -192,6 +208,7 @@ function parseTask(
     acceptanceCriteria,
     dependencyIds,
     ssot,
+    ...(outputPath === undefined ? {} : { outputPath }),
     ...(provider === undefined ? {} : { provider }),
     ...(model === undefined ? {} : { model })
   };
@@ -280,6 +297,7 @@ export function validatePlanDraft(draft: PlanDraft): PlanDraftValidationError[] 
   validateNonEmptyString(draft.goal, "goal", errors);
 
   const taskById = new Map<string, PlanDraftTask>();
+  const taskIdByOutputPath = new Map<string, string>();
   const indexById = new Map<string, number>();
   let canCheckCycles = true;
 
@@ -289,6 +307,30 @@ export function validatePlanDraft(draft: PlanDraft): PlanDraftValidationError[] 
     validateNonEmptyString(task.title, `${taskPath}.title`, errors, task.id);
     validateStringList(task.acceptanceCriteria, `${taskPath}.acceptanceCriteria`, errors, task.id);
     validateStringList(task.ssot, `${taskPath}.ssot`, errors, task.id);
+    if (task.outputPath !== undefined) {
+      const outputPath = normalizeAgentOutputPath(task.outputPath);
+      if (outputPath === null) {
+        errors.push({
+          code: "invalid-field",
+          path: `${taskPath}.outputPath`,
+          taskId: task.id,
+          message: `${taskPath}.outputPath must be a safe relative workspace file path`
+        });
+      } else {
+        const outputPathKey = outputPath.toLowerCase();
+        const existingTaskId = taskIdByOutputPath.get(outputPathKey);
+        if (existingTaskId !== undefined) {
+          errors.push({
+            code: "duplicate-output-path",
+            path: `${taskPath}.outputPath`,
+            taskId: task.id,
+            message: `${taskPath}.outputPath duplicates output from task "${existingTaskId}"`
+          });
+        } else {
+          taskIdByOutputPath.set(outputPathKey, task.id);
+        }
+      }
+    }
     if (task.provider !== undefined && normalizeAgentProviderId(task.provider) === null) {
       errors.push({
         code: "invalid-field",

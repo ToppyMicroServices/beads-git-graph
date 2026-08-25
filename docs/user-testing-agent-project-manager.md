@@ -714,3 +714,19 @@ Extension Host pass. Do not describe recorded batch outcomes as live agent monit
 collection and freshness scenarios pass. Do not describe AI plan generation, mixed-provider
 parallel execution, or plan import as packaged-verified until their provider, cancellation,
 capability, preview, approval, and partial-failure scenarios pass.
+
+## Bounded direct-provider edit result — 2026-08-25
+
+- **Observed:** `qwen2.5-coder:0.5b` completed the opt-in live smoke with two dependency-linked,
+  distinct artifacts. The second generation received the first artifact as bounded read-only
+  context; both candidates passed structured verifier parsing and deterministic content assertions.
+- **Safety checks:** focused tests reject refusal text, generic verifier rejection, missing evidence,
+  protected or escaping paths, all symlink components, oversized output, cloud access to existing
+  workspace content, and exact or near copies of upstream artifacts. New-file rollback also removes
+  directories created solely for that failed edit.
+- **Human boundary:** the Extension Host stores raw output, verifier provenance, and the exact
+  normalized proposed file together, opens that artifact, and requires **Apply Reviewed Edit** before
+  any workspace or Beads mutation. The task remains in progress after application.
+- **Evidence level:** production-core live Ollama test plus source/unit/build/package checks. The
+  packaged VSIX was rebuilt, but the new review notification and a real Beads mutation were not
+  driven inside an installed Extension Host in this pass.

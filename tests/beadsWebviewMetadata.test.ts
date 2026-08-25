@@ -364,7 +364,10 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("with requested model");
     expect(beadsView).toContain("AI task batch completed:");
     expect(beadsView).toContain("confirmTextProviderRequests");
-    expect(beadsView).toContain("Cloud providers may charge for each request.");
+    expect(beadsView).toContain("confirmAgentWorkspaceEditReview");
+    expect(beadsView).toContain("Apply Reviewed Edit");
+    expect(beadsView).toContain("review_status=human_approved");
+    expect(beadsView).toContain("Cloud providers may charge for every call.");
     expect(beadsView).toContain("MAX_PARALLEL_TEXT_PROVIDER_REQUESTS = 20");
     expect(beadsView).toContain("vscode.workspace.isTrusted");
     expect(beadsView).toContain("vscode.Uri.file(values.worktree?.trim() || values.workspacePath)");

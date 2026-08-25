@@ -511,6 +511,7 @@ function finishPlanGenerationRequest() {
 }
 
 const PARALLEL_STATUS_LABELS: Record<ParallelExecutionOutcome["status"], string> = {
+  "edit-applied": "Edit applied",
   "response-ready": "Response ready",
   "session-started": "Session started",
   "prompt-prepared": "Prompt prepared",
@@ -544,6 +545,7 @@ function renderParallelExecutionResult(
   const summary = document.createElement("div");
   summary.className = "parallelBatchSummary";
   for (const status of [
+    "edit-applied",
     "response-ready",
     "session-started",
     "prompt-prepared",

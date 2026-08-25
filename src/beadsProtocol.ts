@@ -59,6 +59,7 @@ export interface BeadsExecutionSkip {
 }
 
 export type ParallelExecutionOutcomeStatus =
+  | "edit-applied"
   | "response-ready"
   | "session-started"
   | "prompt-prepared"
@@ -249,6 +250,7 @@ function isParallelExecutionOutcome(value: unknown): value is ParallelExecutionO
     typeof record.message === "string" &&
     record.message.length <= 2_000 &&
     [
+      "edit-applied",
       "response-ready",
       "session-started",
       "prompt-prepared",

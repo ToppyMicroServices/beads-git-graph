@@ -96,6 +96,29 @@ describe("validatePlanDraft", () => {
       }
     },
     {
+      name: "rejects duplicate output paths",
+      mutate: (draft: PlanDraft) => {
+        draft.tasks[0].outputPath = "outputs/shared.md";
+        draft.tasks[1].outputPath = "Outputs/Shared.md";
+      },
+      expected: {
+        code: "duplicate-output-path",
+        path: "tasks[1].outputPath",
+        taskId: "pm-102"
+      }
+    },
+    {
+      name: "rejects an unsafe output path",
+      mutate: (draft: PlanDraft) => {
+        draft.tasks[1].outputPath = "../outside.md";
+      },
+      expected: {
+        code: "invalid-field",
+        path: "tasks[1].outputPath",
+        taskId: "pm-102"
+      }
+    },
+    {
       name: "rejects a missing dependency at its task path",
       mutate: (draft: PlanDraft) => {
         draft.tasks[1].dependencyIds = ["missing-task"];

@@ -13,6 +13,7 @@ export const AGENT_EXECUTION_OUTCOME_STATUSES = [
   "prompt-prepared",
   "response-opened",
   "response-stored",
+  "edit-applied",
   "failed"
 ] as const;
 
@@ -36,27 +37,27 @@ export const AGENT_PROVIDERS: readonly AgentProviderDefinition[] = [
   {
     id: "ollama",
     label: "Ollama",
-    description: "Generate a text response with a local Ollama model",
+    description: "Edit one declared workspace artifact with a local Ollama model",
     mode: "text-response"
   },
   {
     id: "huggingface",
     label: "Hugging Face Inference",
-    description: "Generate a text response through Hugging Face Inference Providers",
+    description: "Create one declared new artifact through Hugging Face Inference Providers",
     mode: "text-response",
     credentialEnvironmentVariable: "HF_TOKEN"
   },
   {
     id: "openai",
     label: "OpenAI API",
-    description: "Generate a text response with the OpenAI Responses API",
+    description: "Create one declared new artifact with the OpenAI Responses API",
     mode: "text-response",
     credentialEnvironmentVariable: "OPENAI_API_KEY"
   },
   {
     id: "anthropic",
     label: "Anthropic API (Claude)",
-    description: "Generate a text response with the Anthropic Messages API",
+    description: "Create one declared new artifact with the Anthropic Messages API",
     mode: "text-response",
     credentialEnvironmentVariable: "ANTHROPIC_API_KEY"
   }

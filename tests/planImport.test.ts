@@ -18,6 +18,7 @@ const draft: PlanDraft = {
       acceptanceCriteria: ["First passes"],
       dependencyIds: [],
       ssot: ["AGENTS.md"],
+      outputPath: "outputs/draft-a.md",
       provider: "openai",
       model: "gpt-5"
     },
@@ -27,7 +28,8 @@ const draft: PlanDraft = {
       priority: "P2",
       acceptanceCriteria: ["Second passes"],
       dependencyIds: ["draft-a"],
-      ssot: ["README.md"]
+      ssot: ["README.md"],
+      outputPath: "outputs/draft-b.md"
     }
   ]
 };
@@ -47,8 +49,8 @@ describe("Plan Draft mutations", () => {
       [
         "bd create --title "First task" --priority P1 --type task --silent",
         "bd create --title "Second task" --priority P2 --type task --silent",
-        "bd update <created:draft-a> --acceptance "First passes" --set-metadata "plan_goal=Plan safely" --set-metadata plan_draft_version=1 --set-metadata provider=openai --set-metadata model=gpt-5 --set-metadata ssot=AGENTS.md",
-        "bd update <created:draft-b> --acceptance "Second passes" --set-metadata "plan_goal=Plan safely" --set-metadata plan_draft_version=1 --set-metadata ssot=README.md",
+        "bd update <created:draft-a> --acceptance "First passes" --set-metadata "plan_goal=Plan safely" --set-metadata plan_draft_version=1 --set-metadata provider=openai --set-metadata model=gpt-5 --set-metadata ssot=AGENTS.md --set-metadata output_path=outputs/draft-a.md",
+        "bd update <created:draft-b> --acceptance "Second passes" --set-metadata "plan_goal=Plan safely" --set-metadata plan_draft_version=1 --set-metadata ssot=README.md --set-metadata output_path=outputs/draft-b.md",
         "bd dep add <created:draft-b> <created:draft-a>",
       ]
     `);
@@ -85,7 +87,9 @@ describe("Plan Draft mutations", () => {
         "--set-metadata",
         "model=gpt-5",
         "--set-metadata",
-        "ssot=AGENTS.md"
+        "ssot=AGENTS.md",
+        "--set-metadata",
+        "output_path=outputs/draft-a.md"
       ]
     ]);
     expect(result.createdIds).toEqual([

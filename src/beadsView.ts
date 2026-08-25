@@ -27,9 +27,19 @@ import {
   type TextResponseProviderId
 } from "./agentProviderClient";
 import { revalidateExecutionTargets } from "./agentReadiness";
-import { persistGeneratedAgentResponse } from "./agentResponsePersistence";
 import { runReadinessGuardedStart } from "./agentStartGuard";
 import { buildAgentWorkPrompt } from "./agentWorkPrompt";
+import {
+  type AgentTaskExecutionSpec,
+  type AgentUpstreamArtifact,
+  applyAgentWorkspaceEdit,
+  findConflictingAgentOutputPathIssueIds,
+  generateVerifiedAgentEdit,
+  MAX_AGENT_EDIT_BYTES,
+  parseAgentTaskExecutionSpec,
+  readAgentWorkspaceTarget,
+  selectProviderWorkspaceContext
+} from "./agentWorkspaceEdit";
 import {
   type BeadItem,
   beadsAsArray,
@@ -112,9 +122,14 @@ type PlanDraftGenerationReply = WithoutRequestId<
 type PreparedAgentExecution =
   | { kind: "copilot-worktree"; worktree: GitWorktreeInfo }
   | {
-      kind: "text-response";
+      kind: "workspace-edit";
       artifact: AgentResponseArtifact;
       dependencyIds: readonly string[];
+      outputPath: string;
+      content: string;
+      verificationReason: string;
+      verificationEvidence: readonly string[];
+      attempts: number;
     };
 
 interface GitWorktreeInfo {
@@ -864,7 +879,11 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       } catch (error) {
         const messageText =
           error instanceof Error ? error.message : "Unable to assign and start bead.";
-        vscode.window.showErrorMessage(messageText);
+        if (error instanceof AgentProviderError && error.code === "cancelled") {
+          vscode.window.showInformationMessage(messageText);
+        } else {
+          vscode.window.showErrorMessage(messageText);
+        }
       } finally {
         this.finishAction(actionKey);
       }
@@ -1188,11 +1207,30 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
     await this.assertAgentWriteCapability(workspacePath);
     await this.preflightAgentProvider(provider);
-    if (
-      provider !== "copilot" &&
-      !(await this.confirmTextProviderRequests([{ provider, model }]))
-    ) {
-      return;
+    if (provider !== "copilot") {
+      const task = this.requireAutonomousTaskSpec(
+        await this.queryAgentTaskExecutionSpec(issueId, workspacePath)
+      );
+      const target = await readAgentWorkspaceTarget(workspacePath, task.outputPath);
+      const dependencyIds =
+        (await this.queryDependencyIdsForStart([issueId], workspacePath)).get(issueId) ?? [];
+      if (provider !== "ollama" && target.content !== null) {
+        throw new Error(
+          `Cloud provider ${provider} cannot replace existing workspace file ${task.outputPath}. Use local Ollama or a Copilot worktree.`
+        );
+      }
+      if (provider !== "ollama" && dependencyIds.length > 0) {
+        throw new Error(
+          `Cloud provider ${provider} cannot consume upstream workspace artifacts. Use local Ollama or a Copilot worktree.`
+        );
+      }
+      if (
+        !(await this.confirmTextProviderRequests([
+          { provider, model, outputPath: task.outputPath }
+        ]))
+      ) {
+        return;
+      }
     }
     const ssot = this.resolveAssignSsot(workspacePath, issueId, currentSsot);
     const worktree =
@@ -1238,14 +1276,17 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       return;
     }
 
-    if (openResult === "response-opened" || openResult === "response-stored") {
+    if (openResult === "edit-applied") {
       const providerLabel = getAgentProviderDefinition(provider).label;
-      const detail =
-        openResult === "response-opened"
-          ? "Opened the local response artifact for review."
-          : "Stored the local response artifact, but could not open it.";
       vscode.window.showInformationMessage(
-        `${providerLabel} generated a response for ${issueId} with requested model ${model}. ${detail} No code was applied automatically.`
+        `${providerLabel} applied the reviewed, verifier-approved edit for ${issueId} with requested model ${model}. The task remains in progress until separately closed.`
+      );
+      return;
+    }
+
+    if (openResult === "response-opened" || openResult === "response-stored") {
+      vscode.window.showWarningMessage(
+        `A legacy response artifact was preserved for ${issueId}, but no workspace edit was recorded.`
       );
       return;
     }
@@ -1296,48 +1337,87 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           preparedForFinalization = prepared;
           return prepared;
         }
-        const response = await this.requestTextProviderResponse(
-          {
-            workspacePath: values.workspacePath,
-            issueId: values.issueId,
-            title: values.title,
-            provider: values.provider,
-            model: values.model,
-            ssot: values.ssot
-          },
-          dependencyIds,
-          values.signal
+        const directProvider: TextResponseProviderId = values.provider;
+        const task = this.requireAutonomousTaskSpec(
+          await this.queryAgentTaskExecutionSpec(values.issueId, values.workspacePath)
         );
+        const target = await readAgentWorkspaceTarget(values.workspacePath, task.outputPath);
+        const workspaceContext = await selectProviderWorkspaceContext({
+          provider: directProvider,
+          outputPath: task.outputPath,
+          currentContent: target.content,
+          dependencyIds,
+          loadUpstreamArtifacts: () =>
+            this.loadAgentUpstreamArtifacts(values.workspacePath, dependencyIds)
+        });
+        const result = await generateVerifiedAgentEdit({
+          task,
+          provider: directProvider,
+          model: values.model,
+          ssot: values.ssot,
+          dependencyIds,
+          currentContent: workspaceContext.currentContent,
+          upstreamArtifacts: workspaceContext.upstreamArtifacts,
+          request: (prompt, phase) =>
+            this.requestTextProviderPrompt(
+              {
+                provider: directProvider,
+                model: values.model
+              },
+              prompt,
+              values.signal,
+              phase === "verification"
+            )
+        });
         const capture = await this.artifactStore.writeOrOpenFallback({
           issueId: values.issueId,
-          title: values.title,
-          response
+          title: task.title || values.title,
+          response: result.generation,
+          verification: {
+            accepted: result.status === "verified",
+            reason: result.status === "verified" ? result.verdict.reason : result.reason,
+            evidence: result.status === "verified" ? result.verdict.evidence : [],
+            attempts: result.attempts,
+            confirmedModel: result.verification?.confirmedModel ?? result.generation.confirmedModel,
+            candidate: result.status === "verified" ? result.content : undefined
+          }
         });
         if (capture.status === "opened-unsaved") {
           throw new Error(
-            `Generated the ${values.provider} response, but extension storage failed: ${capture.storageError}. The response was opened as an unsaved document; save it before closing. No Beads mutation was made.`
+            `Generated the ${values.provider} edit candidate, but extension storage failed: ${capture.storageError}. The candidate was opened as an unsaved document; save it before closing. No workspace or Beads mutation was made.`
+          );
+        }
+        if (result.status === "review-required") {
+          await this.openAgentResponseArtifact(capture.artifact);
+          throw new Error(
+            `Acceptance verification did not pass after ${result.attempts} attempt(s): ${result.reason} No workspace file or Beads state was changed; the candidate was preserved for review.`
           );
         }
         const prepared: PreparedAgentExecution = {
-          kind: "text-response",
+          kind: "workspace-edit",
           artifact: capture.artifact,
-          dependencyIds: [...dependencyIds]
+          dependencyIds: [...dependencyIds],
+          outputPath: task.outputPath,
+          content: result.content,
+          verificationReason: result.verdict.reason,
+          verificationEvidence: result.verdict.evidence,
+          attempts: result.attempts
         };
         preparedForFinalization = prepared;
         return prepared;
       },
       preservePreparedOnAbort: async (prepared) => {
-        if (prepared.kind === "text-response") {
+        if (prepared.kind === "workspace-edit") {
           await this.openAgentResponseArtifact(prepared.artifact);
         }
       },
       isPreparedStillValid: (prepared, dependencyIds) =>
-        prepared.kind !== "text-response" ||
+        prepared.kind !== "workspace-edit" ||
         this.haveSameDependencyIds(prepared.dependencyIds, dependencyIds),
       runFinalization: (operation) =>
         this.agentExecutionQueue.enqueue(values.workspacePath, async () => {
           if (values.signal?.aborted) {
-            if (preparedForFinalization?.kind === "text-response") {
+            if (preparedForFinalization?.kind === "workspace-edit") {
               await this.openAgentResponseArtifact(preparedForFinalization.artifact);
             }
             throw new AgentProviderError(
@@ -1348,45 +1428,101 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           return operation();
         }),
       mutateAndLaunch: async (prepared, dependencyIds) => {
-        if (prepared.kind === "text-response") {
+        if (prepared.kind === "workspace-edit") {
+          const approved = await this.confirmAgentWorkspaceEditReview(
+            values.issueId,
+            prepared.outputPath,
+            prepared.artifact
+          );
+          if (!approved) {
+            throw new AgentProviderError(
+              "cancelled",
+              `The proposed edit for ${values.issueId} was preserved but not approved; no workspace file or Beads state was changed.`
+            );
+          }
+          if (values.signal?.aborted) {
+            throw new AgentProviderError(
+              "cancelled",
+              `The proposed edit for ${values.issueId} was preserved because the run was cancelled during review; no workspace file or Beads state was changed.`
+            );
+          }
+          const dependenciesAfterReview =
+            (await this.queryDependencyIdsForStart([values.issueId], values.workspacePath)).get(
+              values.issueId
+            ) ?? [];
+          const readyAfterReview = await this.queryReadyItemIds(values.workspacePath);
+          if (
+            !readyAfterReview.has(values.issueId) ||
+            !this.haveSameDependencyIds(dependencyIds, dependenciesAfterReview)
+          ) {
+            throw new AgentProviderError(
+              "cancelled",
+              `The proposed edit for ${values.issueId} was preserved because readiness or dependencies changed during human review; no workspace file or Beads state was changed.`
+            );
+          }
           const agent = `${values.provider}:${values.model}`;
-          return persistGeneratedAgentResponse({
-            createArtifact: async () => prepared.artifact,
-            updateBead: async (artifact) => {
-              const metadata = [
-                `agent=${agent}`,
-                `provider=${values.provider}`,
-                `model=${values.model}`,
-                `ssot=${values.ssot}`,
-                "provider_status=response_completed",
-                `artifact_run=${artifact.runId}`,
-                `artifact=${artifact.reference}`
-              ];
-              const notes = [
-                `provider=${values.provider}`,
-                `model=${values.model}`,
-                "provider_status=response_completed",
-                `artifact_run=${artifact.runId}`,
-                `artifact=${artifact.reference}`
-              ];
-              await this.runBdCommand(
-                buildAgentBeadUpdateArgs({
-                  issueId: values.issueId,
-                  assignee: agent,
-                  notes,
-                  metadata
-                }),
-                values.workspacePath
-              );
-            },
-            flushBeads: async () => {
-              await flushBeadsWorkspace(
-                (args, cwd) => this.runBdCommand(args, cwd),
-                values.workspacePath
-              );
-            },
-            openArtifact: (artifact) => this.openAgentResponseArtifact(artifact)
-          });
+          const applied = await applyAgentWorkspaceEdit(
+            values.workspacePath,
+            prepared.outputPath,
+            prepared.content
+          );
+          let beadUpdated = false;
+          try {
+            const metadata = [
+              `agent=${agent}`,
+              `provider=${values.provider}`,
+              `model=${values.model}`,
+              `ssot=${values.ssot}`,
+              "provider_status=edit_applied",
+              "acceptance_status=agent_passed",
+              "review_status=human_approved",
+              `output_path=${prepared.outputPath}`,
+              `artifact_run=${prepared.artifact.runId}`,
+              `artifact=${prepared.artifact.reference}`
+            ];
+            const notes = [
+              `provider=${values.provider}`,
+              `model=${values.model}`,
+              "provider_status=edit_applied",
+              "acceptance_status=agent_passed",
+              "review_status=human_approved",
+              `output_path=${prepared.outputPath}`,
+              `verification_attempts=${prepared.attempts}`,
+              `verification_reason=${prepared.verificationReason}`,
+              ...prepared.verificationEvidence.map(
+                (evidence) => `verification_evidence=${evidence}`
+              ),
+              `artifact_run=${prepared.artifact.runId}`,
+              `artifact=${prepared.artifact.reference}`
+            ];
+            await this.runBdCommand(
+              buildAgentBeadUpdateArgs({
+                issueId: values.issueId,
+                assignee: agent,
+                notes,
+                metadata
+              }),
+              values.workspacePath
+            );
+            beadUpdated = true;
+            await flushBeadsWorkspace(
+              (args, cwd) => this.runBdCommand(args, cwd),
+              values.workspacePath
+            );
+          } catch (error) {
+            if (!beadUpdated) {
+              await applied.rollback();
+            }
+            await this.openAgentResponseArtifact(prepared.artifact);
+            const message = error instanceof Error ? error.message : "unknown Beads error";
+            throw new Error(
+              beadUpdated
+                ? `Applied ${prepared.outputPath} and updated local Beads, but its flush failed. The audit artifact was opened. ${message}`
+                : `The Beads update failed, so ${prepared.outputPath} was rolled back. The audit artifact was opened. ${message}`
+            );
+          }
+          await this.openAgentWorkspaceFile(applied.absolutePath);
+          return "edit-applied";
         }
 
         const worktree = prepared.worktree.path;
@@ -1530,12 +1666,75 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       return outcomes;
     }
 
-    const textRequests = uniqueCandidates
-      .filter(
-        (candidate): candidate is typeof candidate & { provider: TextResponseProviderId } =>
-          candidate.provider !== "copilot"
-      )
-      .map(({ provider, model }) => ({ provider, model }));
+    const directCandidatesForValidation = uniqueCandidates.filter(
+      (candidate): candidate is typeof candidate & { provider: TextResponseProviderId } =>
+        candidate.provider !== "copilot"
+    );
+    const dependencyIdsByTask = await this.queryDependencyIdsForStart(
+      directCandidatesForValidation.map((candidate) => candidate.issueId),
+      workspacePath
+    );
+    const outputPaths = new Map<string, string>();
+    const invalidDirectIds = new Set<string>();
+    for (const candidate of directCandidatesForValidation) {
+      try {
+        const task = this.requireAutonomousTaskSpec(
+          await this.queryAgentTaskExecutionSpec(candidate.issueId, workspacePath)
+        );
+        const target = await readAgentWorkspaceTarget(workspacePath, task.outputPath);
+        const dependencyIds = dependencyIdsByTask.get(candidate.issueId) ?? [];
+        if (candidate.provider !== "ollama" && target.content !== null) {
+          throw new Error(
+            `Cloud provider ${candidate.provider} cannot replace existing workspace file ${task.outputPath}.`
+          );
+        }
+        if (candidate.provider !== "ollama" && dependencyIds.length > 0) {
+          throw new Error(
+            `Cloud provider ${candidate.provider} cannot consume upstream workspace artifacts.`
+          );
+        }
+        outputPaths.set(candidate.issueId, task.outputPath);
+      } catch (error) {
+        invalidDirectIds.add(candidate.issueId);
+        outcomes.push({
+          ...candidate,
+          status: "failed",
+          message: this.formatParallelExecutionError(error)
+        });
+      }
+    }
+    const conflictingOutputPathIds = findConflictingAgentOutputPathIssueIds(
+      [...outputPaths].map(([issueId, outputPath]) => ({ issueId, outputPath }))
+    );
+    for (const candidate of directCandidatesForValidation) {
+      if (!conflictingOutputPathIds.has(candidate.issueId)) {
+        continue;
+      }
+      invalidDirectIds.add(candidate.issueId);
+      outcomes.push({
+        ...candidate,
+        status: "failed",
+        message: `Multiple selected tasks declare ${outputPaths.get(candidate.issueId)}. Direct-provider tasks need distinct output paths.`
+      });
+    }
+    uniqueCandidates = uniqueCandidates.filter(
+      (candidate) => !invalidDirectIds.has(candidate.issueId)
+    );
+    if (uniqueCandidates.length === 0) {
+      await this.refresh();
+      return outcomes;
+    }
+    const textRequests = uniqueCandidates.flatMap((candidate) =>
+      candidate.provider === "copilot"
+        ? []
+        : [
+            {
+              provider: candidate.provider,
+              model: candidate.model,
+              outputPath: outputPaths.get(candidate.issueId)!
+            }
+          ]
+    );
     const directConcurrency = getConfig().agentParallelConcurrency();
     if (!(await this.confirmTextProviderRequests(textRequests, directConcurrency))) {
       outcomes.push(
@@ -1667,7 +1866,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     outcomes.push(...completedOutcomes);
     await this.refresh();
     const succeeded = outcomes.filter((outcome) =>
-      ["response-ready", "session-started", "prompt-prepared"].includes(outcome.status)
+      ["edit-applied", "response-ready", "session-started", "prompt-prepared"].includes(
+        outcome.status
+      )
     ).length;
     const failed = outcomes.filter((outcome) => outcome.status === "failed").length;
     const cancelled = outcomes.filter((outcome) => outcome.status === "cancelled").length;
@@ -1711,6 +1912,12 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       return { ...candidate, status: "skipped", message };
     }
     switch (startResult.result) {
+      case "edit-applied":
+        return {
+          ...candidate,
+          status: "edit-applied",
+          message: "Reviewed, verifier-approved workspace edit applied; task remains in progress."
+        };
       case "session-opened":
         return { ...candidate, status: "session-started", message: "Copilot session opened." };
       case "prompt-prepared":
@@ -2061,7 +2268,11 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   private async confirmTextProviderRequests(
-    requests: ReadonlyArray<{ provider: TextResponseProviderId; model: string }>,
+    requests: ReadonlyArray<{
+      provider: TextResponseProviderId;
+      model: string;
+      outputPath: string;
+    }>,
     concurrency = 1
   ) {
     if (requests.length === 0) {
@@ -2069,7 +2280,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
     if (requests.length > MAX_PARALLEL_TEXT_PROVIDER_REQUESTS) {
       vscode.window.showWarningMessage(
-        `Refusing to send ${requests.length} text-response requests at once. Select ${MAX_PARALLEL_TEXT_PROVIDER_REQUESTS} or fewer tasks and retry.`
+        `Refusing to run ${requests.length} direct-provider agents at once. Select ${MAX_PARALLEL_TEXT_PROVIDER_REQUESTS} or fewer tasks and retry.`
       );
       return false;
     }
@@ -2079,38 +2290,58 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       groups.set(key, (groups.get(key) ?? 0) + 1);
     }
     const summary = [...groups.entries()].map(([label, count]) => `${count} × ${label}`).join("\n");
-    const action = requests.length === 1 ? "Generate Response" : "Generate Responses";
+    const targets = requests.map((request) => request.outputPath).join("\n");
+    const action = requests.length === 1 ? "Run Agent" : "Run Agents";
+    const maxCalls = requests.length * 4;
+    const hasLocal = requests.some((request) => request.provider === "ollama");
+    const hasCloud = requests.some((request) => request.provider !== "ollama");
     const selected = await vscode.window.showWarningMessage(
-      `Generate ${requests.length} text response${requests.length === 1 ? "" : "s"}?`,
+      `Run ${requests.length} bounded workspace agent${requests.length === 1 ? "" : "s"}?`,
       {
         modal: true,
-        detail: `${summary}\n\nUp to ${Math.min(requests.length, concurrency)} direct provider request${Math.min(requests.length, concurrency) === 1 ? "" : "s"} run concurrently. Beads and Git mutations remain serialized per workspace.\n\nThe provider receives the task ID/title, workspace name, SSOT references, and dependency IDs. File contents and API credentials are not included in the prompt. Cloud providers may charge for each request. Output is stored locally as untrusted text and is never applied automatically.`
+        detail: `${summary}
+
+Declared edit targets:
+${targets}
+
+Up to ${Math.min(requests.length, concurrency)} tasks run concurrently. Each task may make two generation and two acceptance-verification calls (${maxCalls} provider calls maximum for this batch). Cloud providers may charge for every call.${hasLocal ? "\n\nOllama runs locally and may receive the current target-file content plus completed upstream artifact content." : ""}${hasCloud ? "\n\nCloud providers receive task fields and their own generated candidate for verification. They never receive existing workspace file content and may create only a target file that does not already exist." : ""}
+
+A provider can write only its declared relative target after its verifier passes. Workspace escape, symlinks, protected files, oversized output, empty output, and refusal responses are rejected. No model-generated shell command is executed. Tasks remain in progress until separately closed.`
       },
       action
     );
     return selected === action;
   }
 
-  private async requestTextProviderResponse(
+  private async confirmAgentWorkspaceEditReview(
+    issueId: string,
+    outputPath: string,
+    artifact: AgentResponseArtifact
+  ) {
+    if ((await this.openAgentResponseArtifact(artifact)) !== "response-opened") {
+      throw new Error(
+        `The proposed edit for ${issueId} could not be opened for human review; no workspace file or Beads state was changed.`
+      );
+    }
+    const action = "Apply Reviewed Edit";
+    const selected = await vscode.window.showWarningMessage(
+      `Review the opened proposed file content for ${issueId} before applying it to ${outputPath}. The agent verifier passed, but this is not human acceptance and the task will remain in progress.`,
+      action,
+      "Reject"
+    );
+    return selected === action;
+  }
+
+  private async requestTextProviderPrompt(
     values: {
-      workspacePath: string;
-      issueId: string;
-      title: string | undefined;
       provider: TextResponseProviderId;
       model: string;
-      ssot: string;
     },
-    dependencyIds: readonly string[],
-    signal?: AbortSignal
+    prompt: string,
+    signal?: AbortSignal,
+    jsonMode = false
   ) {
     const credential = await this.credentialStore.get(values.provider);
-    const prompt = buildAgentWorkPrompt({
-      ...values,
-      worktree: undefined,
-      dependencyIds,
-      includeLocalPaths: false,
-      executionMode: "text-response"
-    });
     return requestAgentProviderResponse({
       provider: values.provider,
       model: values.model,
@@ -2119,8 +2350,82 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       ollamaBaseUrl: values.provider === "ollama" ? getConfig().agentOllamaBaseUrl() : undefined,
       maxOutputTokens: getConfig().agentProviderMaxOutputTokens(),
       timeoutMs: getConfig().agentProviderTimeoutMs(),
+      jsonMode: values.provider === "ollama" && jsonMode,
+      temperature: values.provider === "ollama" ? 0 : undefined,
       signal
     });
+  }
+
+  private async queryAgentTaskExecutionSpec(issueId: string, workspacePath: string) {
+    const stdout = await this.runBdCommand(["show", issueId, "--json"], workspacePath);
+    let parsed: unknown;
+    try {
+      parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
+    } catch {
+      throw new Error(`Unable to parse current Beads task ${issueId}; no provider was contacted.`);
+    }
+    const spec = parseAgentTaskExecutionSpec(parsed, issueId);
+    if (spec === null) {
+      throw new Error(`Unable to load current Beads task ${issueId}; no provider was contacted.`);
+    }
+    return spec;
+  }
+
+  private requireAutonomousTaskSpec(
+    spec: AgentTaskExecutionSpec
+  ): AgentTaskExecutionSpec & { outputPath: string } {
+    if (spec.acceptanceCriteria.trim() === "") {
+      throw new Error(
+        `Task ${spec.issueId} needs observable acceptance criteria before a direct-provider agent can edit the workspace.`
+      );
+    }
+    if (spec.outputPath === null) {
+      throw new Error(
+        `Task ${spec.issueId} needs one safe relative output_path (or a relative artifact value) before a direct-provider agent can edit the workspace.`
+      );
+    }
+    return { ...spec, outputPath: spec.outputPath };
+  }
+
+  private async loadAgentUpstreamArtifacts(
+    workspacePath: string,
+    dependencyIds: readonly string[]
+  ): Promise<AgentUpstreamArtifact[]> {
+    const artifacts: AgentUpstreamArtifact[] = [];
+    let totalBytes = 0;
+    for (const issueId of new Set(dependencyIds.map((id) => id.trim()).filter(Boolean))) {
+      const dependency = await this.queryAgentTaskExecutionSpec(issueId, workspacePath);
+      if (dependency.outputPath === null) {
+        throw new Error(
+          `Upstream task ${issueId} needs a safe relative output_path before it can be used as local handoff context.`
+        );
+      }
+      const target = await readAgentWorkspaceTarget(workspacePath, dependency.outputPath);
+      if (target.content === null) {
+        throw new Error(
+          `Upstream task ${issueId} declares ${dependency.outputPath}, but that artifact does not exist.`
+        );
+      }
+      totalBytes += Buffer.byteLength(target.content, "utf8");
+      if (totalBytes > MAX_AGENT_EDIT_BYTES) {
+        throw new Error("Upstream artifact content exceeds the 256 KiB local context limit.");
+      }
+      artifacts.push({
+        issueId,
+        outputPath: dependency.outputPath,
+        content: target.content
+      });
+    }
+    return artifacts;
+  }
+
+  private async openAgentWorkspaceFile(absolutePath: string) {
+    try {
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(absolutePath));
+      await vscode.window.showTextDocument(document, { preview: true });
+    } catch {
+      // The verified edit and Beads update already succeeded; opening the editor is best effort.
+    }
   }
 
   private async openAgentResponseArtifact(artifact: AgentResponseArtifact) {

@@ -22,7 +22,7 @@ before approving an import or starting work.
 - Adds a Beads view in the Activity Bar
 - Lets you switch between Git Graph and Beads from the toolbar
 - Lets you refresh, create, close, and sync Beads items inside VS Code
-- Shows optional parallel, AI provider/model, response artifact, SSOT/context, worktree, branch, PR, check, and sync-risk hints on Beads items
+- Shows optional parallel, AI provider/model, audit artifact, SSOT/context, worktree, branch, PR, check, and sync-risk hints on Beads items
 - Shows a Beads execution map with Critical Path, dependency arrows, dashed parent-child lines, merge/worktree risk, Start AI, Start Parallel, and merge actions
 - Zooms the execution map around the location under the pointer, pans with normal drag, box-zooms
   with Option/Alt-drag, and preserves the transform when switching views, resizing, or refreshing
@@ -103,33 +103,51 @@ The Beads view surfaces optional execution hints from issue fields, metadata, or
 - `branch: "agent/task-a"` or label `branch:agent/task-a`
 - `pr: 123`, `check_status: "success"`, or labels such as `pr:#123`, `checks:success`
 - `sync_risk: "stale"` or label `sync-risk:stale`
+- `output_path: "outputs/task-a.md"` (a relative `artifact` value is also accepted before the first run)
 
-When you use **Start AI**, the extension asks for a provider and then a provider-scoped model before
-changing anything:
+When you use **Start AI**, the extension asks for a provider and a provider-scoped model before
+changing anything. Direct-provider editing requires observable acceptance criteria and exactly one
+safe relative `output_path` (or a relative `artifact` value) on the Beads task.
 
-| Provider               | Result                                                                                          |
-| ---------------------- | ----------------------------------------------------------------------------------------------- |
-| GitHub Copilot         | Creates or reuses a git worktree and opens a coding-agent session, with clipboard/chat fallback |
-| Ollama                 | Calls a loopback-only local Ollama runtime and stores its text response as a local artifact     |
-| Hugging Face Inference | Calls the Hugging Face Inference Providers chat endpoint and stores its text response           |
-| OpenAI API             | Calls the OpenAI Responses API with `store: false` and stores the returned text locally         |
-| Anthropic API (Claude) | Calls the Anthropic Messages API and stores the returned text locally                           |
+| Provider               | Result                                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------------------------- |
+| GitHub Copilot         | Creates or reuses an isolated worktree and opens a coding-agent session                        |
+| Ollama                 | Locally reads/edits one declared artifact and can consume completed upstream artifact contents |
+| Hugging Face Inference | Creates one declared new artifact from task metadata; existing workspace files are never sent  |
+| OpenAI API             | Creates one declared new artifact with `store: false`; existing workspace files are never sent |
+| Anthropic API (Claude) | Creates one declared new artifact from task metadata; existing workspace files are never sent  |
 
-Direct Ollama, Hugging Face, OpenAI, and Anthropic calls are text-response runs, not coding-agent
-sessions. Their output is marked untrusted, is not executed or applied to the worktree, and must be
-reviewed. The extension records `provider`, requested `model`, response status, and a local artifact
-reference in Beads; it does not record the API key, full prompt, or raw response there.
+A direct-provider run uses a bounded generate-and-verify loop. Empty output and common refusal or
+access-disclaimer responses are rejected before verification. A separate verifier request to the
+selected provider/model checks the candidate against the task acceptance criteria and must return
+structured evidence; one corrected generation is allowed. The exact normalized candidate is then
+opened for human review. It is written only after **Apply Reviewed Edit** is selected. The task
+remains `in_progress`, with `provider_status=edit_applied`, `acceptance_status=agent_passed`, and
+`review_status=human_approved`; applying the edit is not the same as closing the task.
 
-Canceling a picker or the request confirmation performs no provider call, Beads write, or worktree
-mutation. Before a cloud request, the confirmation shows the request count and each provider/model.
-The prompt contains the task ID/title, workspace name, SSOT references, and dependency IDs, but no
-file contents are read into it automatically. Cloud providers may charge for each request.
+The edit host never executes model-generated shell commands. It can replace only the declared
+relative target. Workspace escape, symlinks, `.git`, `.beads`, `.vscode`, `.codex`, `.agents`,
+`.github`, environment files, any `AGENTS.md`, output above 256 KiB, and copied or near-copied
+upstream artifacts are rejected. A local audit artifact shows the exact proposed file content while
+keeping raw provider output and verification provenance separate.
 
-Before preparing a worktree or contacting any provider, the extension runs a non-mutating Beads
-dry-run and checks that one atomic task update can record the assignment, status, notes, and
-metadata. A missing command or schema mismatch disables AI actions before any paid request. If a
-write still fails after a response is generated, the local response artifact is preserved and
-opened for review with the partial state reported explicitly.
+Ollama requests stay on the configured loopback endpoint. They may include the current target file
+and completed upstream artifacts so a dependent local agent can perform a real handoff. Cloud
+providers receive task fields and their own generated candidate during verification, but no existing
+workspace file content. They cannot replace an existing file or run a dependency-linked task. Use
+local Ollama or a Copilot worktree for those cases.
+
+Canceling a picker or the initial run confirmation performs no provider call, Beads write, or
+workspace mutation. Rejecting the later per-task review preserves the audit artifact but applies no
+file and performs no Beads write. The initial confirmation shows declared edit targets, maximum
+request count, concurrency, and the local versus cloud data boundary. One task can make at most two
+generation and two verification calls, so cloud providers may charge for up to four calls per task.
+
+Before contacting a provider, the extension runs a non-mutating Beads capability check and reloads
+the current task, dependencies, acceptance criteria, and declared target from `bd show`. Readiness
+and dependencies are rechecked after generation and before the serialized workspace/Beads
+mutation. If Beads update fails, a newly applied file is rolled back; the local audit artifact is
+preserved for review.
 
 Use **Beads Git Graph: Manage AI Provider Credentials** to store or delete Hugging Face, OpenAI, and
 Anthropic credentials in VS Code SecretStorage. `HF_TOKEN`, `OPENAI_API_KEY`, and
@@ -137,44 +155,57 @@ Anthropic credentials in VS Code SecretStorage. `HF_TOKEN`, `OPENAI_API_KEY`, an
 settings. Cloud endpoints are fixed, Ollama is restricted to loopback URLs, and all AI execution and
 credential management require a trusted workspace.
 
-Configure provider/model choices and the direct-response request bound with:
+Configure provider/model choices and the direct-provider concurrency and audit retention with:
 
 - `beads-git-graph.agentModelOptions` for Copilot
 - `beads-git-graph.agentOllamaModelOptions`
 - `beads-git-graph.agentHuggingFaceModelOptions`
 - `beads-git-graph.agentOpenAIModelOptions`
 - `beads-git-graph.agentAnthropicModelOptions`
-- `beads-git-graph.agentParallelConcurrency` for the direct-response request bound (default `4`,
+- `beads-git-graph.agentParallelConcurrency` for concurrent direct-provider tasks (default `4`,
   range `1`–`8`)
-- `beads-git-graph.agentArtifactRetentionCount` for the maximum number of plain-text responses kept
-  in this workspace's VS Code extension storage (default `50`, range `1`–`500`)
+- `beads-git-graph.agentArtifactRetentionCount` for the maximum number of plain-text generation and
+  verification audit artifacts kept in this workspace's VS Code extension storage (default `50`,
+  range `1`–`500`)
 
 Exact model availability remains provider/account-specific, so every picker also accepts a custom
-model ID. A Hugging Face repository model run by Ollama should be represented as
-`provider=ollama` plus its exact `hf.co/...` model name. Hugging Face Inference Providers may route
-through another inference provider, so the extension does not infer an unconfirmed backend.
+model ID. On an 8 GB Apple Silicon machine, a practical starting point is the nominal 0.5B
+`qwen2.5-coder:0.5b` model rather than an 8B model:
 
-Use task dependencies to plan work across different requested AI models. Acceptance criteria and
-shared SSOT references record the intended handoff, while Beads readiness controls when dependent
-work becomes eligible. When dependent work starts, its prompt lists upstream bead handoffs and asks
-the agent to inspect their recorded output, worktree, and PR state instead of assuming integration.
-The Extension Host rechecks readiness and current `bd show` dependencies before worktree
-preparation and again before the Beads update. SSOT remains a shared reference, not an enforced
-artifact-production contract.
+```sh
+ollama pull qwen2.5-coder:0.5b
+```
+
+Then add `qwen2.5-coder:0.5b` to `beads-git-graph.agentOllamaModelOptions`. Small models need narrowly
+decomposed tasks with literal, observable acceptance criteria. A refusal, generic answer, malformed
+verdict, or failed acceptance check leaves the workspace unchanged and preserves the audit artifact.
+The opt-in live smoke test uses the production generation, verification, upstream-handoff, and
+file-application core for two dependency-linked artifacts. It does not drive the VS Code review
+notification:
+
+```sh
+BEADS_AGENT_LIVE_OLLAMA_MODEL=qwen2.5-coder:0.5b pnpm exec vitest run tests/agentWorkspaceEdit.live.test.ts
+```
+
+A Hugging Face repository model run by Ollama should be represented as `provider=ollama` plus its
+exact `hf.co/...` model name. Hugging Face Inference Providers may route through another inference
+provider, so the extension does not infer an unconfirmed backend.
+
+Use task dependencies to plan work across different requested AI models. Beads readiness controls
+when dependent work becomes eligible. For local Ollama tasks, completed upstream `output_path`
+contents become bounded read-only handoff context. The downstream agent still writes only its own
+declared target. Copilot keeps the isolated worktree/session path. Cloud direct providers do not
+receive upstream workspace artifacts.
 
 When multiple ready tasks can run in parallel, **Start Parallel** asks whether to preserve each
-task's provider/model handoff or override every selected task. It preflights every required
-credential before execution, confirms the number of text-response calls, and keeps one batch to at
-most 20 direct-provider requests. Direct Ollama, Hugging Face, OpenAI, and Anthropic requests use a
-bounded concurrency limit. Beads readiness checks, Beads updates, and Git/worktree mutations remain
-serialized per workspace, so concurrent responses cannot race those state changes. Copilot coding
-sessions are launched sequentially into isolated worktrees; they are not counted as concurrent
-direct-response calls.
+task's provider/model handoff or override every selected task. It validates every task before
+contacting providers and keeps one batch to at most 20 direct-provider tasks. Generation and
+verification waits may overlap. Human review prompts, final readiness checks, file writes, Beads
+updates, and Git/worktree mutations remain serialized per workspace.
 
-The batch result records a per-task outcome such as response ready, session started, prompt
-prepared, failed, skipped, or cancelled. These are completed or recorded outcomes, not live process
-monitoring. Failed or cancelled tasks can be retried without rerunning successful tasks. Direct API
-tasks receive local response artifacts and are not presented as worktree-editing agents.
+The batch result distinguishes **Edit applied**, session started, prompt prepared, failed, skipped,
+and cancelled. A failed verifier leaves the workspace unchanged and preserves its candidate audit
+artifact. Successful direct tasks are not rerun when another task fails.
 
 These hints are visual metadata. Beads ready/blocking behavior still comes from issue status and dependencies.
 
@@ -190,8 +221,9 @@ Every `bd` process started by this extension, including executable and capabilit
 does not change the behavior of `bd` run manually outside the extension, and selected cloud AI
 providers have their own network and privacy policies.
 
-AI response artifacts are unencrypted plain-text files in VS Code's workspace extension storage.
-They are never executed automatically, the oldest files are removed after the configured retention
+AI audit artifacts are unencrypted plain-text files in VS Code's workspace extension storage.
+They are never executed as commands; verifier-approved content may be copied only to its declared
+workspace target under the restrictions above. The oldest files are removed after the configured retention
 count is exceeded, and **Beads Git Graph: Clear Stored AI Response Artifacts** deletes the retained
 set after confirmation. Avoid sending or storing credentials, private keys, personal data, or other
 secrets in prompts, generated responses, task titles, descriptions, notes, or labels.

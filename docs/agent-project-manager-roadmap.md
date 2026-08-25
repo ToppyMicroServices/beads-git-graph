@@ -39,8 +39,8 @@ Every child task states:
 - [x] **BASE-001 — Dependency planning view:** table and graph views show task hierarchy,
       dependency edges, parallel-ready hints, and Critical Path.
 - [x] **BASE-002 — Agent execution:** Start AI and Start Parallel select a provider/model, preserve
-      model/SSOT metadata, create isolated worktrees for Copilot sessions, or retain direct-provider
-      text responses as local artifacts.
+      model/SSOT metadata, create isolated worktrees for Copilot sessions, or apply one declared
+      verifier-approved artifact through a direct provider while retaining a local audit artifact.
 - [x] **BASE-003 — Execution metadata:** task details can show agent, model, SSOT, worktree, branch,
       PR, check, progress, and sync-risk fields.
 - [x] **BASE-004 — Merge safety:** derived parallel merge tasks check worktrees, branches, PRs, and
@@ -50,10 +50,12 @@ Every child task states:
 
 Current limits: execution hints and batch results are recorded outcomes rather than verified live
 session state; progress can come from issue fields or notes; there is no evidence freshness model
-or structured allocation suggestion workflow. AI Plan Draft generation and explicit review/import
-are implemented at source level, but their complete approval interaction and the full Manage
-scenario still need packaged Extension Host verification in a trusted, compatible disposable
-workspace.
+or structured allocation suggestion workflow. A direct provider can edit only one declared artifact
+and cannot execute tools or shell commands; its verifier is a separate request to the selected
+provider/model, followed by explicit human approval of the exact proposed file content. AI Plan
+Draft generation and explicit review/import are
+implemented at source level, but their complete approval interaction and the full Manage scenario
+still need packaged Extension Host verification in a trusted, compatible disposable workspace.
 
 ## P0 — Agent Work Queue MVP
 
@@ -532,8 +534,20 @@ workspace.
   - **Input:** dependency-linked tasks with distinct explicit providers and models.
   - **Edit target:** Plan Draft, Beads metadata/protocol, provider badges, and local artifact store.
   - **Done/test:** Hugging Face → Ollama → Anthropic survives parse, preview, mutation projection,
-    and dependency creation; direct output is stored as untrusted text and never applied.
+    and dependency creation; at this milestone direct output was stored as untrusted text and not
+    applied. PM-203E2 supersedes that execution limit.
   - **Depends:** PM-200D, PM-203D.
+  - **Tier:** capable.
+- [x] **PM-203E2 — Apply one verifier-approved direct-provider artifact**
+  - **Input:** a ready task with observable acceptance criteria and one safe relative `output_path`.
+  - **Edit target:** the bounded generation/verifier loop, safe path resolver, atomic write/rollback,
+    provider confirmation, audit format, and Plan Draft output declaration.
+  - **Done/test:** refusal, generic output, and copied upstream artifacts are not applied; a
+    verifier-approved candidate is shown exactly and still requires explicit human apply approval;
+    output is limited to 256 KiB and one non-symlink target outside protected paths; failed Beads
+    assignment rolls the edit back; cloud providers never receive existing workspace content; pure
+    tests and an opt-in two-artifact `qwen2.5-coder:0.5b` live smoke cover the core boundary.
+  - **Depends:** PM-203D, PM-203E.
   - **Tier:** capable.
 - [ ] **PM-203F — Add autonomous tool-loop adapters for non-Copilot providers**
   - **Input:** an explicit tool protocol, workspace write policy, patch review UX, and cancellation
@@ -550,7 +564,7 @@ workspace.
   - **Edit target:** Extension Host acceptance harness and result record.
   - **Done/test:** picker, Cancel, missing credential, successful response, failure, artifact,
     parallel confirmation, and no-secret-leak checks pass in the packaged extension.
-  - **Depends:** PM-203E.
+  - **Depends:** PM-203E2.
   - **Tier:** capable.
 
 ### PM-204 — Execute ready work with bounded parallelism
@@ -578,9 +592,9 @@ workspace.
   - **Input:** fulfilled, failed, skipped, and cancelled task outcomes from one Start Parallel
     request.
   - **Edit target:** the provider-neutral host message plus one Manage result panel.
-  - **Done/test:** response ready, session started, prompt prepared, failed, skipped, and cancelled
-    remain distinct; successful tasks are not rerun when failed/cancelled tasks are retried; wording
-    describes recorded outcomes rather than live monitoring.
+  - **Done/test:** edit applied, legacy response ready, session started, prompt prepared, failed,
+    skipped, and cancelled remain distinct; successful tasks are not rerun when failed/cancelled
+    tasks are retried; wording describes recorded outcomes rather than live monitoring.
   - **Depends:** PM-203A, PM-204B.
   - **Tier:** capable.
 - [ ] **PM-204D — Package-test mixed-provider parallel execution**

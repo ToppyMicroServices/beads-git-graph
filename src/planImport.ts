@@ -72,6 +72,9 @@ export function projectPlanDraftMutations(draft: PlanDraft): PlanMutation[] {
     if (task.ssot.length > 0) {
       args.push("--set-metadata", `ssot=${task.ssot.join(", ")}`);
     }
+    if (task.outputPath !== undefined) {
+      args.push("--set-metadata", `output_path=${task.outputPath}`);
+    }
     return { kind: "update", taskId: task.id, args };
   });
   const dependencies: PlanMutation[] = draft.tasks.flatMap((task) =>

@@ -20,6 +20,7 @@ function validResponse(goal = "The model's copy of the goal") {
         acceptanceCriteria: ["The targeted test passes"],
         dependencyIds: [],
         ssot: ["AGENTS.md"],
+        outputPath: "outputs/task-1.md",
         provider: " OpenAI ",
         model: "gpt-5"
       }
@@ -91,6 +92,7 @@ describe("buildPlanDraftGenerationPrompt", () => {
     expect(prompt).toContain("directly observable and testable");
     expect(prompt).toContain("providerCatalog");
     expect(prompt).toContain("ssotCandidates");
+    expect(prompt).toContain('"outputPath"');
   });
 
   it("refuses absolute or parent-traversing SSOT candidates", () => {
