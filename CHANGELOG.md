@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- Let direct providers create or replace one declared workspace artifact through a bounded
+  generation, verifier, and explicit human-review flow.
+- Add a dependency-linked Ollama smoke test for the nominal 0.5B `qwen2.5-coder:0.5b` model.
+
+### Fixed
+
+- Keep provider completion separate from acceptance, reject refusal, generic, copied, unsafe, or
+  colliding outputs, and leave tasks in progress after an approved edit is applied.
+
 ## [0.6.2] - 2026-08-21
 
 ### Added

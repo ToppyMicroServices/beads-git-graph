@@ -40,6 +40,7 @@ describe("agent providers", () => {
       "prompt-prepared",
       "response-opened",
       "response-stored",
+      "edit-applied",
       "failed"
     ]);
     expect(normalizeAgentProviderId(" OpenAI ")).toBe("openai");

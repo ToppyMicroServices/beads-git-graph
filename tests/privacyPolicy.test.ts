@@ -73,7 +73,8 @@ describe("privacy and security posture", () => {
     expect(beadsViewSource).toContain(
       ": () => this.assertAgentWriteCapability(values.workspacePath)"
     );
-    expect(beadsViewSource).toContain("persistGeneratedAgentResponse({");
+    expect(beadsViewSource).toContain("applyAgentWorkspaceEdit(");
+    expect(beadsViewSource).toContain("await applied.rollback()");
     expect(beadsViewSource).toContain("buildAgentBeadUpdateArgs({");
     expect(beadsViewSource).not.toContain('this.runBdCommand(["assign"');
   });

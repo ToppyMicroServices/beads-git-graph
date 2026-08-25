@@ -16,10 +16,18 @@ export function formatAgentResponseArtifact(values: {
   requestedModel: string;
   confirmedModel: string;
   text: string;
+  verification?: {
+    accepted: boolean;
+    reason: string;
+    evidence: readonly string[];
+    attempts: number;
+    confirmedModel: string;
+    candidate?: string;
+  };
 }) {
   return [
     "Beads Git Graph AI response artifact",
-    "UNTRUSTED MODEL OUTPUT: review before using; this file is never executed automatically.",
+    "UNTRUSTED MODEL OUTPUT: never execute this text as commands.",
     "",
     `Run ID: ${values.runId}`,
     `Task: ${metadataValue(values.issueId, 200)}${
@@ -28,10 +36,29 @@ export function formatAgentResponseArtifact(values: {
     `Provider: ${values.provider}`,
     `Requested model: ${metadataValue(values.requestedModel, 100)}`,
     `Confirmed model: ${metadataValue(values.confirmedModel, 200)}`,
+    ...(values.verification === undefined
+      ? []
+      : [
+          `Agent verification: ${values.verification.accepted ? "passed" : "failed"} (not human approval)`,
+          `Verification model: ${metadataValue(values.verification.confirmedModel, 200)}`,
+          `Generation attempts: ${Math.max(1, Math.round(values.verification.attempts))}`,
+          `Verification reason: ${metadataValue(values.verification.reason, 1_000)}`,
+          ...values.verification.evidence
+            .slice(0, 20)
+            .map((evidence) => `Verification evidence: ${metadataValue(evidence, 500)}`),
+          ...(values.verification.candidate === undefined
+            ? []
+            : [
+                "",
+                "--- BEGIN PROPOSED FILE CONTENT ---",
+                values.verification.candidate,
+                "--- END PROPOSED FILE CONTENT ---"
+              ])
+        ]),
     "",
-    "--- BEGIN GENERATED RESPONSE ---",
+    "--- BEGIN RAW PROVIDER RESPONSE ---",
     values.text,
-    "--- END GENERATED RESPONSE ---",
+    "--- END RAW PROVIDER RESPONSE ---",
     ""
   ].join("\n");
 }

@@ -395,7 +395,7 @@
             "maxLength": 100
           },
           "default": [],
-          "description": "Ollama model choices shown before generating a local text response. Add the exact model names installed in your Ollama runtime."
+          "description": "Ollama model choices shown before running a bounded local artifact agent. Add the exact model names installed in your Ollama runtime."
         },
         "beads-git-graph.agentHuggingFaceModelOptions": {
           "type": "array",
@@ -456,7 +456,7 @@
           "maximum": 500,
           "default": 50,
           "scope": "machine",
-          "description": "Maximum number of plain-text AI response artifacts retained in this workspace's VS Code extension storage. Oldest artifacts are deleted after a successful write."
+          "description": "Maximum number of plain-text AI generation and verification audit artifacts retained in this workspace's VS Code extension storage. Oldest artifacts are deleted after a successful write."
         },
         "beads-git-graph.tabIconColourTheme": {
           "type": "string",

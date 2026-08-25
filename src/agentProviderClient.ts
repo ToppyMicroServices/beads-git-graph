@@ -16,6 +16,8 @@ export interface AgentProviderRequest {
   ollamaBaseUrl?: string;
   maxOutputTokens: number;
   timeoutMs: number;
+  jsonMode?: boolean;
+  temperature?: number;
   signal?: AbortSignal;
 }
 
@@ -118,7 +120,11 @@ function requestInitFor(request: AgentProviderRequest, signal: AbortSignal): Req
       body = {
         model: request.model,
         messages: [{ role: "user", content: request.prompt }],
-        stream: false
+        stream: false,
+        ...(request.jsonMode ? { format: "json" } : {}),
+        ...(Number.isFinite(request.temperature)
+          ? { options: { temperature: request.temperature } }
+          : {})
       };
       break;
     case "huggingface":

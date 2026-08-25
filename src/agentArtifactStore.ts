@@ -35,6 +35,14 @@ export class AgentArtifactStore {
     issueId: string;
     title: string | undefined;
     response: AgentProviderResponse;
+    verification?: {
+      accepted: boolean;
+      reason: string;
+      evidence: readonly string[];
+      attempts: number;
+      confirmedModel: string;
+      candidate?: string;
+    };
   }) {
     const runId = randomUUID();
     const directory = this.responseDirectory();
@@ -46,7 +54,8 @@ export class AgentArtifactStore {
       provider: values.response.provider,
       requestedModel: values.response.requestedModel,
       confirmedModel: values.response.confirmedModel,
-      text: values.response.text
+      text: values.response.text,
+      verification: values.verification
     });
     return {
       artifact: { runId, reference: `beads-response:${runId}`, uri },
@@ -59,6 +68,14 @@ export class AgentArtifactStore {
     issueId: string;
     title: string | undefined;
     response: AgentProviderResponse;
+    verification?: {
+      accepted: boolean;
+      reason: string;
+      evidence: readonly string[];
+      attempts: number;
+      confirmedModel: string;
+      candidate?: string;
+    };
   }): Promise<AgentResponseArtifact> {
     const prepared = this.prepareArtifact(values);
     await vscode.workspace.fs.createDirectory(prepared.directory);
@@ -74,6 +91,14 @@ export class AgentArtifactStore {
     issueId: string;
     title: string | undefined;
     response: AgentProviderResponse;
+    verification?: {
+      accepted: boolean;
+      reason: string;
+      evidence: readonly string[];
+      attempts: number;
+      confirmedModel: string;
+      candidate?: string;
+    };
   }): Promise<AgentArtifactCaptureResult> {
     const prepared = this.prepareArtifact(values);
     try {

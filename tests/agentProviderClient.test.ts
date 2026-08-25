@@ -58,6 +58,29 @@ describe("agent provider HTTP adapters", () => {
     });
   });
 
+  it("requests structured JSON from Ollama only when asked", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      responseJson({ model: "local-confirmed", message: { content: "{}" } })
+    );
+
+    await requestAgentProviderResponse(
+      {
+        ...baseRequest,
+        provider: "ollama",
+        apiKey: undefined,
+        jsonMode: true,
+        temperature: 0
+      },
+      fetchMock
+    );
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      format: "json",
+      options: { temperature: 0 }
+    });
+  });
+
   it("calls the Hugging Face OpenAI-compatible chat endpoint", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       responseJson({

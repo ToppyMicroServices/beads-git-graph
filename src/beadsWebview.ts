@@ -1234,7 +1234,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .parallelBatchItem{display:grid;grid-template-columns:minmax(120px,.7fr) minmax(100px,.45fr) minmax(180px,1.4fr) auto;align-items:center;gap:8px;padding:7px 8px;border:1px solid var(--vscode-panel-border);border-radius:7px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));}
 .parallelBatchTask{min-width:0;font-size:11px;font-weight:750;overflow-wrap:anywhere;}
 .parallelBatchStatus{font-size:10px;font-weight:800;text-transform:uppercase;}
-.parallelBatchStatus[data-status="response-ready"],.parallelBatchStatus[data-status="session-started"],.parallelBatchStatus[data-status="prompt-prepared"]{color:var(--vscode-testing-iconPassed,#22c55e);}
+.parallelBatchStatus[data-status="edit-applied"],.parallelBatchStatus[data-status="response-ready"],.parallelBatchStatus[data-status="session-started"],.parallelBatchStatus[data-status="prompt-prepared"]{color:var(--vscode-testing-iconPassed,#22c55e);}
 .parallelBatchStatus[data-status="failed"]{color:var(--vscode-errorForeground,#ef4444);}
 .parallelBatchStatus[data-status="cancelled"],.parallelBatchStatus[data-status="skipped"]{color:var(--vscode-editorWarning-foreground,#f59e0b);}
 .parallelBatchMessage{min-width:0;color:var(--vscode-descriptionForeground);font-size:10px;line-height:1.35;overflow-wrap:anywhere;}
