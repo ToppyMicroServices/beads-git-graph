@@ -66,7 +66,7 @@ describe("package installer", () => {
       repoRoot: "/repo",
       env: environment,
       platform: "win32",
-      readFileSync: () => JSON.stringify({ name: "beads-git-graph", version: "0.6.2" }),
+      readFileSync: () => JSON.stringify({ name: "beads-git-graph", version: "0.6.3" }),
       existsSync: () => true,
       spawnSync: spawn
     });
@@ -76,7 +76,7 @@ describe("package installer", () => {
     expect(cli).toBe(executable);
     expect(spawn).toHaveBeenCalledWith(
       executable,
-      [cliScript, "--install-extension", "/repo/beads-git-graph-0.6.2.vsix", "--force"],
+      [cliScript, "--install-extension", "/repo/beads-git-graph-0.6.3.vsix", "--force"],
       {
         cwd: "/repo",
         encoding: "utf8",
@@ -94,7 +94,7 @@ describe("package installer", () => {
       repoRoot: "/repo",
       env: {},
       platform: "darwin",
-      readFileSync: () => JSON.stringify({ name: "beads-git-graph", version: "0.6.2" }),
+      readFileSync: () => JSON.stringify({ name: "beads-git-graph", version: "0.6.3" }),
       existsSync: () => true,
       spawnSync: spawn
     });
@@ -102,7 +102,7 @@ describe("package installer", () => {
     expect(cli).toBe("/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code");
     expect(spawn).toHaveBeenLastCalledWith(
       "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
-      ["--install-extension", "/repo/beads-git-graph-0.6.2.vsix", "--force"],
+      ["--install-extension", "/repo/beads-git-graph-0.6.3.vsix", "--force"],
       { cwd: "/repo", encoding: "utf8" }
     );
   });
@@ -111,7 +111,7 @@ describe("package installer", () => {
     expect(() =>
       installPackage({
         repoRoot: "/repo",
-        readFileSync: () => JSON.stringify({ name: "beads-git-graph", version: "0.6.2" }),
+        readFileSync: () => JSON.stringify({ name: "beads-git-graph", version: "0.6.3" }),
         existsSync: () => false,
         spawnSync: vi.fn()
       })
