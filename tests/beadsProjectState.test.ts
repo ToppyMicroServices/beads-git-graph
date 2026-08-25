@@ -4,7 +4,9 @@ import { type BeadItem } from "../src/beadsData";
 import {
   AGENT_WORK_LANES,
   buildAgentWorkQueue,
-  deriveAgentWorkItem
+  compareGraphWorkFocusOrder,
+  deriveAgentWorkItem,
+  deriveGraphWorkFocus
 } from "../src/beadsProjectState";
 
 function makeBead(overrides: Partial<BeadItem> = {}): BeadItem {
@@ -173,6 +175,52 @@ describe("deriveAgentWorkItem", () => {
     expect(
       deriveAgentWorkItem(makeBead({ checkStatus: "pending", syncRisk: "medium" }))
     ).toMatchObject({ lane: "queue" });
+  });
+});
+
+describe("deriveGraphWorkFocus", () => {
+  it("marks only ordinary recorded in-progress work as running", () => {
+    expect(deriveGraphWorkFocus(makeBead({ status: "in_progress" }))).toBe("running");
+    expect(deriveGraphWorkFocus(makeBead({ status: "in_progress", pullRequest: "#42" }))).toBe(
+      "none"
+    );
+    expect(
+      deriveGraphWorkFocus(
+        makeBead({
+          status: "in_progress",
+          provider: "openai",
+          artifact: "beads-response:00000000-0000-4000-8000-000000000000"
+        })
+      )
+    ).toBe("none");
+    expect(deriveGraphWorkFocus(makeBead({ status: "in_progress", checkStatus: "failed" }))).toBe(
+      "none"
+    );
+  });
+
+  it("marks only bd-confirmed open work as next ready", () => {
+    expect(deriveGraphWorkFocus(makeBead({ status: "open", readyByBd: true }))).toBe("next-ready");
+    expect(
+      deriveGraphWorkFocus(makeBead({ status: "open", parallelizable: true, readyByBd: false }))
+    ).toBe("none");
+  });
+
+  it("orders Now and Next before other tasks after visible levels are projected", () => {
+    const projected = [
+      { id: "unready", level: 0, focus: "none" },
+      { id: "ready-after-hidden-dependency", level: 0, focus: "next-ready" },
+      { id: "working", level: 0, focus: "running" }
+    ].sort(
+      (left, right) =>
+        left.level - right.level ||
+        compareGraphWorkFocusOrder(left.focus, left.id, right.focus, right.id)
+    );
+
+    expect(projected.map((item) => item.id)).toEqual([
+      "working",
+      "ready-after-hidden-dependency",
+      "unready"
+    ]);
   });
 });
 

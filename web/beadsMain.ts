@@ -16,6 +16,7 @@ import {
   graphEdgeKey,
   partitionGraphRelationIds
 } from "../src/beadsGraphModel";
+import { compareGraphWorkFocusOrder } from "../src/beadsProjectState";
 import {
   type BeadsHostMessage,
   type BeadsRequestMessage,
@@ -34,6 +35,8 @@ import {
   clampGraphPanForVisibility,
   computeAnchoredGraphPan,
   computeCenteredGraphPan,
+  computeGraphFitTransformForRect,
+  computeGraphPanForStableAnchor,
   computeGraphPanToCenterRect,
   computeGraphPanToRevealRect,
   getGraphPointerGesture,
@@ -72,12 +75,19 @@ type GraphPanGestureState = {
   startPan: GraphPanState;
 };
 type SelectedIssueState = { workspacePath: string; issueId: string };
+type GraphRenderNodeAnchor = {
+  workspacePath: string;
+  issueId: string;
+  relativeLeft: number;
+  relativeTop: number;
+};
 type RenderViewportAnchor = {
   element: HTMLElement | null;
   elementTop: number;
   fallbackScrollX: number;
   fallbackScrollY: number;
   graphDetailsScrollTop: number | null;
+  graphNodes: GraphRenderNodeAnchor[];
 };
 type BeadsWebviewState = {
   viewMode?: ViewMode;
@@ -1065,19 +1075,136 @@ function getRenderViewportElement() {
   return document.querySelector<HTMLElement>("#planDraftView");
 }
 
+function captureGraphRenderNodeAnchor(element: HTMLElement | null): GraphRenderNodeAnchor | null {
+  if (
+    activeViewMode !== "graph" ||
+    element === null ||
+    !element.classList.contains("graphScroller")
+  ) {
+    return null;
+  }
+  const pane = element.closest<HTMLElement>(".graphPane");
+  if (pane === null) {
+    return null;
+  }
+  const frame = element.getBoundingClientRect();
+  const candidates = Array.from(
+    pane.querySelectorAll<HTMLElement>(".graphNode[data-graph-id]")
+  ).filter((node) => {
+    if (node.hidden || node.style.display === "none" || node.offsetParent === null) {
+      return false;
+    }
+    const rect = node.getBoundingClientRect();
+    return (
+      rect.right > frame.left &&
+      rect.left < frame.right &&
+      rect.bottom > frame.top &&
+      rect.top < frame.bottom
+    );
+  });
+  if (candidates.length === 0) {
+    return null;
+  }
+  const selectedIssue = getSelectedIssue();
+  const selectedNode = candidates.find(
+    (node) =>
+      selectedIssue?.workspacePath === getGraphWorkspaceKey(pane) &&
+      node.dataset.graphId === selectedIssue.issueId
+  );
+  const centerX = frame.left + frame.width / 2;
+  const centerY = frame.top + frame.height / 2;
+  const node =
+    selectedNode ??
+    candidates.sort((left, right) => {
+      const leftRect = left.getBoundingClientRect();
+      const rightRect = right.getBoundingClientRect();
+      const leftDistance =
+        Math.abs(leftRect.left + leftRect.width / 2 - centerX) +
+        Math.abs(leftRect.top + leftRect.height / 2 - centerY);
+      const rightDistance =
+        Math.abs(rightRect.left + rightRect.width / 2 - centerX) +
+        Math.abs(rightRect.top + rightRect.height / 2 - centerY);
+      return leftDistance - rightDistance;
+    })[0];
+  const rect = node.getBoundingClientRect();
+  return {
+    workspacePath: getGraphWorkspaceKey(pane),
+    issueId: node.dataset.graphId || "",
+    relativeLeft: rect.left - frame.left,
+    relativeTop: rect.top - frame.top
+  };
+}
+
 function captureRenderViewportAnchor(): RenderViewportAnchor {
   const element = getRenderViewportElement();
+  const graphNodes =
+    activeViewMode === "graph"
+      ? Array.from(document.querySelectorAll<HTMLElement>(".graphScroller"))
+          .map((scroller) => captureGraphRenderNodeAnchor(scroller))
+          .filter((anchor): anchor is GraphRenderNodeAnchor => anchor !== null)
+      : [];
   return {
     element,
     elementTop: element?.getBoundingClientRect().top ?? 0,
     fallbackScrollX: window.scrollX,
     fallbackScrollY: window.scrollY,
     graphDetailsScrollTop:
-      document.querySelector<HTMLElement>(".graphSelectedDetails")?.scrollTop ?? null
+      document.querySelector<HTMLElement>(".graphSelectedDetails")?.scrollTop ?? null,
+    graphNodes
   };
 }
 
+function restoreGraphRenderNodeAnchor(anchor: GraphRenderNodeAnchor | null) {
+  if (anchor === null) {
+    return;
+  }
+  const pane = Array.from(document.querySelectorAll<HTMLElement>(".graphPane")).find(
+    (candidate) => getGraphWorkspaceKey(candidate) === anchor.workspacePath
+  );
+  const scroller = pane === undefined ? null : getGraphScroller(pane);
+  const node =
+    pane === undefined
+      ? undefined
+      : Array.from(pane.querySelectorAll<HTMLElement>(".graphNode[data-graph-id]")).find(
+          (candidate) => candidate.dataset.graphId === anchor.issueId
+        );
+  if (
+    pane === undefined ||
+    scroller === null ||
+    node === undefined ||
+    node.hidden ||
+    node.style.display === "none" ||
+    node.offsetParent === null
+  ) {
+    return;
+  }
+  const frame = scroller.getBoundingClientRect();
+  const rect = node.getBoundingClientRect();
+  const transform = getGraphTransform(pane);
+  const nextPan = clampGraphPanForPane(
+    pane,
+    computeGraphPanForStableAnchor(
+      transform.pan,
+      { x: anchor.relativeLeft, y: anchor.relativeTop },
+      { x: rect.left - frame.left, y: rect.top - frame.top }
+    ),
+    transform.zoom
+  );
+  if (
+    Math.abs(nextPan.x - transform.pan.x) <= 0.5 &&
+    Math.abs(nextPan.y - transform.pan.y) <= 0.5
+  ) {
+    return;
+  }
+  setGraphTransform(pane, { ...transform, pan: nextPan });
+  applyGraphZoomToPane(pane);
+  saveGraphTransforms();
+}
+
 function restoreRenderViewportAnchor(anchor: RenderViewportAnchor) {
+  for (const graphNode of anchor.graphNodes) {
+    restoreGraphRenderNodeAnchor(graphNode);
+  }
   const details = document.querySelector<HTMLElement>(".graphSelectedDetails");
   if (details !== null && anchor.graphDetailsScrollTop !== null) {
     details.scrollTop = anchor.graphDetailsScrollTop;
@@ -2065,6 +2192,12 @@ function getVisibleGraphLayoutNodes(pane: HTMLElement) {
   );
 }
 
+function getGraphWorkFocusNodes(pane: HTMLElement) {
+  return getVisibleGraphNodes(pane).filter(
+    (node) => node.dataset.workFocus === "running" || node.dataset.workFocus === "next-ready"
+  );
+}
+
 function updateGraphIssueDrawer(
   pane: HTMLElement,
   drawerSelector: string,
@@ -2190,6 +2323,33 @@ function refreshGraphDerivedState(pane: HTMLElement) {
       : "0";
   }
 
+  const visibleRunningCount = visibleNodes.filter(
+    (node) => node.dataset.workFocus === "running"
+  ).length;
+  const visibleNextReadyCount = visibleNodes.filter(
+    (node) => node.dataset.workFocus === "next-ready"
+  ).length;
+  const runningSummaryCount = pane.querySelector<HTMLElement>(".graphRunningSummary strong");
+  const nextSummaryCount = pane.querySelector<HTMLElement>(".graphNextSummary strong");
+  if (runningSummaryCount !== null) {
+    runningSummaryCount.textContent = String(visibleRunningCount);
+  }
+  const runningSummary = pane.querySelector<HTMLElement>(".graphRunningSummary");
+  if (runningSummary !== null) {
+    runningSummary.classList.toggle("isEmpty", visibleRunningCount === 0);
+    runningSummary.setAttribute(
+      "aria-label",
+      `${visibleRunningCount} Now, recorded in progress; live activity is not confirmed`
+    );
+  }
+  if (nextSummaryCount !== null) {
+    nextSummaryCount.textContent = String(visibleNextReadyCount);
+  }
+  const focusButton = pane.querySelector<HTMLButtonElement>('button[data-graph-action="focus"]');
+  if (focusButton !== null) {
+    focusButton.disabled = visibleRunningCount + visibleNextReadyCount === 0;
+  }
+
   const dependencySummary = pane.querySelector<HTMLElement>(".dependencySummary");
   if (dependencySummary !== null) {
     dependencySummary.textContent = `${graphState.edges.length} deps`;
@@ -2251,7 +2411,20 @@ function layoutGraphPane(pane: HTMLElement) {
   if (canvas === null || content === null || pane.offsetParent === null) {
     return;
   }
-  const visibleNodes = getVisibleGraphLayoutNodes(pane);
+  const visibleNodes = getVisibleGraphLayoutNodes(pane).sort((left, right) => {
+    const levelDifference =
+      Number.parseInt(left.dataset.graphLevel || "0", 10) -
+      Number.parseInt(right.dataset.graphLevel || "0", 10);
+    return (
+      levelDifference ||
+      compareGraphWorkFocusOrder(
+        left.dataset.workFocus,
+        left.dataset.graphId || "",
+        right.dataset.workFocus,
+        right.dataset.graphId || ""
+      )
+    );
+  });
   const layout = computePackedGraphLayout(
     visibleNodes.map((node) => ({
       id: node.dataset.graphId || "",
@@ -2470,16 +2643,22 @@ function renderGraphMiniMap(pane: HTMLElement) {
     element.setAttribute("y", String(rect.y));
     element.setAttribute("width", String(rect.width));
     element.setAttribute("height", String(rect.height));
-    element.setAttribute(
-      "class",
-      node.classList.contains("graphBoundaryNode")
-        ? "graphMiniMapNode boundary"
-        : node.dataset.cycle === "1"
-          ? "graphMiniMapNode cycle"
-          : node.dataset.critical === "1"
-            ? "graphMiniMapNode chain"
-            : "graphMiniMapNode"
-    );
+    const nodeClasses = ["graphMiniMapNode"];
+    if (node.classList.contains("graphBoundaryNode")) {
+      nodeClasses.push("boundary");
+    } else {
+      if (node.dataset.workFocus === "running") {
+        nodeClasses.push("running");
+      } else if (node.dataset.workFocus === "next-ready") {
+        nodeClasses.push("nextReady");
+      }
+      if (node.dataset.cycle === "1") {
+        nodeClasses.push("cycle");
+      } else if (node.dataset.critical === "1") {
+        nodeClasses.push("chain");
+      }
+    }
+    element.setAttribute("class", nodeClasses.join(" "));
     nodeGroup.append(element);
   }
   fragment.append(nodeGroup);
@@ -2610,6 +2789,32 @@ function getGraphFitZoomForPane(pane: HTMLElement) {
   return normalizeGraphZoom(fitZoom);
 }
 
+function focusGraphWorkToPane(pane: HTMLElement, persist: boolean = true) {
+  const scroller = getGraphScroller(pane);
+  const focusBounds = getGraphRectBounds(getGraphWorkFocusNodes(pane).map(getGraphNodeRect));
+  if (scroller === null || focusBounds === null) {
+    return false;
+  }
+  const viewport = getGraphViewportSize(scroller);
+  const focused = computeGraphFitTransformForRect(viewport, focusBounds, GRAPH_FOCUS_PADDING);
+  const zoom = normalizeGraphZoom(focused.zoom);
+  const pan = clampGraphPanForPane(
+    pane,
+    zoom === focused.zoom ? focused.pan : computeGraphPanToCenterRect(viewport, focusBounds, zoom),
+    zoom
+  );
+  initializedGraphPanes.add(pane);
+  setGraphTransform(pane, { zoom, pan });
+  applyGraphZoomToPane(pane);
+  scroller.scrollLeft = 0;
+  scroller.scrollTop = 0;
+  saveGraphScroll(pane);
+  if (persist) {
+    saveGraphTransforms();
+  }
+  return true;
+}
+
 function fitGraphToPane(pane: HTMLElement, persist: boolean = true) {
   const nextZoom = getGraphFitZoomForPane(pane);
   const scroller = getGraphScroller(pane);
@@ -2656,7 +2861,9 @@ function updateGraphViewportPreservingTransform(
       continue;
     }
     if (!initializedGraphPanes.has(pane) && !hasPersistedGraphTransform(pane)) {
-      fitGraphToPane(pane, false);
+      if (!focusGraphWorkToPane(pane, false)) {
+        fitGraphToPane(pane, false);
+      }
     } else {
       const transform = getGraphTransform(pane);
       const scroller = getGraphScroller(pane);
@@ -3065,6 +3272,12 @@ function handleGraphKeydown(pane: HTMLElement, event: KeyboardEvent) {
   } else if (event.key === "-") {
     event.preventDefault();
     setGraphZoom(pane, getGraphTransform(pane).zoom / 1.2);
+  } else if (event.key.toLowerCase() === "f") {
+    event.preventDefault();
+    if (!focusGraphWorkToPane(pane)) {
+      fitGraphToPane(pane);
+    }
+    renderDependencyGraphOverlays();
   } else if (event.key === "0") {
     event.preventDefault();
     fitGraphToPane(pane);
@@ -3457,6 +3670,11 @@ function bindGraphPanes() {
           setGraphZoom(pane, getGraphTransform(pane).zoom * 1.2);
         } else if (action === "out") {
           setGraphZoom(pane, getGraphTransform(pane).zoom / 1.2);
+        } else if (action === "focus") {
+          if (!focusGraphWorkToPane(pane)) {
+            fitGraphToPane(pane);
+          }
+          renderDependencyGraphOverlays();
         } else if (action === "fit") {
           fitGraphToPane(pane);
           renderDependencyGraphOverlays();

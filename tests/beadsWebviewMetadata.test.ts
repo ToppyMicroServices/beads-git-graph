@@ -93,6 +93,36 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("cycleLegend");
     expect(beadsWebview).toContain("parentLegend");
     expect(beadsWebview).toContain("riskLegend");
+    expect(beadsWebview).toContain("runningLegend");
+    expect(beadsWebview).toContain("nextReadyLegend");
+    expect(beadsWebview).toContain("deriveGraphWorkFocus");
+    expect(beadsWebview).toContain('data-work-focus="');
+    expect(beadsWebview).toContain("graphWorkFocus");
+    expect(beadsWebview).toContain("runningGraphNode");
+    expect(beadsWebview).toContain("nextReadyGraphNode");
+    expect(beadsWebview).toContain("Now · Recorded");
+    expect(beadsWebview).toContain("Next · Ready");
+    expect(beadsWebview).toContain(
+      "@keyframes graphRunningPulse{0%,100%{opacity:.32;}50%{opacity:1;}}"
+    );
+    expect(beadsWebview).toContain("@media (prefers-reduced-motion:reduce)");
+    expect(beadsWebview).toContain(".graphRunningDot{animation:none;opacity:1;}");
+    expect(beadsWebview).toContain(
+      ".graphRunningSummary.isEmpty .graphRunningDot{display:none;animation:none;}"
+    );
+    expect(beadsWebview).toContain(".graphMiniMapNode.running:not(.chain):not(.cycle)");
+    expect(beadsWebview).toContain(".graphMiniMapNode.nextReady:not(.chain):not(.cycle)");
+    expect(beadsWebview).toContain('data-graph-action="focus"');
+    expect(beadsMain).toContain("focusGraphWorkToPane");
+    expect(beadsMain).toContain("computeGraphFitTransformForRect");
+    expect(beadsMain).toContain("captureGraphRenderNodeAnchor");
+    expect(beadsMain).toContain('document.querySelectorAll<HTMLElement>(".graphScroller")');
+    expect(beadsMain).toContain("for (const graphNode of anchor.graphNodes)");
+    expect(beadsMain).toContain("computeGraphPanForStableAnchor");
+    expect(beadsMain).toContain("compareGraphWorkFocusOrder");
+    expect(beadsMain).toContain('runningSummary.classList.toggle("isEmpty"');
+    expect(beadsMain).toContain('node.dataset.workFocus === "running"');
+    expect(beadsMain).toContain('node.dataset.workFocus === "next-ready"');
     expect(beadsWebview).toContain("dependencyOverlay");
     expect(beadsWebview).toContain("criticalGraphNode");
     expect(beadsWebview).toContain("cycleGraphNode");

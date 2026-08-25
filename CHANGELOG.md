@@ -4,6 +4,10 @@
 
 ### Added
 
+- Focus a new Graph viewport on recorded in-progress and `bd ready` tasks while preserving saved
+  views, order Now/Next first in each visible dependency stage, and distinguish them in task cards
+  and the minimap.
+- Pulse only the recorded in-progress status dot, with a static reduced-motion fallback.
 - Let direct providers create or replace one declared workspace artifact through a bounded
   generation, verifier, and explicit human-review flow.
 - Add a dependency-linked Ollama smoke test for the nominal 0.5B `qwen2.5-coder:0.5b` model.

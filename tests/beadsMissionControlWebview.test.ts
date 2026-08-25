@@ -68,6 +68,14 @@ function getAgentCard(html: string, issueId: string) {
   return getTagContaining(html, "article", `data-work-item-id="${issueId}"`);
 }
 
+function getGraphNodeOpeningTag(html: string, issueId: string) {
+  const tag = html
+    .match(/<div\b[^>]*class="graphNode graphLayoutNode [^"]*"[^>]*>/g)
+    ?.find((candidate) => candidate.includes(`data-graph-id="${issueId}"`));
+  expect(tag, `Expected a Graph node for ${issueId}`).toBeDefined();
+  return tag ?? "";
+}
+
 function supportedCapabilities(workspace: string, workspacePath: string) {
   const capability = {
     supported: true,
@@ -546,6 +554,91 @@ describe("Agent Project Manager webview", () => {
     expect(html).toContain(
       `<section data-workspace-path="${workspacePath}" data-write-available="1" data-write-unavailable-reason="">`
     );
+  });
+
+  it("puts recorded work and bd-ready tasks first in the Graph without pulsing review work", () => {
+    const workspacePath = "/tmp/mission-control";
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      {
+        groups: [
+          {
+            workspace: "Mission Control",
+            workspacePath,
+            items: [
+              makeBead({ id: "unready", parallelizable: true }),
+              makeBead({
+                id: "review-response",
+                status: "in_progress",
+                provider: "openai",
+                artifact: "beads-response:00000000-0000-4000-8000-000000000000"
+              }),
+              makeBead({ id: "review-pr", status: "in_progress", pullRequest: "#42" }),
+              makeBead({ id: "next", readyByBd: true, model: "small-model", priority: "P1" }),
+              makeBead({ id: "working", status: "in_progress", priority: "P2" })
+            ]
+          }
+        ],
+        emptyWorkspaces: [],
+        unavailableWorkspaces: [],
+        bdExecutableStatus: { available: true, command: "bd", message: null },
+        ...supportedCapabilities("Mission Control", workspacePath),
+        errors: [],
+        warnings: []
+      }
+    );
+
+    expect(getGraphNodeOpeningTag(html, "working")).toContain("runningGraphNode");
+    expect(getGraphNodeOpeningTag(html, "working")).toContain('data-work-focus="running"');
+    expect(getGraphNodeOpeningTag(html, "next")).toContain("nextReadyGraphNode");
+    expect(getGraphNodeOpeningTag(html, "next")).toContain('data-work-focus="next-ready"');
+    expect(getGraphNodeOpeningTag(html, "review-pr")).toContain('data-work-focus="none"');
+    expect(getGraphNodeOpeningTag(html, "review-response")).toContain('data-work-focus="none"');
+    expect(getGraphNodeOpeningTag(html, "unready")).toContain('data-work-focus="none"');
+    expect(html).toContain("Now · Recorded");
+    expect(html).toContain("Next · Ready");
+    expect(html).toContain("<strong>1</strong> Now");
+    expect(html).toContain("<strong>1</strong> Next");
+    expect(html.indexOf('data-graph-id="working"')).toBeLessThan(
+      html.indexOf('data-graph-id="next"')
+    );
+    expect(html.indexOf('data-graph-id="next"')).toBeLessThan(
+      html.indexOf('data-graph-id="review-pr"')
+    );
+  });
+
+  it("does not pulse the Now summary when no recorded work is visible", () => {
+    const workspacePath = "/tmp/mission-control";
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      {
+        groups: [
+          {
+            workspace: "Mission Control",
+            workspacePath,
+            items: [makeBead({ id: "next", readyByBd: true })]
+          }
+        ],
+        emptyWorkspaces: [],
+        unavailableWorkspaces: [],
+        bdExecutableStatus: { available: true, command: "bd", message: null },
+        ...supportedCapabilities("Mission Control", workspacePath),
+        errors: [],
+        warnings: []
+      }
+    );
+
+    expect(html).toContain('class="summaryPill graphRunningSummary isEmpty"');
+    expect(html).toContain("<strong>0</strong> Now (recorded)");
+    expect(html).toContain(".graphRunningSummary.isEmpty .graphRunningDot{display:none");
   });
 
   it("moves a linked cross-model handoff from upstream work to the downstream queue", () => {
