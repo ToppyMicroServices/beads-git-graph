@@ -47,6 +47,17 @@ export function computeCenteredGraphPan(viewport: GraphSize, scaledContent: Grap
   };
 }
 
+export function computeGraphPanForStableAnchor(
+  currentPan: GraphPoint,
+  previousAnchor: GraphPoint,
+  nextAnchor: GraphPoint
+): GraphPoint {
+  return {
+    x: currentPan.x + previousAnchor.x - nextAnchor.x,
+    y: currentPan.y + previousAnchor.y - nextAnchor.y
+  };
+}
+
 export function computeGraphPanToCenterRect(
   viewport: GraphSize,
   rect: GraphRect,
@@ -55,6 +66,25 @@ export function computeGraphPanToCenterRect(
   return {
     x: viewport.width / 2 - (rect.x + rect.width / 2) * zoom,
     y: viewport.height / 2 - (rect.y + rect.height / 2) * zoom
+  };
+}
+
+export function computeGraphFitTransformForRect(
+  viewport: GraphSize,
+  rect: GraphRect,
+  padding: number,
+  maximumZoom: number = 1
+) {
+  const availableWidth = Math.max(1, viewport.width - padding * 2);
+  const availableHeight = Math.max(1, viewport.height - padding * 2);
+  const zoom = Math.min(
+    maximumZoom,
+    availableWidth / Math.max(1, rect.width),
+    availableHeight / Math.max(1, rect.height)
+  );
+  return {
+    zoom,
+    pan: computeGraphPanToCenterRect(viewport, rect, zoom)
   };
 }
 

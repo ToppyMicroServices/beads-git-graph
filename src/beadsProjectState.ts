@@ -5,6 +5,23 @@ export const AGENT_WORK_LANES = ["attention", "review", "running", "queue", "don
 
 export type AgentWorkLane = (typeof AGENT_WORK_LANES)[number];
 export type AgentWorkReadiness = "confirmed" | "not-confirmed" | "not-applicable";
+export type GraphWorkFocus = "running" | "next-ready" | "none";
+
+export function getGraphWorkFocusRank(focus: string | undefined) {
+  return focus === "running" ? 0 : focus === "next-ready" ? 1 : 2;
+}
+
+export function compareGraphWorkFocusOrder(
+  leftFocus: string | undefined,
+  leftId: string,
+  rightFocus: string | undefined,
+  rightId: string
+) {
+  return (
+    getGraphWorkFocusRank(leftFocus) - getGraphWorkFocusRank(rightFocus) ||
+    leftId.localeCompare(rightId)
+  );
+}
 
 export type AgentWorkReasonCode =
   | "blocked"
@@ -203,6 +220,17 @@ export function deriveAgentWorkItem(item: BeadItem): AgentWorkItem {
         };
 
   return makeDerivedItem(item, "queue", [queueReason], readiness);
+}
+
+export function deriveGraphWorkFocus(item: BeadItem): GraphWorkFocus {
+  const workItem = deriveAgentWorkItem(item);
+  if (workItem.lane === "running") {
+    return "running";
+  }
+  if (workItem.lane === "queue" && workItem.readiness === "confirmed") {
+    return "next-ready";
+  }
+  return "none";
 }
 
 export function buildAgentWorkQueue(items: BeadItem[]): AgentWorkQueue {

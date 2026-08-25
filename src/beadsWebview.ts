@@ -23,7 +23,9 @@ import {
   AGENT_WORK_LANES,
   type AgentWorkItem,
   type AgentWorkLane,
-  buildAgentWorkQueue
+  buildAgentWorkQueue,
+  compareGraphWorkFocusOrder,
+  deriveGraphWorkFocus
 } from "./beadsProjectState";
 import { type BeadLoadResult } from "./beadsViewTypes";
 import { escapeHtml, getNonce } from "./utils";
@@ -156,6 +158,9 @@ function getExecutionStateLabel(item: BeadItem, normalizedStatus: string, derive
   }
   if (normalizedStatus === "closed") {
     return "Done";
+  }
+  if (normalizedStatus === "open" && item.readyByBd) {
+    return "Ready next";
   }
   if (
     (isCodingSessionProvider(item) && item.worktree.trim() !== "") ||
@@ -411,6 +416,15 @@ function renderBeadsDependencyGraph(
   const blocksById = new Map<string, string[]>();
   const itemsById = new Map(items.map((item) => [item.id, item]));
   const hierarchyById = new Map(hierarchyItems.map((entry) => [entry.item.id, entry]));
+  const graphWorkFocusById = new Map(
+    items.map((item) => [item.id, deriveGraphWorkFocus(item)] as const)
+  );
+  const runningCount = Array.from(graphWorkFocusById.values()).filter(
+    (focus) => focus === "running"
+  ).length;
+  const nextReadyCount = Array.from(graphWorkFocusById.values()).filter(
+    (focus) => focus === "next-ready"
+  ).length;
   const defaultVisibleIds = new Set(
     items
       .filter((item) => isDefaultVisibleStatus(normalizeBeadStatus(item.status)))
@@ -449,6 +463,16 @@ function renderBeadsDependencyGraph(
     const nodes = nodesByLevel.get(node.level) ?? [];
     nodes.push(node);
     nodesByLevel.set(node.level, nodes);
+  }
+  for (const nodes of nodesByLevel.values()) {
+    nodes.sort((left, right) =>
+      compareGraphWorkFocusOrder(
+        graphWorkFocusById.get(left.item.id),
+        left.item.id,
+        graphWorkFocusById.get(right.item.id),
+        right.item.id
+      )
+    );
   }
 
   const dependencyEdgeHtml = graph.edges
@@ -508,6 +532,7 @@ function renderBeadsDependencyGraph(
     return layout.nodes
       .map((node, lane) => {
         const item = node.item;
+        const graphWorkFocus = graphWorkFocusById.get(item.id) ?? "none";
         const column = Math.floor(lane / layout.rowCount);
         const row = lane % layout.rowCount;
         const x = layout.x + column * (GRAPH_NODE_WIDTH + GRAPH_LEVEL_COLUMN_GAP);
@@ -529,6 +554,12 @@ function renderBeadsDependencyGraph(
         const syncRiskLabel = item.syncRisk.trim();
         const derivedMerge = isDerivedMergeTask(item);
         const executionStateLabel = getExecutionStateLabel(item, normalizedStatus, derivedMerge);
+        const graphWorkBadge =
+          graphWorkFocus === "running"
+            ? '<span class="graphWorkBadge running" title="Beads records this task as in progress. Live agent activity is not confirmed."><span class="graphRunningDot" aria-hidden="true"></span>Now · Recorded</span>'
+            : graphWorkFocus === "next-ready"
+              ? '<span class="graphWorkBadge nextReady" title="bd ready confirms this open task can start now.">Next · Ready</span>'
+              : "";
         const dependencyWarning = dependencyWarnings.get(item.id) ?? "";
         const mergeRiskWarning = mergeRiskWarnings.get(item.id) ?? "";
         const blocks = (blocksById.get(item.id) ?? []).sort((a, b) => a.localeCompare(b));
@@ -563,7 +594,7 @@ function renderBeadsDependencyGraph(
           ? `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="${escapeHtml(writeAvailable ? "Check agent worktrees, auto-merge their PRs, then sync Beads." : writeUnavailableReason)}" aria-label="${escapeHtml(`Merge PRs for ${taskActionContext}`)}"${writeAvailable ? "" : " disabled"}>Merge PRs</button>`
           : `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-provider="${escapeHtml(item.provider)}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(ssotLabel)}" data-assign-start-worktree="${escapeHtml(isCodingSessionProvider(item) ? item.worktree.trim() : "")}" title="${escapeHtml(assignTitle)}" aria-label="${escapeHtml(`Start AI for ${taskActionContext}`)}"${assignDisabled}>Start AI</button>`;
         const graphBadges = [
-          executionStateLabel === ""
+          executionStateLabel === "" || graphWorkFocus !== "none"
             ? ""
             : `<span class="executionBadge stateBadge">${escapeHtml(executionStateLabel)}</span>`,
           derivedMerge ? `<span class="executionBadge mergeBadge">Merge PR</span>` : "",
@@ -602,7 +633,7 @@ function renderBeadsDependencyGraph(
         ]
           .filter((badge) => badge !== "")
           .join("");
-        return `<div class="graphNode graphLayoutNode ${node.critical ? "criticalGraphNode" : ""}${node.cycle ? " cycleGraphNode" : ""}${dependencyWarning === "" ? "" : " dependencyWarningGraphNode"}${mergeRiskWarning === "" ? "" : " mergeRiskGraphNode"}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level + 1}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-critical="${node.critical ? "1" : "0"}" data-cycle="${node.cycle ? "1" : "0"}" data-parent-id="${escapeHtml(parentId)}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" style="${initialDisplay}--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span><span class="criticalBadge"${node.critical ? "" : " hidden"}>Longest chain</span><span class="cycleBadge"${node.cycle ? "" : " hidden"}>Cycle</span></div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${graphBadges}</div>${dependencyWarning === "" ? "" : `<div class="graphWarning">${escapeHtml(dependencyWarning)}</div>`}${mergeRiskWarning === "" ? "" : `<div class="graphWarning graphMergeRisk">${escapeHtml(mergeRiskWarning)}</div>`}${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="graphDetailsBead" type="button" data-graph-details-id="${escapeHtml(item.id)}" data-graph-details-workspace="${escapeHtml(workspacePath)}" aria-label="${escapeHtml(`Details for ${taskActionContext}`)}">Details</button>${actionHtml}</div></div>`;
+        return `<div class="graphNode graphLayoutNode ${graphWorkFocus === "running" ? "runningGraphNode " : graphWorkFocus === "next-ready" ? "nextReadyGraphNode " : ""}${node.critical ? "criticalGraphNode" : ""}${node.cycle ? " cycleGraphNode" : ""}${dependencyWarning === "" ? "" : " dependencyWarningGraphNode"}${mergeRiskWarning === "" ? "" : " mergeRiskGraphNode"}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level + 1}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-work-focus="${graphWorkFocus}" data-critical="${node.critical ? "1" : "0"}" data-cycle="${node.cycle ? "1" : "0"}" data-parent-id="${escapeHtml(parentId)}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" style="${initialDisplay}--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${graphWorkBadge}<span class="criticalBadge"${node.critical ? "" : " hidden"}>Longest chain</span><span class="cycleBadge"${node.cycle ? "" : " hidden"}>Cycle</span></div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${graphBadges}</div>${dependencyWarning === "" ? "" : `<div class="graphWarning">${escapeHtml(dependencyWarning)}</div>`}${mergeRiskWarning === "" ? "" : `<div class="graphWarning graphMergeRisk">${escapeHtml(mergeRiskWarning)}</div>`}${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="graphDetailsBead" type="button" data-graph-details-id="${escapeHtml(item.id)}" data-graph-details-workspace="${escapeHtml(workspacePath)}" aria-label="${escapeHtml(`Details for ${taskActionContext}`)}">Details</button>${actionHtml}</div></div>`;
       })
       .join("");
   }).join("");
@@ -637,6 +668,7 @@ function renderBeadsDependencyGraph(
           )
           .join("")}</div></details>`
       : "";
+  const graphWorkSummary = `<span class="summaryPill graphRunningSummary${runningCount === 0 ? " isEmpty" : ""}" aria-label="${runningCount} Now, recorded in progress; live activity is not confirmed" title="Beads records these tasks as in progress; this is not a live heartbeat"><span class="graphRunningDot" aria-hidden="true"></span><strong>${runningCount}</strong> Now (recorded)</span><span class="summaryPill graphNextSummary" title="Open tasks confirmed by bd ready"><strong>${nextReadyCount}</strong> Next</span>`;
   const criticalSummary = `<span class="summaryPill criticalSummary" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}"${graph.criticalPathIds.length > 0 ? "" : " hidden"}>${graph.criticalPathIds.length} chain</span>`;
   const cycleSummary = `<span class="summaryPill cycleSummary"${graph.cycleIds.size > 0 ? "" : " hidden"}>${graph.cycleIds.size} cycle</span>`;
   const pathUnavailable = graph.cycleIds.size > 0;
@@ -647,10 +679,10 @@ function renderBeadsDependencyGraph(
       : "No dependency path yet";
   const criticalPathHtml = `<div class="graphPathStrip${graph.criticalPathIds.length > 0 ? "" : " emptyCriticalPath"}${pathUnavailable ? " cycleGraphPath" : ""}"><span>Longest Chain</span><strong class="graphPathValue" title="${escapeHtml(pathText)}">${escapeHtml(pathText)}</strong></div>`;
   const graphLegendHtml =
-    '<div class="graphLegend"><span class="flowLegend">Visible flow</span><span class="dependencyLegend">Dependency</span><span class="criticalLegend">Longest chain</span><span class="cycleLegend">Cycle</span><span class="parentLegend">Parent</span><span class="riskLegend">Merge/worktree risk</span></div>';
+    '<div class="graphLegend"><span class="runningLegend">Now (recorded)</span><span class="nextReadyLegend">Next ready</span><span class="flowLegend">Visible flow</span><span class="dependencyLegend">Dependency</span><span class="criticalLegend">Longest chain</span><span class="cycleLegend">Cycle</span><span class="parentLegend">Parent</span><span class="riskLegend">Merge/worktree risk</span></div>';
   const graphIssuesHtml = `<div class="graphIssueStack">${dependencyWarningHtml}${mergeRiskHtml}</div>`;
 
-  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">Point anywhere and wheel to zoom there · Drag to pan · Option/Alt+drag a box to zoom · Double-click to fit</div></div><div class="graphHeaderActions"><div class="workspaceSummary"><span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${cycleSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="fit">Fit</button></div></div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div><svg class="graphMiniMap" role="img" aria-label="Graph overview. The outlined rectangle is the current viewport."></svg></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to pan, Option or Alt drag a box to zoom, use arrow keys to pan, and press zero to fit."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${boundaryNodeHtml}${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
+  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">A new viewport focuses Now/Next; saved views keep their position · Point anywhere and wheel to zoom there · Drag to pan · Option/Alt+drag a box to zoom · Double-click to fit all</div></div><div class="graphHeaderActions"><div class="workspaceSummary">${graphWorkSummary}<span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${cycleSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="focus" title="Center recorded in-progress and ready-next tasks"${runningCount + nextReadyCount === 0 ? " disabled" : ""}>Focus</button><button type="button" data-graph-action="fit">Fit all</button></div></div></div>${graphIssuesHtml}<div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div><svg class="graphMiniMap" role="img" aria-label="Graph overview. The outlined rectangle is the current viewport."></svg></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to pan, Option or Alt drag a box to zoom, use arrow keys to pan, press F to focus Now and Next, and press zero to fit all."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${boundaryNodeHtml}${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
 }
 
 export function renderBeadsWebviewHtml(
@@ -1247,6 +1279,10 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphControls button{min-width:24px;height:22px;padding:0 6px;background:transparent;color:var(--vscode-foreground);}
 .graphControls button:hover{background:rgba(128,128,128,.18);}
 .graphZoomValue{min-width:38px;text-align:center;color:var(--vscode-descriptionForeground);font-size:10px;font-variant-numeric:tabular-nums;}
+.graphRunningSummary{border-color:rgba(59,130,246,.62);color:var(--vscode-textLink-foreground,#3b82f6);}
+.graphRunningSummary.isEmpty .graphRunningDot{display:none;animation:none;}
+.graphNextSummary{border-color:rgba(34,197,94,.62);color:var(--vscode-testing-iconPassed,#22c55e);}
+.graphRunningSummary strong,.graphNextSummary strong{font-variant-numeric:tabular-nums;}
 .criticalSummary{border-color:rgba(236,72,153,.5);color:var(--vscode-charts-pink,#ec4899);}
 .cycleSummary{border-color:rgba(168,85,247,.55);color:var(--vscode-charts-purple,#a855f7);}
 .dependencyWarningSummary{border-color:rgba(245,158,11,.55);color:var(--vscode-editorWarning-foreground,#f59e0b);}
@@ -1275,6 +1311,10 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphMiniMapEdge.cycle{stroke:var(--vscode-charts-purple,#a855f7);stroke-width:1.8;}
 .graphMiniMapNode{fill:color-mix(in srgb,var(--vscode-foreground) 36%,transparent);stroke:var(--vscode-panel-border);stroke-width:1;vector-effect:non-scaling-stroke;}
 .graphMiniMapNode.boundary{fill:color-mix(in srgb,var(--vscode-textLink-foreground,#3b82f6) 52%,transparent);}
+.graphMiniMapNode.running{stroke:var(--vscode-textLink-foreground,#3b82f6);stroke-width:2;}
+.graphMiniMapNode.nextReady{stroke:var(--vscode-testing-iconPassed,#22c55e);stroke-width:2;}
+.graphMiniMapNode.running:not(.chain):not(.cycle){fill:color-mix(in srgb,var(--vscode-textLink-foreground,#3b82f6) 55%,transparent);}
+.graphMiniMapNode.nextReady:not(.chain):not(.cycle){fill:color-mix(in srgb,var(--vscode-testing-iconPassed,#22c55e) 48%,transparent);}
 .graphMiniMapNode.chain{fill:color-mix(in srgb,var(--vscode-charts-pink,#ec4899) 65%,transparent);}
 .graphMiniMapNode.cycle{fill:color-mix(in srgb,var(--vscode-charts-purple,#a855f7) 65%,transparent);}
 .graphMiniMapViewport{fill:color-mix(in srgb,var(--vscode-focusBorder,#3b82f6) 12%,transparent);stroke:var(--vscode-focusBorder,#3b82f6);stroke-width:2;vector-effect:non-scaling-stroke;}
@@ -1286,6 +1326,9 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphLegend{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin:0;}
 .graphLegend span{display:inline-flex;align-items:center;gap:5px;min-height:18px;padding:1px 7px;border-radius:999px;border:1px solid var(--vscode-panel-border);font-size:10px;font-weight:700;color:var(--vscode-descriptionForeground);background:rgba(128,128,128,.08);}
 .graphLegend span::before{content:"";width:14px;height:0;border-top:2px solid currentColor;}
+.runningLegend{color:var(--vscode-textLink-foreground,#3b82f6)!important;}
+.nextReadyLegend{color:var(--vscode-testing-iconPassed,#22c55e)!important;}
+.runningLegend::before,.nextReadyLegend::before{width:8px!important;height:8px!important;border:0!important;border-radius:999px;background:currentColor;}
 .flowLegend{color:var(--vscode-textLink-foreground,#3b82f6)!important;}
 .dependencyLegend{color:rgba(148,163,184,.95)!important;}
 .criticalLegend{color:var(--vscode-charts-pink,#ec4899)!important;}
@@ -1321,6 +1364,13 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphLevelLabel small{font-size:10px;font-weight:650;line-height:1.15;color:var(--vscode-descriptionForeground);}
 .graphNodes{position:absolute;inset:0;z-index:2;}
 .graphNode{box-sizing:border-box;position:absolute;left:var(--graph-x);top:var(--graph-y);width:var(--graph-node-width,280px);border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));padding:8px;box-shadow:0 1px 3px rgba(0,0,0,.12);}
+.graphNode.runningGraphNode{outline:2px solid var(--vscode-textLink-foreground,#3b82f6);outline-offset:2px;}
+.graphNode.nextReadyGraphNode{outline:2px solid var(--vscode-testing-iconPassed,#22c55e);outline-offset:2px;}
+@keyframes graphRunningPulse{0%,100%{opacity:.32;}50%{opacity:1;}}
+.graphRunningDot{display:inline-block;flex:0 0 8px;width:8px;height:8px;border-radius:999px;background:currentColor;box-shadow:0 0 0 2px color-mix(in srgb,currentColor 18%,transparent);animation:graphRunningPulse 1.8s ease-in-out infinite;}
+.graphWorkBadge{display:inline-flex;align-items:center;gap:5px;min-height:17px;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:800;white-space:nowrap;}
+.graphWorkBadge.running{border:1px solid rgba(59,130,246,.62);background:rgba(59,130,246,.14);color:var(--vscode-textLink-foreground,#3b82f6);}
+.graphWorkBadge.nextReady{border:1px solid rgba(34,197,94,.62);background:rgba(34,197,94,.14);color:var(--vscode-testing-iconPassed,#22c55e);}
 .graphBoundaryNode{box-sizing:border-box;position:absolute;left:var(--graph-x);top:var(--graph-y);display:grid;grid-template-columns:32px 1fr;grid-template-rows:auto auto;column-gap:9px;align-items:center;width:var(--graph-node-width,280px);min-height:62px;padding:9px 12px;border:1px solid var(--vscode-focusBorder,var(--vscode-textLink-foreground,#3b82f6));border-radius:999px;background:color-mix(in srgb,var(--vscode-textLink-foreground,#3b82f6) 12%,var(--vscode-editor-background));box-shadow:0 2px 8px rgba(0,0,0,.15);}
 .graphBoundaryIcon{grid-row:1 / 3;display:grid;place-items:center;width:30px;height:30px;border-radius:999px;background:var(--vscode-textLink-foreground,#3b82f6);color:var(--vscode-button-foreground,#fff);font-size:13px;font-weight:800;}
 .graphBoundaryNode strong{font-size:13px;line-height:1.2;}
@@ -1400,6 +1450,9 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .planMutationPreview ol{display:grid;gap:7px;margin:8px 0 0;padding-left:22px;}
 .planMutationPreview li span{display:inline-block;min-width:95px;font-size:10px;font-weight:750;text-transform:uppercase;color:var(--vscode-descriptionForeground);}
 .planMutationPreview code{display:block;margin-top:2px;overflow-wrap:anywhere;white-space:pre-wrap;}
+@media (prefers-reduced-motion:reduce){
+  .graphRunningDot{animation:none;opacity:1;}
+}
 @media (max-width:560px){
   .toolbar{grid-template-columns:1fr;gap:6px;}
   .toolbarActions{justify-content:stretch;}

@@ -4,6 +4,8 @@ import {
   clampGraphPanForVisibility,
   computeAnchoredGraphPan,
   computeCenteredGraphPan,
+  computeGraphFitTransformForRect,
+  computeGraphPanForStableAnchor,
   computeGraphPanToCenterRect,
   computeGraphPanToRevealRect,
   getGraphPointerGesture,
@@ -91,6 +93,31 @@ describe("graph viewport transforms", () => {
     expect(
       computeCenteredGraphPan({ width: 1_000, height: 700 }, { width: 760, height: 420 })
     ).toEqual({ x: 120, y: 140 });
+  });
+
+  it("keeps the same task at the same screen position after a layout reorder", () => {
+    expect(
+      computeGraphPanForStableAnchor({ x: -320, y: 80 }, { x: 140, y: 120 }, { x: 460, y: 40 })
+    ).toEqual({ x: -640, y: 160 });
+  });
+
+  it("fits and centers a work-focus group without zooming above 100 percent", () => {
+    const focused = computeGraphFitTransformForRect(
+      { width: 1_000, height: 700 },
+      { x: 800, y: 300, width: 2_000, height: 500 },
+      16
+    );
+    expect(focused.zoom).toBeCloseTo(0.484);
+    expect(focused.pan.x).toBeCloseTo(-371.2);
+    expect(focused.pan.y).toBeCloseTo(83.8);
+
+    expect(
+      computeGraphFitTransformForRect(
+        { width: 1_000, height: 700 },
+        { x: 800, y: 300, width: 252, height: 160 },
+        16
+      ).zoom
+    ).toBe(1);
   });
 
   it("recenters a surviving filtered group without changing zoom", () => {
