@@ -1,5 +1,5 @@
 import { resolveAgentProviderId } from "./agentProvider";
-import { type BeadItem, normalizeBeadStatus } from "./beadsData";
+import { type BeadItem, normalizeBeadPriority, normalizeBeadStatus } from "./beadsData";
 
 export const AGENT_WORK_LANES = ["attention", "review", "running", "queue", "done"] as const;
 
@@ -27,6 +27,7 @@ export type AgentWorkReasonCode =
   | "blocked"
   | "checks-failing"
   | "closed"
+  | "edit-applied"
   | "in-progress"
   | "merge-preflight"
   | "pull-request"
@@ -102,6 +103,22 @@ function makeDerivedItem(
   };
 }
 
+function getAgentWorkPriorityRank(entry: AgentWorkItem) {
+  return Number.parseInt(normalizeBeadPriority(entry.item.priority).slice(1), 10);
+}
+
+function stableSortAgentWorkItems(
+  entries: AgentWorkItem[],
+  compare: (left: AgentWorkItem, right: AgentWorkItem) => number
+) {
+  return entries
+    .map((entry, originalIndex) => ({ entry, originalIndex }))
+    .sort(
+      (left, right) => compare(left.entry, right.entry) || left.originalIndex - right.originalIndex
+    )
+    .map(({ entry }) => entry);
+}
+
 export function deriveAgentWorkItem(item: BeadItem): AgentWorkItem {
   const normalizedStatus = normalizeBeadStatus(item.status);
   const readiness = getReadiness(item, normalizedStatus);
@@ -167,6 +184,25 @@ export function deriveAgentWorkItem(item: BeadItem): AgentWorkItem {
       item,
       "review",
       [{ code: "pull-request", message: `Pull request "${pullRequest}" is recorded` }],
+      readiness
+    );
+  }
+
+  if (
+    normalizedStatus === "in_progress" &&
+    resolveAgentProviderId(item.provider) !== "copilot" &&
+    normalizeSignal(item.providerStatus ?? "") === "edit_applied"
+  ) {
+    return makeDerivedItem(
+      item,
+      "review",
+      [
+        {
+          code: "edit-applied",
+          message:
+            "The workspace edit was applied after human review; external validation is still pending"
+        }
+      ],
       readiness
     );
   }
@@ -246,6 +282,17 @@ export function buildAgentWorkQueue(items: BeadItem[]): AgentWorkQueue {
     const derived = deriveAgentWorkItem(item);
     lanes[derived.lane].push(derived);
   }
+
+  lanes.attention = stableSortAgentWorkItems(
+    lanes.attention,
+    (left, right) => getAgentWorkPriorityRank(left) - getAgentWorkPriorityRank(right)
+  );
+  lanes.queue = stableSortAgentWorkItems(
+    lanes.queue,
+    (left, right) =>
+      Number(right.readiness === "confirmed") - Number(left.readiness === "confirmed") ||
+      getAgentWorkPriorityRank(left) - getAgentWorkPriorityRank(right)
+  );
 
   const counts: AgentWorkLaneCounts = {
     attention: lanes.attention.length,

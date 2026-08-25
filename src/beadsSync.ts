@@ -35,9 +35,7 @@ export async function probeBeadsSyncCapability(
       supported: false,
       reason: isUnknownSyncCommand(error)
         ? "The active Beads CLI does not provide bd sync."
-        : error instanceof Error
-          ? `Unable to verify bd sync support: ${error.message}`
-          : "Unable to verify bd sync support."
+        : "Unable to verify bd sync support with the active Beads CLI."
     };
   }
 }

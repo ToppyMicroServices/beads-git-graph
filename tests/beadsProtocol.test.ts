@@ -4,7 +4,9 @@ import { isBeadsHostMessage, isBeadsRequestMessage } from "../src/beadsProtocol"
 
 describe("isBeadsRequestMessage", () => {
   it("accepts known commands with their required payload", () => {
-    expect(isBeadsRequestMessage({ command: "refresh" })).toBe(true);
+    expect(isBeadsRequestMessage({ command: "refresh", clientActionId: "refresh-client-1" })).toBe(
+      true
+    );
     expect(isBeadsRequestMessage({ command: "syncBeads", workspacePath: "/tmp/demo" })).toBe(true);
     expect(
       isBeadsRequestMessage({
@@ -152,11 +154,33 @@ describe("isBeadsRequestMessage", () => {
         dependencies: [{ issueId: 1234 }]
       })
     ).toBe(false);
+    expect(isBeadsRequestMessage({ command: "refresh", clientActionId: "bad\nclient" })).toBe(
+      false
+    );
+    expect(isBeadsRequestMessage({ command: "refresh", clientActionId: "x".repeat(101) })).toBe(
+      false
+    );
     expect(isBeadsRequestMessage({ command: "unknown" })).toBe(false);
   });
 });
 
 describe("isBeadsHostMessage", () => {
+  it("accepts only bounded one-line action settlement IDs", () => {
+    expect(
+      isBeadsHostMessage({ command: "actionSettled", clientActionId: "refresh-client-1" })
+    ).toBe(true);
+    expect(isBeadsHostMessage({ command: "actionSettled", clientActionId: "" })).toBe(false);
+    expect(
+      isBeadsHostMessage({
+        command: "actionSettled",
+        clientActionId: "refresh-client-1\nspoof"
+      })
+    ).toBe(false);
+    expect(isBeadsHostMessage({ command: "actionSettled", clientActionId: "x".repeat(101) })).toBe(
+      false
+    );
+  });
+
   it("accepts bounded incremental render updates", () => {
     expect(
       isBeadsHostMessage({

@@ -1,3 +1,4 @@
+import { getAgentProviderDefinition } from "./agentProvider";
 import { type BeadsWriteCapability } from "./beadsWriteCapability";
 import { type PlanDraft, type PlanDraftValidationError } from "./planDraft";
 import { projectPlanDraftToGraph } from "./planGraph";
@@ -53,23 +54,58 @@ export function renderPlanDraftPreview(input: PlanDraftPreviewInput) {
           .join("")}</div>`
     )
     .join("")}</div>`;
-  const criticalPathHtml = `<div class="planPathSummary"><strong>Critical Path</strong><span>${graph.criticalPathIds.length === 0 ? "No dependency path yet" : escapeHtml(graph.criticalPathIds.join(" → "))}</span></div>`;
+  const criticalPathHtml = `<div class="planPathSummary"><strong>Longest dependency chain</strong><span>${graph.criticalPathIds.length === 0 ? "No dependency path yet" : escapeHtml(graph.criticalPathIds.join(" → "))}</span></div>`;
   const parallelHtml = `<div class="planParallelSummary"><strong>Parallel candidates</strong><span>${graph.parallelGroups.length === 0 ? "None" : graph.parallelGroups.map((ids) => escapeHtml(ids.join(" + "))).join("; ")}</span></div>`;
-  const modelTransitionHtml = `<div class="planModelTransitionSummary"><strong>Requested model transitions</strong><span>${graph.requestedModelTransitions.length === 0 ? "None" : graph.requestedModelTransitions.map((transition) => `${escapeHtml(transition.fromId)} [${escapeHtml(transition.fromModel)}] → ${escapeHtml(transition.toId)} [${escapeHtml(transition.toModel)}]`).join("; ")}</span></div>`;
-  const providerTransitionHtml = `<div class="planProviderTransitionSummary"><strong>Requested provider/model transitions</strong><span>${
-    graph.requestedProviderModelTransitions.length === 0
-      ? "None"
-      : graph.requestedProviderModelTransitions
+  const incomingIds = new Set(graph.edges.map((edge) => edge.toId));
+  const outgoingIds = new Set(graph.edges.map((edge) => edge.fromId));
+  const dependencyFlow = [
+    ...graph.nodes.filter((node) => !incomingIds.has(node.id)).map((node) => `Start → ${node.id}`),
+    ...graph.edges.map((edge) => `${edge.fromId} → ${edge.toId}`),
+    ...graph.nodes.filter((node) => !outgoingIds.has(node.id)).map((node) => `${node.id} → End`)
+  ];
+  const dependencyFlowHtml = `<div class="planDependencyFlow"><strong>Dependency flow</strong><span>${dependencyFlow.length === 0 ? "Start → End" : dependencyFlow.map(escapeHtml).join("; ")}</span></div>`;
+  const incompatibleProviderTasks = input.draft.tasks.filter(
+    (task) =>
+      task.dependencyIds.length > 0 &&
+      task.provider !== undefined &&
+      task.provider !== "ollama" &&
+      task.provider !== "copilot"
+  );
+  const executionCompatibilityHtml =
+    incompatibleProviderTasks.length === 0
+      ? ""
+      : `<div class="planExecutionWarnings" role="note"><strong>Provider handoff review needed</strong><ul>${incompatibleProviderTasks
           .map(
-            (transition) =>
-              `${escapeHtml(transition.fromId)} [${transition.fromProvider === undefined ? "unspecified provider" : escapeHtml(transition.fromProvider)}${transition.fromModel === undefined ? "" : ` / ${escapeHtml(transition.fromModel)}`}] → ${escapeHtml(transition.toId)} [${transition.toProvider === undefined ? "unspecified provider" : escapeHtml(transition.toProvider)}${transition.toModel === undefined ? "" : ` / ${escapeHtml(transition.toModel)}`}]`
+            (task) =>
+              `<li>${escapeHtml(task.id)} requests ${escapeHtml(getAgentProviderDefinition(task.provider!).label)}, which cannot consume dependency artifacts in direct-provider mode. Choose Ollama or GitHub Copilot when starting this task.</li>`
           )
-          .join("; ")
-  }</span></div>`;
+          .join("")}</ul></div>`;
+  const hasRequestedProvider = input.draft.tasks.some((task) => task.provider !== undefined);
+  const providerTransitionHtml = hasRequestedProvider
+    ? `<div class="planProviderTransitionSummary"><strong>Requested provider/model transitions</strong><span>${
+        graph.requestedProviderModelTransitions.length === 0
+          ? "None"
+          : graph.requestedProviderModelTransitions
+              .map(
+                (transition) =>
+                  `${escapeHtml(transition.fromId)} [${transition.fromProvider === undefined ? "unspecified provider" : escapeHtml(transition.fromProvider)}${transition.fromModel === undefined ? "" : ` / ${escapeHtml(transition.fromModel)}`}] → ${escapeHtml(transition.toId)} [${transition.toProvider === undefined ? "unspecified provider" : escapeHtml(transition.toProvider)}${transition.toModel === undefined ? "" : ` / ${escapeHtml(transition.toModel)}`}]`
+              )
+              .join("; ")
+      }</span></div>`
+    : `<div class="planProviderTransitionSummary"><strong>Requested model transitions</strong><span>${
+        graph.requestedModelTransitions.length === 0
+          ? "None"
+          : graph.requestedModelTransitions
+              .map(
+                (transition) =>
+                  `${escapeHtml(transition.fromId)} [${escapeHtml(transition.fromModel)}] → ${escapeHtml(transition.toId)} [${escapeHtml(transition.toModel)}]`
+              )
+              .join("; ")
+      }</span></div>`;
   const taskHtml = input.draft.tasks
     .map(
       (task) =>
-        `<article class="planDraftTask"><div class="planDraftTaskHeader"><strong>${escapeHtml(task.id)} · ${escapeHtml(task.title)}</strong><span>${escapeHtml(task.priority)}</span></div><div><b>Depends on:</b> ${task.dependencyIds.length === 0 ? "None" : task.dependencyIds.map(escapeHtml).join(", ")}</div><div><b>Acceptance:</b><ul>${task.acceptanceCriteria.map((criterion) => `<li>${escapeHtml(criterion)}</li>`).join("")}</ul></div><div><b>SSOT:</b> ${task.ssot.length === 0 ? "None declared" : task.ssot.map(escapeHtml).join(", ")}</div>${task.outputPath === undefined ? "<div><b>Output:</b> Not declared (direct-provider editing unavailable)</div>" : `<div><b>Output:</b> ${escapeHtml(task.outputPath)}</div>`}${task.provider === undefined ? "" : `<div><b>Provider:</b> ${escapeHtml(task.provider)}</div>`}${task.model === undefined ? "" : `<div><b>Model:</b> ${escapeHtml(task.model)}</div>`}</article>`
+        `<article class="planDraftTask"><div class="planDraftTaskHeader"><strong>${escapeHtml(task.id)} · ${escapeHtml(task.title)}</strong><span>${escapeHtml(task.priority)}</span></div><div><b>Instructions:</b> ${task.instructions === undefined ? "Not declared" : escapeHtml(task.instructions)}</div><div><b>Depends on:</b> ${task.dependencyIds.length === 0 ? "None" : task.dependencyIds.map(escapeHtml).join(", ")}</div><div><b>Acceptance:</b><ul>${task.acceptanceCriteria.map((criterion) => `<li>${escapeHtml(criterion)}</li>`).join("")}</ul></div><div><b>SSOT:</b> ${task.ssot.length === 0 ? "None declared" : task.ssot.map(escapeHtml).join(", ")}</div>${task.outputPath === undefined ? "<div><b>Output:</b> Not declared (direct-provider editing unavailable)</div>" : `<div><b>Output:</b> ${escapeHtml(task.outputPath)}</div>`}${task.provider === undefined ? "" : `<div><b>Provider:</b> ${escapeHtml(task.provider)}</div>`}${task.model === undefined ? "" : `<div><b>Model:</b> ${escapeHtml(task.model)}</div>`}</article>`
     )
     .join("");
   const mutationHtml = projectPlanDraftMutations(input.draft)
@@ -82,5 +118,5 @@ export function renderPlanDraftPreview(input: PlanDraftPreviewInput) {
     ? "Review and approve the exact Beads mutations."
     : capability.reason;
 
-  return `<div class="planPreviewResult">${validationHtml}<section class="planDraftSummary"><h2>${escapeHtml(input.draft.goal)}</h2><div class="planDraftStats"><span>${input.draft.tasks.length} tasks</span><span>${graph.edges.length} dependencies</span></div>${criticalPathHtml}${parallelHtml}${modelTransitionHtml}${providerTransitionHtml}${graphHtml}<div class="planDraftTasks">${taskHtml}</div></section><details class="planMutationPreview" open><summary>Pending Beads mutations (${projectPlanDraftMutations(input.draft).length})</summary><ol>${mutationHtml}</ol></details>${capabilityHtml}<div class="planPreviewActions"><button id="cancelPlanDraft" type="button">Discard draft</button><button id="importPlanDraft" type="button" title="${escapeHtml(importTitle)}"${capability.supported ? "" : " disabled"}>Import Plan</button></div></div>`;
+  return `<div class="planPreviewResult">${validationHtml}<section class="planDraftSummary"><h2>${escapeHtml(input.draft.goal)}</h2><div class="planDraftStats"><span>${input.draft.tasks.length} tasks</span><span>${graph.edges.length} dependencies</span></div>${criticalPathHtml}${parallelHtml}${providerTransitionHtml}${dependencyFlowHtml}${executionCompatibilityHtml}${graphHtml}<div class="planDraftTasks">${taskHtml}</div></section><details class="planMutationPreview" open><summary>Pending Beads mutations (${projectPlanDraftMutations(input.draft).length})</summary><ol>${mutationHtml}</ol></details>${capabilityHtml}<div class="planPreviewActions"><button id="cancelPlanDraft" type="button">Discard draft</button><button id="importPlanDraft" type="button" title="${escapeHtml(importTitle)}"${capability.supported ? "" : " disabled"}>Import Plan</button></div></div>`;
 }

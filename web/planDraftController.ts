@@ -9,13 +9,14 @@ export interface PlanDraftImportMessage {
   command: "importPlanDraft";
   workspacePath: string;
   draftText: string;
+  clientActionId: string;
 }
 
 export interface PlanDraftController {
   setText(text: string): void;
   preview(): PlanDraftPreviewState;
   cancel(): void;
-  importPlan(workspacePath: string, capabilitySupported: boolean): boolean;
+  importPlan(workspacePath: string, capabilitySupported: boolean, clientActionId: string): boolean;
   getText(): string;
 }
 
@@ -58,17 +59,18 @@ export function createPlanDraftController(
       previewedText = null;
       previewState = { draft: null, errors: [] };
     },
-    importPlan(workspacePath, capabilitySupported) {
+    importPlan(workspacePath, capabilitySupported, clientActionId) {
       if (
         !capabilitySupported ||
         workspacePath.trim() === "" ||
+        clientActionId.trim() === "" ||
         previewedText !== draftText ||
         previewState.draft === null ||
         previewState.errors.length > 0
       ) {
         return false;
       }
-      postMessage({ command: "importPlanDraft", workspacePath, draftText });
+      postMessage({ command: "importPlanDraft", workspacePath, draftText, clientActionId });
       return true;
     },
     getText() {

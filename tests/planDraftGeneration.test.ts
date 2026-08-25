@@ -16,6 +16,7 @@ function validResponse(goal = "The model's copy of the goal") {
       {
         id: "task-1",
         title: "Implement the bounded change",
+        instructions: "Make the bounded code change and run the targeted test.",
         priority: "P1",
         acceptanceCriteria: ["The targeted test passes"],
         dependencyIds: [],
@@ -93,6 +94,19 @@ describe("buildPlanDraftGenerationPrompt", () => {
     expect(prompt).toContain("providerCatalog");
     expect(prompt).toContain("ssotCandidates");
     expect(prompt).toContain('"outputPath"');
+    expect(prompt).toContain('"instructions"');
+    expect(prompt).toContain("non-empty, self-contained instructions");
+    expect(prompt).toContain(
+      "hosted direct-response providers cannot consume upstream workspace artifacts"
+    );
+
+    const schemaText = prompt
+      .split("Plan Draft v1 JSON Schema:\n")[1]
+      .split("\n\nBEGIN UNTRUSTED INPUT JSON")[0];
+    const schema = JSON.parse(schemaText) as {
+      properties: { tasks: { items: { required: string[] } } };
+    };
+    expect(schema.properties.tasks.items.required).toContain("instructions");
   });
 
   it("refuses absolute or parent-traversing SSOT candidates", () => {

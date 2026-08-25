@@ -4,6 +4,7 @@ import { normalizeAgentArtifactReference } from "../src/agentArtifactReference";
 import {
   type AgentProviderId,
   getAgentProviderDefinition,
+  normalizeAgentProviderId,
   resolveAgentProviderId
 } from "../src/agentProvider";
 import {
@@ -28,9 +29,12 @@ import { renderPlanDraftPreview } from "../src/planPreview";
 import {
   DEFAULT_ACTIVE_STATUSES,
   getDetailsReadinessLabel,
+  getScopedBeadKey,
   isCollapsedByEpic,
+  normalizeScopedBeadKeys,
   shouldShowBeadRow
 } from "./beadsRowVisibility";
+import { collectStatusVisibleGraphIds } from "./graphFilterVisibility";
 import {
   clampGraphPanForVisibility,
   computeAnchoredGraphPan,
@@ -131,9 +135,17 @@ interface BeadRowItem {
   parallelizableSource: "explicit" | "ready" | "";
   agent: string;
   provider: AgentProviderId;
+  providerExplicit?: boolean;
   model: string;
   ssot: string;
   artifact: string;
+  providerStatus?: string;
+  contentCheckStatus?: string;
+  acceptanceStatus?: string;
+  reviewStatus?: string;
+  outputPath?: string;
+  acceptanceCriteria?: string;
+  taskInstructions?: string;
   worktree: string;
   branch: string;
   pullRequest: string;
@@ -173,37 +185,52 @@ const GRAPH_FOCUS_PADDING = 16;
 const PLAN_DRAFT_EXAMPLE = JSON.stringify(
   {
     version: 1,
-    goal: "Coordinate a linked workflow across AI providers and requested models",
+    goal: "Coordinate a linked workflow across local and hosted AI providers",
     tasks: [
       {
         id: "research",
         title: "Research the decision",
+        instructions:
+          "Compare the available approaches, cite the supplied project context, and write a recommendation with evidence.",
         priority: "P1",
-        acceptanceCriteria: ["Record the recommendation and evidence in docs/decision.md"],
+        acceptanceCriteria: [
+          "outputs/beads-plan/research.md contains a recommendation, alternatives, and evidence"
+        ],
         dependencyIds: [],
-        ssot: ["AGENTS.md", "docs/decision.md"],
+        ssot: ["AGENTS.md"],
+        outputPath: "outputs/beads-plan/research.md",
         provider: "huggingface",
-        model: "reasoning-model"
+        model: "replace-with-configured-model"
       },
       {
         id: "implement",
-        title: "Implement the approved decision",
+        title: "Document the approved implementation",
+        instructions:
+          "Consume the completed decision artifact and write an implementation guide with bounded steps and validation commands.",
         priority: "P1",
-        acceptanceCriteria: ["Implementation follows the recorded decision and passes tests"],
+        acceptanceCriteria: [
+          "outputs/beads-plan/implementation.md names the selected decision, implementation steps, and validation commands"
+        ],
         dependencyIds: ["research"],
-        ssot: ["AGENTS.md", "docs/decision.md"],
+        ssot: ["AGENTS.md", "outputs/beads-plan/research.md"],
+        outputPath: "outputs/beads-plan/implementation.md",
         provider: "ollama",
-        model: "coding-model"
+        model: "replace-with-configured-local-model"
       },
       {
         id: "review",
         title: "Review the integrated result",
+        instructions:
+          "Review the decision and implementation artifacts against their acceptance criteria, recording supported findings without claiming commands ran.",
         priority: "P2",
-        acceptanceCriteria: ["Review records pass/fail evidence against the acceptance criteria"],
+        acceptanceCriteria: [
+          "outputs/beads-plan/review.md records pass or follow-up evidence for every declared criterion"
+        ],
         dependencyIds: ["implement"],
-        ssot: ["docs/decision.md", "README.md"],
-        provider: "anthropic",
-        model: "review-model"
+        ssot: ["outputs/beads-plan/research.md", "outputs/beads-plan/implementation.md"],
+        outputPath: "outputs/beads-plan/review.md",
+        provider: "ollama",
+        model: "replace-with-configured-local-model"
       }
     ]
   },
@@ -227,6 +254,7 @@ let selectedRow: BeadRow | null = null;
 let expandedDetailsRow: HTMLTableRowElement | null = null;
 let contextMenuRow: BeadRow | null = null;
 let contextMenuWorkspacePath = "";
+let contextMenuTrigger: HTMLElement | null = null;
 let sortState = normalizeSortState(initialWebviewState?.sortState);
 let activeViewMode: ViewMode = normalizeViewMode(initialWebviewState?.viewMode);
 let graphTransforms = normalizeGraphTransforms(initialWebviewState);
@@ -235,13 +263,16 @@ let graphPanGesture: GraphPanGestureState | null = null;
 let graphTransformSaveTimer: number | null = null;
 let scrollStateSaveTimer: number | null = null;
 let graphResizeFrame: number | null = null;
+let graphMiniMapViewportFrame: number | null = null;
+const pendingGraphMiniMapViewportPanes = new Set<HTMLElement>();
 const graphZoomAnchors = new WeakMap<HTMLElement, GraphZoomAnchor>();
 const initializedGraphPanes = new WeakSet<HTMLElement>();
 const dynamicallyBoundElements = new WeakSet<EventTarget>();
 const pendingActionKeys = new Set<string>();
+const pendingClientActions = new Map<string, string>();
 let rowClickTimer: number | null = null;
-const collapsedIds = new Set(normalizeStringList(initialWebviewState?.collapsedIds));
-const collapsedEpicIds = new Set(normalizeStringList(initialWebviewState?.collapsedEpicIds));
+const collapsedIds = new Set(normalizeScopedBeadKeys(initialWebviewState?.collapsedIds));
+const collapsedEpicIds = new Set(normalizeScopedBeadKeys(initialWebviewState?.collapsedEpicIds));
 let lastRenderGeneration = 0;
 
 const chips = queryElement<HTMLDivElement>("#chips");
@@ -249,10 +280,13 @@ const preset = queryElement<HTMLSelectElement>("#preset");
 const addFilter = queryElement<HTMLButtonElement>("#addFilter");
 const filterMenu = queryElement<HTMLDivElement>("#filterMenu");
 const clearFilters = queryElement<HTMLButtonElement>("#clearFilters");
+const filterEmptyState = queryElement<HTMLDivElement>("#filterEmptyState");
+const resetEmptyFilters = queryElement<HTMLButtonElement>("#resetEmptyFilters");
 const rowContextMenu = queryElement<HTMLDivElement>("#rowContextMenu");
 const createBeadAction = queryElement<HTMLButtonElement>("#createBeadAction");
 const closeBeadAction = queryElement<HTMLButtonElement>("#closeBeadAction");
 const stats = queryElement<HTMLDivElement>("#stats");
+const refreshButton = queryElement<HTMLButtonElement>("#refresh");
 const syncBeadsButton = queryElement<HTMLButtonElement>("#syncBeads");
 const tableViewButton = queryElement<HTMLButtonElement>("#tableView");
 const graphViewButton = queryElement<HTMLButtonElement>("#graphView");
@@ -318,14 +352,6 @@ function normalizeSortState(value: unknown): { key: SortKey; desc: boolean } {
       ? candidate.key
       : "order";
   return { key, desc: typeof candidate.desc === "boolean" ? candidate.desc : false };
-}
-
-function normalizeStringList(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter(
-        (candidate): candidate is string => typeof candidate === "string" && candidate.trim() !== ""
-      )
-    : [];
 }
 
 function normalizeSelectedIssue(value: unknown): SelectedIssueState | null {
@@ -414,46 +440,46 @@ function saveInteractionState() {
 }
 
 function updateSyncButtonState() {
-  syncBeadsButton.disabled = !syncAvailable;
-  syncBeadsButton.title = !syncAvailable
+  const nextDisabled = !syncAvailable;
+  const nextTitle = !syncAvailable
     ? syncUnavailableReason
     : hasSyncWarnings
       ? "Sync Beads (differences detected)"
       : "Sync Beads";
-  syncBeadsButton.setAttribute(
-    "aria-label",
-    !syncAvailable
-      ? `Sync unavailable: ${syncUnavailableReason}`
-      : hasSyncWarnings
-        ? "Sync Beads, differences detected"
-        : "Sync Beads"
-  );
+  const nextAriaLabel = !syncAvailable
+    ? `Sync unavailable: ${syncUnavailableReason}`
+    : hasSyncWarnings
+      ? "Sync Beads, differences detected"
+      : "Sync Beads";
+  if (syncBeadsButton.dataset.pendingAction === "1") {
+    syncBeadsButton.dataset.pendingOriginalDisabled = nextDisabled ? "1" : "0";
+    syncBeadsButton.dataset.pendingOriginalTitle = nextTitle;
+    syncBeadsButton.dataset.pendingOriginalAriaLabel = nextAriaLabel;
+    return;
+  }
+  syncBeadsButton.disabled = nextDisabled;
+  syncBeadsButton.title = nextTitle;
+  syncBeadsButton.setAttribute("aria-label", nextAriaLabel);
 }
 
 function markActionButtonsPending(
+  clientActionId: string,
   buttons: Iterable<HTMLButtonElement>,
-  pendingLabel: string,
-  timeoutMs: number = 1500
+  pendingLabel: string
 ) {
   for (const button of buttons) {
     if (button.disabled || button.dataset.pendingAction === "1") {
       continue;
     }
-    button.dataset.pendingOriginalLabel = button.textContent || "";
+    button.dataset.pendingOriginalDisabled = button.disabled ? "1" : "0";
+    button.dataset.pendingOriginalTitle = button.getAttribute("title") ?? "";
+    button.dataset.pendingOriginalAriaLabel = button.getAttribute("aria-label") ?? "";
     button.dataset.pendingAction = "1";
+    button.dataset.pendingActionKey = clientActionId;
     button.disabled = true;
     button.setAttribute("aria-busy", "true");
-    button.textContent = pendingLabel;
-    window.setTimeout(() => {
-      if (!button.isConnected || button.dataset.pendingAction !== "1") {
-        return;
-      }
-      delete button.dataset.pendingAction;
-      button.removeAttribute("aria-busy");
-      button.disabled = false;
-      button.textContent = button.dataset.pendingOriginalLabel || "";
-      delete button.dataset.pendingOriginalLabel;
-    }, timeoutMs);
+    button.setAttribute("aria-label", pendingLabel);
+    button.title = pendingLabel;
   }
 }
 
@@ -462,32 +488,61 @@ function restoreActionButtons(buttons: Iterable<HTMLButtonElement>) {
     if (button.dataset.pendingAction !== "1") {
       continue;
     }
+    const restoreAttribute = (name: "title" | "aria-label", value: string | undefined) => {
+      if (value === undefined || value === "") {
+        button.removeAttribute(name);
+      } else {
+        button.setAttribute(name, value);
+      }
+    };
+    const wasDisabled = button.dataset.pendingOriginalDisabled === "1";
+    restoreAttribute("title", button.dataset.pendingOriginalTitle);
+    restoreAttribute("aria-label", button.dataset.pendingOriginalAriaLabel);
     delete button.dataset.pendingAction;
+    delete button.dataset.pendingActionKey;
+    delete button.dataset.pendingOriginalDisabled;
+    delete button.dataset.pendingOriginalTitle;
+    delete button.dataset.pendingOriginalAriaLabel;
     button.removeAttribute("aria-busy");
-    button.disabled = false;
-    button.textContent = button.dataset.pendingOriginalLabel || "";
-    delete button.dataset.pendingOriginalLabel;
+    button.disabled = wasDisabled;
   }
 }
 
 function beginClientAction(
   actionKey: string,
   buttons: Iterable<HTMLButtonElement>,
-  pendingLabel: string,
-  timeoutMs: number = 1500
+  pendingLabel: string
 ) {
   if (pendingActionKeys.has(actionKey)) {
-    return false;
+    return null;
   }
+  const clientActionId = createRequestId();
   pendingActionKeys.add(actionKey);
-  markActionButtonsPending(buttons, pendingLabel, timeoutMs);
-  window.setTimeout(() => pendingActionKeys.delete(actionKey), timeoutMs);
-  return true;
+  pendingClientActions.set(clientActionId, actionKey);
+  markActionButtonsPending(clientActionId, buttons, pendingLabel);
+  return clientActionId;
 }
 
-function cancelClientAction(actionKey: string, buttons: Iterable<HTMLButtonElement>) {
-  pendingActionKeys.delete(actionKey);
+function cancelClientAction(clientActionId: string, buttons: Iterable<HTMLButtonElement>) {
+  const actionKey = pendingClientActions.get(clientActionId);
+  if (actionKey !== undefined) {
+    pendingActionKeys.delete(actionKey);
+  }
+  pendingClientActions.delete(clientActionId);
   restoreActionButtons(buttons);
+}
+
+function settleClientAction(clientActionId: string) {
+  const actionKey = pendingClientActions.get(clientActionId);
+  if (actionKey !== undefined) {
+    pendingActionKeys.delete(actionKey);
+  }
+  pendingClientActions.delete(clientActionId);
+  restoreActionButtons(
+    Array.from(document.querySelectorAll<HTMLButtonElement>("[data-pending-action-key]")).filter(
+      (button) => button.dataset.pendingActionKey === clientActionId
+    )
+  );
 }
 
 function createRequestId() {
@@ -599,10 +654,17 @@ function renderParallelExecutionResult(
       retry.className = "parallelBatchRetry";
       retry.textContent = "Retry task";
       retry.addEventListener("click", () => {
-        retry.disabled = true;
-        retry.textContent = "Retrying…";
+        const clientActionId = beginClientAction(
+          `start-parallel:${result.workspacePath}`,
+          [retry],
+          "Retrying…"
+        );
+        if (clientActionId === null) {
+          return;
+        }
         vscode.postMessage({
           command: "startParallelBeads",
+          clientActionId,
           requestId: createRequestId(),
           workspacePath: result.workspacePath,
           items: [
@@ -669,7 +731,11 @@ function renderCurrentPlanPreview() {
       planDraftText.value = "";
       saveWebviewState({ planDraftText: "" });
       renderCurrentPlanPreview();
-      planDraftText.focus();
+      setPlanGenerationStatus(
+        "idle",
+        "Draft discarded. Describe a goal or load another draft when ready."
+      );
+      planGoalText.focus();
     });
   planDraftPreview
     .querySelector<HTMLButtonElement>("#importPlanDraft")
@@ -677,16 +743,21 @@ function renderCurrentPlanPreview() {
       const capability = getSelectedPlanCapability();
       const importButton = planDraftPreview.querySelector<HTMLButtonElement>("#importPlanDraft");
       const actionKey = `import-plan:${planDraftWorkspace.value}`;
-      if (
-        importButton === null ||
-        !beginClientAction(actionKey, [importButton], "Importing…", 3000)
-      ) {
+      if (importButton === null) {
+        return;
+      }
+      const clientActionId = beginClientAction(actionKey, [importButton], "Importing…");
+      if (clientActionId === null) {
         return;
       }
       if (
-        !planDraftController.importPlan(planDraftWorkspace.value, capability?.supported === true)
+        !planDraftController.importPlan(
+          planDraftWorkspace.value,
+          capability?.supported === true,
+          clientActionId
+        )
       ) {
-        cancelClientAction(actionKey, [importButton]);
+        cancelClientAction(clientActionId, [importButton]);
       }
     });
 }
@@ -720,11 +791,18 @@ function decodeEncodedJson<T>(encoded: string | undefined): T | null {
   }
 }
 
+function hasExplicitProvider(item: Pick<BeadRowItem, "provider" | "providerExplicit">) {
+  return (
+    item.providerExplicit === true ||
+    (item.providerExplicit === undefined && item.provider !== "copilot")
+  );
+}
+
 function toExecutionTarget(item: BeadRowItem) {
   return {
     issueId: item.id,
     title: item.title || "",
-    provider: resolveAgentProviderId(item.provider),
+    ...(hasExplicitProvider(item) ? { provider: resolveAgentProviderId(item.provider) } : {}),
     model: item.model || undefined,
     ssot: item.ssot || undefined,
     worktree: item.worktree || undefined
@@ -752,8 +830,9 @@ function openGraphBeadDetails(
     return;
   }
   const item = decodeRowItem(row);
+  const graphPane = button.closest<HTMLElement>(".graphPane");
   const detailsHost =
-    button.closest<HTMLElement>(".graphPane")?.querySelector<HTMLElement>(".graphIssueStack") ??
+    graphPane?.querySelector<HTMLElement>(".graphDetailsHost") ??
     button
       .closest<HTMLElement>(".agentWorkQueue")
       ?.querySelector<HTMLElement>(".agentWorkDetailsHost");
@@ -793,7 +872,7 @@ function openGraphBeadDetails(
   if (options.saveState !== false) {
     saveInteractionState();
   }
-  if (options.scrollIntoView !== false) {
+  if (options.scrollIntoView !== false && graphPane === null) {
     details.scrollIntoView({ block: "nearest" });
   }
 }
@@ -813,15 +892,22 @@ function restoreSelectedIssue(
   }
   const row = findIssueRow(issue);
   const item = row === undefined ? null : decodeRowItem(row);
-  if (row === undefined || item === null || row.style.display === "none") {
+  if (
+    row === undefined ||
+    item === null ||
+    !activeFilters.has((row.dataset.status || "other") as StatusFilter)
+  ) {
     saveWebviewState({ selectedIssue: null });
     return;
   }
 
   selectedRow = row;
   row.classList.add("selected");
-  setRowDetailsExpanded(row, true);
-  expandDetailsRow(row, item);
+  const hiddenOnlyByTableCollapse = activeViewMode === "table" && row.style.display === "none";
+  setRowDetailsExpanded(row, !hiddenOnlyByTableCollapse);
+  if (!hiddenOnlyByTableCollapse) {
+    expandDetailsRow(row, item);
+  }
 
   if (activeViewMode === "graph" || activeViewMode === "control") {
     const modeRootSelector = activeViewMode === "graph" ? ".graphPane" : ".agentWorkQueue";
@@ -874,6 +960,7 @@ const STABLE_RENDER_CLASSES = new Set([
   "graphPane",
   "graphHeader",
   "graphIssueStack",
+  "graphDetailsHost",
   "agentWorkDetailsHost",
   "graphMapFrame",
   "graphMapHeader",
@@ -894,6 +981,18 @@ const CLIENT_OWNED_STYLE_CLASSES = [
   "graphLevelGuide"
 ];
 
+const CLIENT_OWNED_PENDING_ATTRIBUTES = new Set([
+  "disabled",
+  "aria-busy",
+  "aria-label",
+  "title",
+  "data-pending-action",
+  "data-pending-action-key",
+  "data-pending-original-disabled",
+  "data-pending-original-title",
+  "data-pending-original-aria-label"
+]);
+
 function hasClientOwnedStyle(element: Element) {
   return CLIENT_OWNED_STYLE_CLASSES.some((className) => element.classList.contains(className));
 }
@@ -906,6 +1005,17 @@ function getStableRenderKey(node: Node) {
     return `${node.tagName}#${node.id}`;
   }
   const workspacePath = node.getAttribute("data-workspace-path");
+  const workQueueWorkspace = node
+    .closest<HTMLElement>(".agentWorkQueue")
+    ?.getAttribute("data-workspace-path");
+  const workItemId = node.getAttribute("data-work-item-id");
+  if (node.classList.contains("agentWorkCard") && workItemId !== null) {
+    return `agent-work:${workQueueWorkspace ?? ""}:${workItemId}`;
+  }
+  const workLane = node.getAttribute("data-work-lane");
+  if (node.classList.contains("agentWorkLane") && workLane !== null) {
+    return `agent-lane:${workQueueWorkspace ?? ""}:${workLane}`;
+  }
   if (
     workspacePath !== null &&
     (node.tagName === "SECTION" || node.classList.contains("graphPane"))
@@ -947,8 +1057,26 @@ function canReconcileRenderNode(currentNode: Node, nextNode: Node) {
 }
 
 function reconcileRenderAttributes(currentElement: Element, nextElement: Element) {
+  const pendingButton =
+    currentElement instanceof HTMLButtonElement &&
+    nextElement instanceof HTMLButtonElement &&
+    currentElement.dataset.pendingAction === "1"
+      ? currentElement
+      : null;
+  if (pendingButton !== null) {
+    pendingButton.dataset.pendingOriginalDisabled = nextElement.hasAttribute("disabled")
+      ? "1"
+      : "0";
+    pendingButton.dataset.pendingOriginalTitle = nextElement.getAttribute("title") ?? "";
+    pendingButton.dataset.pendingOriginalAriaLabel = nextElement.getAttribute("aria-label") ?? "";
+  }
+  const isPendingOwnedAttribute = (attributeName: string) =>
+    pendingButton !== null && CLIENT_OWNED_PENDING_ATTRIBUTES.has(attributeName);
   for (const attribute of Array.from(currentElement.attributes)) {
-    if (attribute.name === "style" && hasClientOwnedStyle(currentElement)) {
+    if (
+      (attribute.name === "style" && hasClientOwnedStyle(currentElement)) ||
+      isPendingOwnedAttribute(attribute.name)
+    ) {
       continue;
     }
     if (!nextElement.hasAttribute(attribute.name)) {
@@ -956,7 +1084,10 @@ function reconcileRenderAttributes(currentElement: Element, nextElement: Element
     }
   }
   for (const attribute of Array.from(nextElement.attributes)) {
-    if (attribute.name === "style" && hasClientOwnedStyle(currentElement)) {
+    if (
+      (attribute.name === "style" && hasClientOwnedStyle(currentElement)) ||
+      isPendingOwnedAttribute(attribute.name)
+    ) {
       continue;
     }
     if (currentElement.getAttribute(attribute.name) !== attribute.value) {
@@ -1315,12 +1446,20 @@ function applyBeadsRenderUpdate(
   saveInteractionState();
 }
 
-function closeContextMenu() {
+function closeContextMenu(restoreFocus: boolean = false) {
+  const trigger = contextMenuTrigger;
+  if (trigger instanceof HTMLButtonElement) {
+    trigger.setAttribute("aria-expanded", "false");
+  }
   rowContextMenu.classList.remove("open");
   rowContextMenu.style.removeProperty("left");
   rowContextMenu.style.removeProperty("top");
   contextMenuRow = null;
   contextMenuWorkspacePath = "";
+  contextMenuTrigger = null;
+  if (restoreFocus && trigger?.isConnected) {
+    trigger.focus();
+  }
 }
 
 function postAssignStartBead(button: HTMLButtonElement) {
@@ -1336,18 +1475,22 @@ function postAssignStartBead(button: HTMLButtonElement) {
       candidate.dataset.assignStartId === issueId &&
       candidate.dataset.assignStartWorkspace === workspacePath
   );
-  if (
-    !beginClientAction(`start-bead:${workspacePath}:${issueId}`, matchingButtons, "Starting…", 3000)
-  ) {
+  const clientActionId = beginClientAction(
+    `start-bead:${workspacePath}:${issueId}`,
+    matchingButtons,
+    "Starting…"
+  );
+  if (clientActionId === null) {
     return;
   }
   vscode.postMessage({
     command: "assignStartBead",
+    clientActionId,
     issueId,
     workspacePath,
     title: button.dataset.assignStartTitle || "",
     agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent),
-    provider: resolveAgentProviderId(button.dataset.assignStartProvider),
+    provider: normalizeAgentProviderId(button.dataset.assignStartProvider) ?? undefined,
     model: normalizeOptionalDatasetValue(button.dataset.assignStartModel),
     ssot: normalizeOptionalDatasetValue(button.dataset.assignStartSsot),
     worktree: normalizeOptionalDatasetValue(button.dataset.assignStartWorktree)
@@ -1367,8 +1510,16 @@ function openContextMenu(
   workspacePath: string,
   clientX: number,
   clientY: number,
-  focusMenu: boolean = false
+  focusMenu: boolean = false,
+  trigger: HTMLElement | null = null
 ) {
+  if (contextMenuTrigger instanceof HTMLButtonElement) {
+    contextMenuTrigger.setAttribute("aria-expanded", "false");
+  }
+  contextMenuTrigger = trigger;
+  if (contextMenuTrigger instanceof HTMLButtonElement) {
+    contextMenuTrigger.setAttribute("aria-expanded", "true");
+  }
   contextMenuRow = row;
   contextMenuWorkspacePath = workspacePath;
   const item = row ? decodeRowItem(row) : null;
@@ -1452,7 +1603,7 @@ function renderFilterMenu() {
       }
       activeFilters.add(status);
       preset.value = "";
-      setFilterMenuOpen(false);
+      setFilterMenuOpen(false, false, true);
       renderFilterChips();
       applyFilters();
       saveInteractionState();
@@ -1460,11 +1611,18 @@ function renderFilterMenu() {
   }
 }
 
-function setFilterMenuOpen(open: boolean, focusFirst: boolean = false) {
+function setFilterMenuOpen(
+  open: boolean,
+  focusFirst: boolean = false,
+  restoreFocus: boolean = false
+) {
+  const wasOpen = filterMenu.classList.contains("open");
   filterMenu.classList.toggle("open", open);
   addFilter.setAttribute("aria-expanded", open ? "true" : "false");
   if (open && focusFirst) {
     filterMenu.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+  } else if (!open && restoreFocus && wasOpen) {
+    addFilter.focus();
   }
 }
 
@@ -1481,7 +1639,7 @@ function renderFilterChips() {
   chips.innerHTML = Array.from(activeFilters)
     .map(
       (status) =>
-        `<span class="${statusChipClass(status)}">${STATUS_LABELS[status]}<button class="remove" data-remove-filter="${status}" title="Remove">×</button></span>`
+        `<span class="${statusChipClass(status)}">${STATUS_LABELS[status]}<button class="remove" data-remove-filter="${status}" title="Remove ${STATUS_LABELS[status]} filter" aria-label="Remove ${STATUS_LABELS[status]} filter">×</button></span>`
     )
     .join("");
 
@@ -1521,6 +1679,10 @@ function escapeHtml(value: string) {
 }
 
 function renderDetailsMarkup(item: BeadRowItem) {
+  const formatRecordedState = (value: string | undefined) => {
+    const normalized = (value ?? "").trim();
+    return normalized === "" ? "-" : normalized.replace(/[_-]+/g, " ");
+  };
   const commit =
     item.commitHash !== ""
       ? `<button class="commitLink" data-commit="${escapeHtml(item.commitHash)}">${escapeHtml(item.commitHash.substring(0, 8))}</button>`
@@ -1544,15 +1706,27 @@ function renderDetailsMarkup(item: BeadRowItem) {
   const assignee = item.displayAssignee?.trim() || item.assignee || "-";
   const providerId = resolveAgentProviderId(item.provider);
   const provider =
-    item.syntheticKind === "parallel-pr-merge" ? "-" : getAgentProviderDefinition(providerId).label;
+    item.syntheticKind === "parallel-pr-merge"
+      ? "-"
+      : hasExplicitProvider(item)
+        ? getAgentProviderDefinition(providerId).label
+        : "Unassigned";
   const model = item.displayModel?.trim() || (item.model !== "" ? item.model : agent);
   const ssot = item.ssot !== "" ? item.ssot : "-";
   const artifact = item.artifact !== "" ? item.artifact : "-";
+  const providerStatus = formatRecordedState(item.providerStatus);
+  const contentCheckStatus = formatRecordedState(item.contentCheckStatus);
+  const acceptanceStatus = formatRecordedState(item.acceptanceStatus);
+  const reviewStatus = formatRecordedState(item.reviewStatus);
+  const outputPath = item.outputPath?.trim() || "-";
+  const acceptanceCriteria = item.acceptanceCriteria?.trim() || "-";
+  const taskInstructions = item.taskInstructions?.trim() || "-";
   const openableArtifact = normalizeAgentArtifactReference(item.artifact);
+  const explicitCodingProvider = hasExplicitProvider(item) && providerId === "copilot";
   const worktree =
     item.worktree === ""
       ? "-"
-      : providerId === "copilot"
+      : explicitCodingProvider
         ? item.worktree
         : `${item.worktree} (recorded separately; not provider output)`;
   const branch = item.branch !== "" ? item.branch : "-";
@@ -1578,13 +1752,16 @@ function renderDetailsMarkup(item: BeadRowItem) {
     item.readyByBd ? '<span class="detailPill">Ready confirmed</span>' : "",
     provider !== "-" ? `<span class="detailPill">Provider ${escapeHtml(provider)}</span>` : "",
     model !== "-" ? `<span class="detailPill">Model ${escapeHtml(model)}</span>` : "",
+    acceptanceStatus === "pending external validation"
+      ? '<span class="detailPill">External validation pending</span>'
+      : "",
     openableArtifact !== null
       ? `<button class="openAgentArtifact detailPill artifactBadge" type="button" data-artifact-uri="${escapeHtml(openableArtifact)}" title="Open the stored response artifact">Open response</button>`
       : artifact !== "-"
         ? `<span class="detailPill artifactBadge">Artifact recorded</span>`
         : "",
     ssot !== "-" ? `<span class="detailPill">SSOT ${escapeHtml(ssot)}</span>` : "",
-    providerId === "copilot" && item.worktree !== ""
+    explicitCodingProvider && item.worktree !== ""
       ? `<span class="detailPill">WT ${escapeHtml(item.worktree)}</span>`
       : "",
     branch !== "-" ? `<span class="detailPill">Branch ${escapeHtml(branch)}</span>` : "",
@@ -1610,6 +1787,13 @@ function renderDetailsMarkup(item: BeadRowItem) {
     `<div class="key">Agent</div><div>${escapeHtml(agent)}</div>` +
     `<div class="key">AI Provider</div><div>${escapeHtml(provider)}</div>` +
     `<div class="key">AI Model</div><div>${escapeHtml(model)}</div>` +
+    `<div class="key">Provider state</div><div>${escapeHtml(providerStatus)}</div>` +
+    `<div class="key">Model content check</div><div>${escapeHtml(contentCheckStatus)}</div>` +
+    `<div class="key">External validation</div><div>${escapeHtml(acceptanceStatus)}</div>` +
+    `<div class="key">Human review</div><div>${escapeHtml(reviewStatus)}</div>` +
+    `<div class="key">Expected output</div><div>${escapeHtml(outputPath)}</div>` +
+    `<div class="key">Acceptance</div><div>${escapeHtml(acceptanceCriteria)}</div>` +
+    `<div class="key">Task instructions</div><div>${escapeHtml(taskInstructions)}</div>` +
     `<div class="key">Response Artifact</div><div>${escapeHtml(artifact)}</div>` +
     `<div class="key">SSOT / Context</div><div>${escapeHtml(ssot)}</div>` +
     `<div class="key">Coding Worktree</div><div>${escapeHtml(worktree)}</div>` +
@@ -1712,6 +1896,7 @@ function getVisibleBeadRows(scope: ParentNode = document) {
 
 function getRowVisibilityState(row: BeadRow) {
   return {
+    workspacePath: row.dataset.workspacePath || "",
     id: row.dataset.id || "",
     epicId: row.dataset.epicId || "",
     status: (row.dataset.status || "") as StatusFilter
@@ -1721,28 +1906,31 @@ function getRowVisibilityState(row: BeadRow) {
 function getRowsById(rows: BeadRow[]) {
   const rowsById = new Map<string, BeadRow>();
   for (const row of rows) {
+    const workspacePath = row.dataset.workspacePath || "";
     const id = row.dataset.id || "";
-    if (id !== "") {
-      rowsById.set(id, row);
+    if (workspacePath !== "" && id !== "") {
+      rowsById.set(getScopedBeadKey(workspacePath, id), row);
     }
   }
   return rowsById;
 }
 
 function rowHasCollapsedAncestor(row: BeadRow, rowsById: Map<string, BeadRow>) {
+  const workspacePath = row.dataset.workspacePath || "";
   const visited = new Set<string>();
   let parentId = row.dataset.parentId || "";
 
-  while (parentId !== "") {
-    if (visited.has(parentId)) {
+  while (workspacePath !== "" && parentId !== "") {
+    const parentKey = getScopedBeadKey(workspacePath, parentId);
+    if (visited.has(parentKey)) {
       return false;
     }
-    visited.add(parentId);
-    if (collapsedIds.has(parentId)) {
+    visited.add(parentKey);
+    if (collapsedIds.has(parentKey)) {
       return true;
     }
 
-    const parentRow = rowsById.get(parentId);
+    const parentRow = rowsById.get(parentKey);
     if (parentRow === undefined) {
       return false;
     }
@@ -1750,6 +1938,24 @@ function rowHasCollapsedAncestor(row: BeadRow, rowsById: Map<string, BeadRow>) {
   }
 
   return false;
+}
+
+function updateFilterSummary(totalCount: number, matchingCount: number, tableVisibleCount: number) {
+  const tableHasCollapsedRows = activeViewMode === "table" && tableVisibleCount !== matchingCount;
+  stats.textContent = tableHasCollapsedRows
+    ? `${tableVisibleCount} shown · ${matchingCount} match filters · ${totalCount} total`
+    : `${matchingCount} / ${totalCount} tasks match filters`;
+  stats.title = `${totalCount} total tasks`;
+  filterEmptyState.hidden = totalCount === 0 || matchingCount !== 0;
+}
+
+function refreshFilterSummary() {
+  const rows = getVisibleBeadRows();
+  const matchingCount = rows.filter((row) =>
+    activeFilters.has((row.dataset.status || "other") as StatusFilter)
+  ).length;
+  const tableVisibleCount = rows.filter((row) => row.style.display !== "none").length;
+  updateFilterSummary(rows.length, matchingCount, tableVisibleCount);
 }
 
 function refreshRowVisibility(options: { refreshGraph?: boolean; renderHierarchy?: boolean } = {}) {
@@ -1773,25 +1979,36 @@ function refreshRowVisibility(options: { refreshGraph?: boolean; renderHierarchy
       visibleCount += 1;
     }
   }
-  if (selectedRow !== null && selectedRow.style.display === "none") {
+  if (
+    selectedRow !== null &&
+    !activeFilters.has((selectedRow.dataset.status || "other") as StatusFilter)
+  ) {
     clearSelectedRow();
+  } else if (
+    selectedRow !== null &&
+    activeViewMode === "table" &&
+    selectedRow.style.display === "none"
+  ) {
+    setRowDetailsExpanded(selectedRow, false);
+    removeExpandedDetails();
   }
   if (contextMenuRow !== null && contextMenuRow.style.display === "none") {
     closeContextMenu();
   }
-  stats.textContent =
-    matchingCount === rows.length
-      ? `${visibleCount} / ${rows.length} beads shown`
-      : `${visibleCount} / ${matchingCount} matching beads shown`;
-  stats.title = `${rows.length} total beads`;
-  const nextGraphIds = new Set(
-    rows.filter((row) => row.style.display !== "none").map((row) => row.dataset.id || "")
+  updateFilterSummary(rows.length, matchingCount, visibleCount);
+  const nextGraphIdsByWorkspace = collectStatusVisibleGraphIds(
+    rows.map((row) => ({
+      workspacePath: row.dataset.workspacePath || "",
+      issueId: row.dataset.id || "",
+      status: row.dataset.status || "other"
+    })),
+    activeFilters
   );
   const revealFilteredGraphs =
     activeViewMode === "graph"
-      ? getGraphWorkspaceKeysNeedingReveal(nextGraphIds)
+      ? getGraphWorkspaceKeysNeedingReveal(nextGraphIdsByWorkspace)
       : new Set<string>();
-  refreshGraphNodeVisibility();
+  refreshGraphNodeVisibility(nextGraphIdsByWorkspace);
   refreshAgentWorkQueueVisibility();
   refreshParallelStartActions();
   if (shouldRenderHierarchy) {
@@ -1835,6 +2052,7 @@ function applyViewMode(mode: ViewMode) {
           issueId: selectedRow.dataset.id || ""
         };
   updateViewModeControls(mode);
+  refreshFilterSummary();
   if ((mode === "graph" || mode === "control") && selectedIssue !== null) {
     const modeRootSelector = mode === "graph" ? ".graphPane" : ".agentWorkQueue";
     const activeDetails = document.querySelector(`${modeRootSelector} .graphSelectedDetails`);
@@ -1864,9 +2082,11 @@ function isCollapsibleRow(row: BeadRow) {
 }
 
 function updateCollapseButton(row: BeadRow) {
+  const workspacePath = row.dataset.workspacePath || "";
   const id = row.dataset.id || "";
+  const collapseKey = getScopedBeadKey(workspacePath, id);
   const button = row.querySelector<HTMLButtonElement>(".collapseToggle");
-  const collapsed = id !== "" && collapsedIds.has(id);
+  const collapsed = workspacePath !== "" && id !== "" && collapsedIds.has(collapseKey);
   row.classList.toggle("collapsedParent", collapsed);
   if (button !== null) {
     button.setAttribute("aria-expanded", collapsed ? "false" : "true");
@@ -1874,15 +2094,17 @@ function updateCollapseButton(row: BeadRow) {
 }
 
 function toggleRowCollapse(row: BeadRow) {
+  const workspacePath = row.dataset.workspacePath || "";
   const id = row.dataset.id || "";
-  if (id === "" || !isCollapsibleRow(row)) {
+  if (workspacePath === "" || id === "" || !isCollapsibleRow(row)) {
     return false;
   }
 
-  if (collapsedIds.has(id)) {
-    collapsedIds.delete(id);
+  const collapseKey = getScopedBeadKey(workspacePath, id);
+  if (collapsedIds.has(collapseKey)) {
+    collapsedIds.delete(collapseKey);
   } else {
-    collapsedIds.add(id);
+    collapsedIds.add(collapseKey);
   }
   updateCollapseButton(row);
   refreshRowVisibility();
@@ -1906,15 +2128,17 @@ function toggleEpicSubprojects(row: BeadRow) {
     return false;
   }
 
+  const workspacePath = row.dataset.workspacePath || "";
   const epicId = row.dataset.id || "";
-  if (epicId === "") {
+  if (workspacePath === "" || epicId === "") {
     return false;
   }
 
-  if (collapsedEpicIds.has(epicId)) {
-    collapsedEpicIds.delete(epicId);
+  const epicKey = getScopedBeadKey(workspacePath, epicId);
+  if (collapsedEpicIds.has(epicKey)) {
+    collapsedEpicIds.delete(epicKey);
   } else {
-    collapsedEpicIds.add(epicId);
+    collapsedEpicIds.add(epicKey);
   }
 
   if (
@@ -2019,6 +2243,18 @@ function sortRowsAndUpdateIcons() {
     const key = icon.dataset.sortKey as SortKey | undefined;
     icon.textContent = key === sortState.key ? (sortState.desc ? "▼" : "▲") : " ";
   }
+  for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".sortToggle"))) {
+    const key = (button.dataset.sortKey as SortKey | undefined) || "updated";
+    const label = key === "type" ? "type" : key === "priority" ? "priority" : "updated time";
+    const active = key === sortState.key;
+    const direction = sortState.desc ? "descending" : "ascending";
+    button.title = active ? `Sort by ${label}; currently ${direction}` : `Sort by ${label}`;
+    button.setAttribute(
+      "aria-label",
+      active ? `Sort by ${label}, currently ${direction}` : `Sort by ${label}`
+    );
+    button.closest("th")?.setAttribute("aria-sort", active ? direction : "none");
+  }
 }
 
 function applySort() {
@@ -2100,17 +2336,15 @@ function renderHierarchyOverlays() {
   }
 }
 
-function refreshGraphNodeVisibility() {
+function refreshGraphNodeVisibility(
+  visibleIdsByWorkspace: ReadonlyMap<string, ReadonlySet<string>>
+) {
   for (const section of Array.from(document.querySelectorAll<BeadSection>("section"))) {
-    const visibleRowIds = new Set(
-      Array.from(section.querySelectorAll<BeadRow>("tbody .beadRow"))
-        .filter((row) => row.style.display !== "none")
-        .map((row) => row.dataset.id || "")
-        .filter((id) => id !== "")
-    );
+    const workspacePath = section.dataset.workspacePath || "";
+    const visibleGraphIds = visibleIdsByWorkspace.get(workspacePath) ?? new Set<string>();
 
     for (const node of Array.from(section.querySelectorAll<HTMLElement>(".graphNode"))) {
-      node.style.display = visibleRowIds.has(node.dataset.graphId || "") ? "" : "none";
+      node.style.display = visibleGraphIds.has(node.dataset.graphId || "") ? "" : "none";
     }
   }
 }
@@ -2155,7 +2389,7 @@ function refreshParallelStartActions() {
     }
     const visibleIds = new Set(
       Array.from(section.querySelectorAll<BeadRow>("tbody .beadRow"))
-        .filter((row) => row.style.display !== "none")
+        .filter((row) => activeFilters.has((row.dataset.status || "other") as StatusFilter))
         .map((row) => row.dataset.id || "")
         .filter((id) => id !== "")
     );
@@ -2400,8 +2634,7 @@ function refreshGraphDerivedState(pane: HTMLElement) {
   );
   const issueStack = pane.querySelector<HTMLElement>(".graphIssueStack");
   if (issueStack !== null) {
-    const hasSelectedDetails = issueStack.querySelector(".graphSelectedDetails") !== null;
-    issueStack.hidden = warningCount + riskCount === 0 && !hasSelectedDetails;
+    issueStack.hidden = warningCount + riskCount === 0;
   }
 }
 
@@ -2554,7 +2787,9 @@ function getGraphRectBounds(rects: ReturnType<typeof getGraphNodeRect>[]) {
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
-function getGraphWorkspaceKeysNeedingReveal(ids: ReadonlySet<string>) {
+function getGraphWorkspaceKeysNeedingReveal(
+  idsByWorkspace: ReadonlyMap<string, ReadonlySet<string>>
+) {
   const workspaceKeys = new Set<string>();
   for (const pane of Array.from(document.querySelectorAll<HTMLElement>(".graphPane"))) {
     const scroller = getGraphScroller(pane);
@@ -2563,6 +2798,8 @@ function getGraphWorkspaceKeysNeedingReveal(ids: ReadonlySet<string>) {
     }
     const transform = getGraphTransform(pane);
     const viewport = getGraphViewportSize(scroller);
+    const workspaceKey = getGraphWorkspaceKey(pane);
+    const ids = idsByWorkspace.get(workspaceKey) ?? new Set<string>();
     const matchingNodes = Array.from(
       pane.querySelectorAll<HTMLElement>(".graphNode[data-graph-id]")
     ).filter((node) => ids.has(node.dataset.graphId || ""));
@@ -2583,13 +2820,13 @@ function getGraphWorkspaceKeysNeedingReveal(ids: ReadonlySet<string>) {
         );
       })
     ) {
-      workspaceKeys.add(getGraphWorkspaceKey(pane));
+      workspaceKeys.add(workspaceKey);
     }
   }
   return workspaceKeys;
 }
 
-function renderGraphMiniMap(pane: HTMLElement) {
+function rebuildGraphMiniMapGeometry(pane: HTMLElement) {
   const miniMap = pane.querySelector<SVGSVGElement>(".graphMiniMap");
   const scroller = getGraphScroller(pane);
   const content = getGraphContent(pane);
@@ -2663,23 +2900,60 @@ function renderGraphMiniMap(pane: HTMLElement) {
   }
   fragment.append(nodeGroup);
 
+  const viewportRect = document.createElementNS(namespace, "rect");
+  viewportRect.setAttribute("class", "graphMiniMapViewport");
+  fragment.append(viewportRect);
+
+  miniMap.dataset.graphWidth = String(width);
+  miniMap.dataset.graphHeight = String(height);
+  miniMap.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  miniMap.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  miniMap.replaceChildren(fragment);
+  pendingGraphMiniMapViewportPanes.delete(pane);
+  updateGraphMiniMapViewport(pane);
+}
+
+function updateGraphMiniMapViewport(pane: HTMLElement) {
+  const miniMap = pane.querySelector<SVGSVGElement>(".graphMiniMap");
+  const viewportRect = miniMap?.querySelector<SVGRectElement>(".graphMiniMapViewport");
+  const scroller = getGraphScroller(pane);
+  if (
+    miniMap === null ||
+    viewportRect === null ||
+    viewportRect === undefined ||
+    scroller === null
+  ) {
+    return;
+  }
+  const width = Math.max(1, Number.parseFloat(miniMap.dataset.graphWidth || "1"));
+  const height = Math.max(1, Number.parseFloat(miniMap.dataset.graphHeight || "1"));
   const transform = getGraphTransform(pane);
   const viewport = getGraphViewportSize(scroller);
   const viewportLeft = Math.max(0, -transform.pan.x / transform.zoom);
   const viewportTop = Math.max(0, -transform.pan.y / transform.zoom);
   const viewportRight = Math.min(width, (viewport.width - transform.pan.x) / transform.zoom);
   const viewportBottom = Math.min(height, (viewport.height - transform.pan.y) / transform.zoom);
-  const viewportRect = document.createElementNS(namespace, "rect");
   viewportRect.setAttribute("x", String(viewportLeft));
   viewportRect.setAttribute("y", String(viewportTop));
   viewportRect.setAttribute("width", String(Math.max(0, viewportRight - viewportLeft)));
   viewportRect.setAttribute("height", String(Math.max(0, viewportBottom - viewportTop)));
-  viewportRect.setAttribute("class", "graphMiniMapViewport");
-  fragment.append(viewportRect);
+}
 
-  miniMap.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  miniMap.setAttribute("preserveAspectRatio", "xMidYMid meet");
-  miniMap.replaceChildren(fragment);
+function scheduleGraphMiniMapViewportUpdate(pane: HTMLElement) {
+  pendingGraphMiniMapViewportPanes.add(pane);
+  if (graphMiniMapViewportFrame !== null) {
+    return;
+  }
+  graphMiniMapViewportFrame = window.requestAnimationFrame(() => {
+    graphMiniMapViewportFrame = null;
+    const panes = Array.from(pendingGraphMiniMapViewportPanes);
+    pendingGraphMiniMapViewportPanes.clear();
+    for (const pendingPane of panes) {
+      if (pendingPane.isConnected) {
+        updateGraphMiniMapViewport(pendingPane);
+      }
+    }
+  });
 }
 
 function saveGraphTransforms() {
@@ -2710,9 +2984,9 @@ function clampGraphPanForPane(pane: HTMLElement, pan: GraphPanState, zoom: numbe
   }
 
   const viewport = getGraphViewportSize(scroller);
-  const requiredSize = getGraphRequiredSize(pane, getGraphBaseSize(canvas));
-  const scaledWidth = requiredSize.width * zoom;
-  const scaledHeight = requiredSize.height * zoom;
+  const graphSize = getGraphBaseSize(canvas);
+  const scaledWidth = graphSize.width * zoom;
+  const scaledHeight = graphSize.height * zoom;
   return clampGraphPanForVisibility(
     pan,
     viewport,
@@ -2743,7 +3017,7 @@ function applyGraphZoomToPane(pane: HTMLElement) {
     return;
   }
 
-  const base = getGraphRequiredSize(pane, getGraphBaseSize(canvas));
+  const base = getGraphBaseSize(canvas);
   const viewport = getGraphViewportSize(scroller);
   const transform = getGraphTransform(pane);
   content.style.width = `${base.width}px`;
@@ -2757,7 +3031,7 @@ function applyGraphZoomToPane(pane: HTMLElement) {
   if (zoomValue !== null) {
     zoomValue.textContent = `${Math.round(transform.zoom * 100)}%`;
   }
-  renderGraphMiniMap(pane);
+  scheduleGraphMiniMapViewportUpdate(pane);
 }
 
 function applyGraphZoomToAll() {
@@ -3386,7 +3660,7 @@ function renderDependencyGraphOverlays() {
       paths += `<path class="dependencyPath${boundaryClass}${criticalClass}${cycleClass}" data-from-id="${edge.dataset.fromId || ""}" data-to-id="${edge.dataset.toId || ""}" marker-end="url(#${arrowId})" d="${d}" />`;
     }
     overlay.innerHTML = markerDefs + parentPaths + paths;
-    renderGraphMiniMap(pane);
+    rebuildGraphMiniMapGeometry(pane);
   }
 }
 
@@ -3450,6 +3724,7 @@ previewPlanDraft.addEventListener("click", () => {
   currentPlanPreview = planDraftController.preview();
   saveWebviewState({ planDraftText: planDraftText.value });
   renderCurrentPlanPreview();
+  planDraftPreview.focus();
 });
 planDraftText.addEventListener("input", () => {
   planDraftController.setText(planDraftText.value);
@@ -3483,6 +3758,7 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
       currentPlanPreview = planDraftController.preview();
       saveWebviewState({ planDraftText: message.draftText });
       renderCurrentPlanPreview();
+      planDraftPreview.focus();
       if (message.validationErrorCount > 0) {
         document.querySelector<HTMLDetailsElement>(".planAdvanced")?.setAttribute("open", "");
         setPlanGenerationStatus(
@@ -3507,11 +3783,20 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
     return;
   }
 
+  if (message.command === "actionSettled") {
+    settleClientAction(message.clientActionId);
+    return;
+  }
+
   saveWebviewState({ parallelExecutionResult: message });
   renderParallelExecutionResult(message);
 });
 clearFilters.addEventListener("click", () => {
   applyPreset("default");
+});
+resetEmptyFilters.addEventListener("click", () => {
+  applyPreset("default");
+  preset.focus();
 });
 preset.addEventListener("change", () => {
   applyPreset(preset.value || "default");
@@ -3548,8 +3833,8 @@ document.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    setFilterMenuOpen(false);
-    closeContextMenu();
+    setFilterMenuOpen(false, false, true);
+    closeContextMenu(true);
   }
 });
 document.addEventListener("contextmenu", (event) => {
@@ -3574,6 +3859,27 @@ document.addEventListener("contextmenu", (event) => {
     event.clientY
   );
 });
+function postCreateBead(workspacePath: string, trigger?: HTMLButtonElement) {
+  if (workspacePath === "") {
+    return;
+  }
+  const matchingButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>(".workspaceCreateBead")
+  ).filter((button) => button.dataset.createWorkspace === workspacePath);
+  if (trigger !== undefined && !matchingButtons.includes(trigger)) {
+    matchingButtons.push(trigger);
+  }
+  const clientActionId = beginClientAction(
+    `create-bead:${workspacePath}`,
+    matchingButtons,
+    "Creating…"
+  );
+  if (clientActionId === null) {
+    return;
+  }
+  vscode.postMessage({ command: "createBead", workspacePath, clientActionId });
+}
+
 createBeadAction.addEventListener("click", () => {
   const workspacePath = contextMenuWorkspacePath;
   const disabled = createBeadAction.disabled;
@@ -3581,7 +3887,7 @@ createBeadAction.addEventListener("click", () => {
   if (disabled || workspacePath === "") {
     return;
   }
-  vscode.postMessage({ command: "createBead", workspacePath });
+  postCreateBead(workspacePath, createBeadAction);
 });
 closeBeadAction.addEventListener("click", () => {
   if (closeBeadAction.disabled || contextMenuRow === null) {
@@ -3684,23 +3990,43 @@ function bindGraphPanes() {
   }
 }
 
-queryElement<HTMLButtonElement>("#refresh").addEventListener("click", () => {
-  vscode.postMessage({ command: "refresh" });
+refreshButton.addEventListener("click", () => {
+  const clientActionId = beginClientAction("refresh-beads", [refreshButton], "Refreshing…");
+  if (clientActionId === null) {
+    return;
+  }
+  vscode.postMessage({ command: "refresh", clientActionId });
 });
 syncBeadsButton.addEventListener("click", () => {
   if (!syncAvailable || syncBeadsButton.disabled) {
     return;
   }
-  if (!beginClientAction("sync-all-beads", [syncBeadsButton], "Syncing…", 3000)) {
+  const clientActionId = beginClientAction("sync-all-beads", [syncBeadsButton], "Syncing…");
+  if (clientActionId === null) {
     return;
   }
-  vscode.postMessage({ command: "syncAllBeads" });
+  vscode.postMessage({ command: "syncAllBeads", clientActionId });
 });
 queryElement<HTMLButtonElement>("#openGitGraph").addEventListener("click", () => {
   vscode.postMessage({ command: "openGitGraph" });
 });
 function bindDynamicContent() {
   bindGraphPanes();
+  for (const button of Array.from(
+    document.querySelectorAll<HTMLButtonElement>(".workspaceCreateBead")
+  )) {
+    if (dynamicallyBoundElements.has(button)) {
+      continue;
+    }
+    dynamicallyBoundElements.add(button);
+    button.addEventListener("click", () => {
+      const workspacePath = button.dataset.createWorkspace || "";
+      if (button.disabled || workspacePath === "") {
+        return;
+      }
+      postCreateBead(workspacePath, button);
+    });
+  }
   for (const button of Array.from(
     document.querySelectorAll<HTMLButtonElement>("button[data-sync-workspace]")
   )) {
@@ -3713,10 +4039,11 @@ function bindDynamicContent() {
       if (button.disabled || workspacePath === "") {
         return;
       }
-      if (!beginClientAction(`sync-beads:${workspacePath}`, [button], "Syncing…", 3000)) {
+      const clientActionId = beginClientAction(`sync-beads:${workspacePath}`, [button], "Syncing…");
+      if (clientActionId === null) {
         return;
       }
-      vscode.postMessage({ command: "syncBeads", workspacePath });
+      vscode.postMessage({ command: "syncBeads", workspacePath, clientActionId });
     });
   }
   for (const button of Array.from(
@@ -3748,11 +4075,17 @@ function bindDynamicContent() {
       if (button.disabled || workspacePath === "" || items === null || items.length < 2) {
         return;
       }
-      if (!beginClientAction(`start-parallel:${workspacePath}`, [button], "Starting…", 3000)) {
+      const clientActionId = beginClientAction(
+        `start-parallel:${workspacePath}`,
+        [button],
+        "Starting…"
+      );
+      if (clientActionId === null) {
         return;
       }
       vscode.postMessage({
         command: "startParallelBeads",
+        clientActionId,
         requestId: createRequestId(),
         workspacePath,
         items,
@@ -3790,18 +4123,17 @@ function bindDynamicContent() {
           candidate.dataset.mergeId === issueId &&
           candidate.dataset.mergeWorkspace === workspacePath
       );
-      if (
-        !beginClientAction(
-          `merge-parallel:${workspacePath}:${issueId}`,
-          matchingButtons,
-          "Merging…",
-          3000
-        )
-      ) {
+      const clientActionId = beginClientAction(
+        `merge-parallel:${workspacePath}:${issueId}`,
+        matchingButtons,
+        "Merging…"
+      );
+      if (clientActionId === null) {
         return;
       }
       vscode.postMessage({
         command: "mergeParallelPrs",
+        clientActionId,
         issueId,
         workspacePath,
         title: button.dataset.mergeTitle || "",
@@ -3827,7 +4159,21 @@ function bindDynamicContent() {
     dynamicallyBoundElements.add(row);
     const toggleButton = row.querySelector<HTMLButtonElement>(".collapseToggle");
     const detailsButton = row.querySelector<HTMLButtonElement>(".beadDetailsButton");
+    const actionsButton = row.querySelector<HTMLButtonElement>(".rowActionsButton");
 
+    actionsButton?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      clearRowClickTimer();
+      const rect = actionsButton.getBoundingClientRect();
+      openContextMenu(
+        row,
+        row.dataset.workspacePath || "",
+        rect.left,
+        rect.bottom + 4,
+        true,
+        actionsButton
+      );
+    });
     toggleButton?.addEventListener("click", (event) => {
       event.stopPropagation();
       toggleRowCollapse(row);
@@ -3879,7 +4225,8 @@ function bindDynamicContent() {
         row.dataset.workspacePath || "",
         rect.left + Math.min(24, rect.width / 2),
         rect.top + Math.min(24, rect.height / 2),
-        true
+        true,
+        row
       );
     });
   }

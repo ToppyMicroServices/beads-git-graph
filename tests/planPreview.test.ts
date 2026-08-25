@@ -18,10 +18,12 @@ const draft: PlanDraft = {
     {
       id: "plan-b",
       title: "Import",
+      instructions: "Import the reviewed plan without duplicating tasks.",
       priority: "P2",
       acceptanceCriteria: ["Dependency is visible"],
       dependencyIds: ["plan-a"],
       ssot: ["docs/plan.md"],
+      provider: "openai",
       model: "small-model"
     }
   ]
@@ -37,10 +39,17 @@ describe("Plan Draft preview", () => {
 
     expect(html).toContain("Ship &lt;safe&gt; &amp; useful planning");
     expect(html).not.toContain("<safe>");
-    expect(html).toContain("Critical Path");
+    expect(html).toContain("Longest dependency chain");
     expect(html).toContain("plan-a → plan-b");
-    expect(html).toContain("Requested model transitions");
-    expect(html).toContain("None");
+    expect(html).toContain("Dependency flow");
+    expect(html).toContain("Start → plan-a");
+    expect(html).toContain("plan-b → End");
+    expect(html).toContain("Requested provider/model transitions");
+    expect(html).not.toContain("Requested model transitions");
+    expect(html).toContain("Provider handoff review needed");
+    expect(html).toContain("OpenAI API");
+    expect(html).toContain("Choose Ollama or GitHub Copilot");
+    expect(html).toContain("Import the reviewed plan without duplicating tasks.");
     expect(html).toContain("Depends on:");
     expect(html).toContain("Unsafe &lt;text&gt; is escaped");
     expect(html).toContain("small-model");

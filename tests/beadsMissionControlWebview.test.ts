@@ -356,12 +356,10 @@ describe("Agent Project Manager webview", () => {
     expect(encodedTargets).toBeDefined();
     const targets = JSON.parse(decodeURIComponent(encodedTargets ?? "[]")) as Array<{
       issueId: string;
-      provider: string;
+      provider?: string;
     }>;
-    expect(targets).toMatchObject([
-      { issueId: "ready-1", provider: "copilot" },
-      { issueId: "ready-explicit", provider: "copilot" }
-    ]);
+    expect(targets.map((target) => target.issueId)).toEqual(["ready-1", "ready-explicit"]);
+    expect(targets.map((target) => target.provider)).toEqual([undefined, undefined]);
 
     const waitingCard = getAgentCard(html, "waiting-1");
     expect(waitingCard).toContain("Status &quot;waiting&quot; is not recognized");
@@ -490,6 +488,54 @@ describe("Agent Project Manager webview", () => {
     );
   });
 
+  it("shows applied direct-provider edits as external validation pending", () => {
+    const workspacePath = "/tmp/mission-control";
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      {
+        groups: [
+          {
+            workspace: "Mission Control",
+            workspacePath,
+            items: [
+              makeBead({
+                id: "edit-applied",
+                status: "in_progress",
+                provider: "ollama",
+                providerStatus: "edit_applied",
+                contentCheckStatus: "model_passed",
+                acceptanceStatus: "pending_external_validation",
+                reviewStatus: "human_approved",
+                outputPath: "outputs/report.md",
+                acceptanceCriteria: "The report passes deterministic checks.",
+                taskInstructions: "Write the report and record evidence.",
+                artifact: "beads-response:87654321-4321-4321-8321-cba987654321"
+              })
+            ]
+          }
+        ],
+        emptyWorkspaces: [],
+        unavailableWorkspaces: [],
+        bdExecutableStatus: { available: true, command: "bd", message: null },
+        ...supportedCapabilities("Mission Control", workspacePath),
+        errors: [],
+        warnings: []
+      }
+    );
+
+    expect(html).toContain("Validation pending");
+    expect(html).toContain(
+      "The workspace edit was applied after human review; external validation is still pending"
+    );
+    expect(html).not.toContain(
+      "A direct-provider response artifact is ready for review; no live agent is implied"
+    );
+  });
+
   it("does not offer Start Parallel for a single ready task", () => {
     const result: BeadLoadResult = {
       groups: [
@@ -554,6 +600,46 @@ describe("Agent Project Manager webview", () => {
     expect(html).toContain(
       `<section data-workspace-path="${workspacePath}" data-write-available="1" data-write-unavailable-reason="">`
     );
+    const createButton = getTagContaining(
+      html,
+      "button",
+      `data-create-workspace="${workspacePath}"`
+    );
+    expect(createButton).not.toContain(" disabled");
+    expect(html).toContain(">+ Create task</button>");
+    expect(html).toContain("No tasks exist yet.");
+  });
+
+  it("shows inferred provider defaults as unassigned until the user chooses one", () => {
+    const workspacePath = "/tmp/mission-control";
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      {
+        groups: [
+          {
+            workspace: "Mission Control",
+            workspacePath,
+            items: [makeBead({ id: "unassigned", readyByBd: true })]
+          }
+        ],
+        emptyWorkspaces: [],
+        unavailableWorkspaces: [],
+        bdExecutableStatus: { available: true, command: "bd", message: null },
+        ...supportedCapabilities("Mission Control", workspacePath),
+        errors: [],
+        warnings: []
+      }
+    );
+
+    expect(getAgentCard(html, "unassigned")).toContain("Provider Unassigned");
+    expect(getTagContaining(html, "button", 'data-assign-start-id="unassigned"')).toContain(
+      'data-assign-start-provider=""'
+    );
+    expect(html).not.toContain("Provider GitHub Copilot");
   });
 
   it("puts recorded work and bd-ready tasks first in the Graph without pulsing review work", () => {

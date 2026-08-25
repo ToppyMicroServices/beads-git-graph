@@ -48,34 +48,39 @@ function getObservedOutput(result: BeadsCapabilityCommandResult) {
     .join("\n");
 }
 
-function parseRemoteMigrationGate(stdout: string) {
-  try {
-    const parsed = JSON.parse(stdout) as {
-      remote_migrate_gate?: {
-        current_version?: unknown;
-        latest_version?: unknown;
-        human_decision_required?: unknown;
-      };
-    };
-    const gate = parsed.remote_migrate_gate;
-    if (gate?.human_decision_required !== true) {
-      return null;
+function parseRemoteMigrationGate(...outputs: string[]) {
+  const candidates = outputs.flatMap((output) => [output.trim(), ...output.split(/\r?\n/)]);
+  for (const candidate of candidates) {
+    if (candidate === "") {
+      continue;
     }
-    const currentVersion =
-      typeof gate.current_version === "number" ? String(gate.current_version) : "unknown";
-    const latestVersion =
-      typeof gate.latest_version === "number" ? String(gate.latest_version) : "unknown";
-    return `Beads schema v${currentVersion} is incompatible with v${latestVersion}; migration coordination is required.`;
-  } catch {
-    return null;
+    try {
+      const parsed = JSON.parse(candidate) as {
+        remote_migrate_gate?: {
+          current_version?: unknown;
+          latest_version?: unknown;
+          human_decision_required?: unknown;
+        };
+      };
+      const gate = parsed.remote_migrate_gate;
+      if (gate?.human_decision_required !== true) {
+        continue;
+      }
+      const currentVersion =
+        typeof gate.current_version === "number" ? String(gate.current_version) : "unknown";
+      const latestVersion =
+        typeof gate.latest_version === "number" ? String(gate.latest_version) : "unknown";
+      return `Beads schema v${currentVersion} is incompatible with v${latestVersion}; migration coordination is required.`;
+    } catch {}
   }
+  return null;
 }
 
 function classifyFailedProbe(
   result: BeadsCapabilityCommandResult
 ): Exclude<BeadsWriteCapability, { state: "supported" }> {
   const observed = getObservedOutput(result);
-  const migrationGateReason = parseRemoteMigrationGate(result.stdout);
+  const migrationGateReason = parseRemoteMigrationGate(result.stdout, result.stderr);
   if (
     migrationGateReason !== null ||
     /schema (?:migration|mismatch|skew)|pending schema|remote-backed database/i.test(observed)
@@ -84,7 +89,8 @@ function classifyFailedProbe(
       supported: false,
       state: "schema-mismatch",
       reason:
-        migrationGateReason ?? (observed || "The Beads schema is incompatible with the active CLI.")
+        migrationGateReason ??
+        "The Beads schema is incompatible with the active CLI; migration coordination may be required."
     };
   }
   if (
@@ -95,13 +101,14 @@ function classifyFailedProbe(
     return {
       supported: false,
       state: "unsupported-command",
-      reason: observed || "The active Beads CLI does not support the required command."
+      reason:
+        "The active Beads CLI does not support one or more commands or options required by this extension."
     };
   }
   return {
     supported: false,
     state: "probe-failed",
-    reason: observed || `The Beads capability probe exited with code ${result.exitCode}.`
+    reason: `The Beads capability probe could not confirm a compatible CLI (exit code ${result.exitCode}).`
   };
 }
 
@@ -121,14 +128,11 @@ export async function probeBeadsWriteCapability(
   let createProbe: BeadsCapabilityCommandResult;
   try {
     createProbe = await run(PLAN_CREATE_CAPABILITY_PROBE_ARGS);
-  } catch (error) {
+  } catch {
     return {
       supported: false,
       state: "probe-failed",
-      reason:
-        error instanceof Error
-          ? error.message
-          : "The Beads create capability probe could not be executed."
+      reason: "The Beads create capability probe could not be executed."
     };
   }
   if (createProbe.exitCode !== 0) {
@@ -138,14 +142,11 @@ export async function probeBeadsWriteCapability(
   let updateProbe: BeadsCapabilityCommandResult;
   try {
     updateProbe = await run(PLAN_UPDATE_CAPABILITY_PROBE_ARGS);
-  } catch (error) {
+  } catch {
     return {
       supported: false,
       state: "probe-failed",
-      reason:
-        error instanceof Error
-          ? error.message
-          : "The Beads update capability probe could not be executed."
+      reason: "The Beads update capability probe could not be executed."
     };
   }
   if (updateProbe.exitCode !== 0) {
@@ -163,14 +164,11 @@ export async function probeBeadsWriteCapability(
   let dependencyProbe: BeadsCapabilityCommandResult;
   try {
     dependencyProbe = await run(PLAN_DEPENDENCY_CAPABILITY_PROBE_ARGS);
-  } catch (error) {
+  } catch {
     return {
       supported: false,
       state: "probe-failed",
-      reason:
-        error instanceof Error
-          ? error.message
-          : "The Beads dependency capability probe could not be executed."
+      reason: "The Beads dependency capability probe could not be executed."
     };
   }
   if (dependencyProbe.exitCode !== 0) {
@@ -200,14 +198,11 @@ export async function probeBeadsAgentWriteCapability(
   let dryRunProbe: BeadsCapabilityCommandResult;
   try {
     dryRunProbe = await run(PLAN_CREATE_CAPABILITY_PROBE_ARGS);
-  } catch (error) {
+  } catch {
     return {
       supported: false,
       state: "probe-failed",
-      reason:
-        error instanceof Error
-          ? error.message
-          : "The Beads write capability probe could not be executed."
+      reason: "The Beads write capability probe could not be executed."
     };
   }
   if (dryRunProbe.exitCode !== 0) {
@@ -217,14 +212,11 @@ export async function probeBeadsAgentWriteCapability(
   let updateProbe: BeadsCapabilityCommandResult;
   try {
     updateProbe = await run(AGENT_UPDATE_CAPABILITY_PROBE_ARGS);
-  } catch (error) {
+  } catch {
     return {
       supported: false,
       state: "probe-failed",
-      reason:
-        error instanceof Error
-          ? error.message
-          : "The Beads update capability probe could not be executed."
+      reason: "The Beads update capability probe could not be executed."
     };
   }
   if (updateProbe.exitCode !== 0) {

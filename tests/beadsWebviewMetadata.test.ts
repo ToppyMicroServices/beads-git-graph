@@ -78,6 +78,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("No dependency path yet");
     expect(beadsWebview).toContain("graphIssueDrawer");
     expect(beadsWebview).toContain("graphIssueStack");
+    expect(beadsWebview).toContain("graphDetailsHost");
     expect(beadsWebview).toContain("agentWorkDetailsHost");
     expect(beadsWebview).toContain("graphControls");
     expect(beadsWebview).toContain('data-graph-action="out"');
@@ -279,7 +280,19 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("postAssignStartBead");
     expect(beadsMain).toContain("markActionButtonsPending");
     expect(beadsMain).toContain("pendingActionKeys");
+    expect(beadsMain).toContain("pendingClientActions");
     expect(beadsMain).toContain("beginClientAction");
+    expect(beadsMain).toContain('message.command === "actionSettled"');
+    expect(beadsMain).toContain("settleClientAction(message.clientActionId)");
+    expect(beadsMain).toContain("CLIENT_OWNED_PENDING_ATTRIBUTES");
+    expect(beadsMain).toContain(
+      'pendingButton.dataset.pendingOriginalDisabled = nextElement.hasAttribute("disabled")'
+    );
+    expect(beadsMain).toContain(
+      'syncBeadsButton.dataset.pendingOriginalDisabled = nextDisabled ? "1" : "0"'
+    );
+    expect(beadsMain).not.toContain("button.textContent = pendingLabel");
+    expect(beadsMain).not.toContain("pendingActionKeys.delete(actionKey), timeoutMs");
     expect(beadsMain).toContain("refreshParallelStartActions");
     expect(beadsMain).toContain("activeStartParallelItems");
     expect(beadsMain).toContain("detailsHost.hidden = false");
@@ -296,7 +309,7 @@ describe("beads webview presentation metadata", () => {
       "agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent)"
     );
     expect(beadsMain).toContain(
-      "provider: resolveAgentProviderId(button.dataset.assignStartProvider)"
+      "provider: normalizeAgentProviderId(button.dataset.assignStartProvider) ?? undefined"
     );
     expect(beadsMain).toContain('target.closest(".openAgentArtifact")');
     expect(beadsMain).toContain('command: "openAgentArtifact", artifactUri');
@@ -310,9 +323,9 @@ describe("beads webview presentation metadata", () => {
       "worktree: normalizeOptionalDatasetValue(button.dataset.assignStartWorktree)"
     );
     expect(beadsMain).toContain("renderDependencyGraphOverlays");
-    expect(beadsMain).toContain("visibleRowIds");
-    expect(beadsMain).toContain('section.querySelectorAll<BeadRow>("tbody .beadRow")');
-    expect(beadsMain).toContain("visibleRowIds.has(node.dataset.graphId");
+    expect(beadsMain).toContain("collectStatusVisibleGraphIds");
+    expect(beadsMain).toContain("nextGraphIdsByWorkspace");
+    expect(beadsMain).toContain("visibleGraphIds.has(node.dataset.graphId");
     expect(beadsMain).toContain('querySelectorAll<HTMLElement>(".graphPane")');
     expect(beadsMain).toContain('querySelector<HTMLElement>(".graphScroller")');
     expect(beadsMain).toContain('scroller.addEventListener("scroll"');
@@ -325,7 +338,9 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("computeGraphPanToCenterRect");
     expect(beadsMain).toContain("computeGraphPanToRevealRect");
     expect(beadsMain).toContain("isGraphRectVisible");
-    expect(beadsMain).toContain("renderGraphMiniMap");
+    expect(beadsMain).toContain("rebuildGraphMiniMapGeometry");
+    expect(beadsMain).toContain("updateGraphMiniMapViewport");
+    expect(beadsMain).toContain("scheduleGraphMiniMapViewportUpdate");
     expect(beadsMain).toContain("graphResizeFrame");
     expect(beadsMain).toContain("window.requestAnimationFrame");
     expect(beadsMain).toContain("layoutGraphPane");
@@ -335,6 +350,10 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("handleGraphKeydown");
     expect(beadsMain).toContain("window.innerWidth - menuRect.width");
     expect(beadsMain).toContain("window.innerHeight - menuRect.height");
+    expect(beadsWebview).toContain('aria-controls="rowContextMenu" aria-expanded="false"');
+    expect(beadsMain).toContain("closeContextMenu(true)");
+    expect(beadsMain).toContain("trigger instanceof HTMLButtonElement");
+    expect(beadsMain).toContain('trigger.setAttribute("aria-expanded", "false")');
     expect(beadsWebview).toContain("beadDetailsButton");
     expect(beadsWebview).toContain("graphDetailsBead");
     expect(beadsWebview).toContain("aria-expanded");
@@ -356,7 +375,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("pickAgentModelPreference");
     expect(beadsView).toContain("pickParallelAgentProviderModelPreference");
     expect(beadsView).toContain('title: "AI provider"');
-    expect(beadsView).toContain("Other providers generate a reviewable text artifact.");
+    expect(beadsView).toContain("Other providers generate one bounded file proposal for review.");
     expect(beadsView).toContain("Use each task's provider and model");
     expect(beadsView).toContain("Enter another model...");
     expect(beadsView).toContain("if (model === null)");
@@ -385,6 +404,8 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("startParallelBeads");
     expect(beadsView).toContain("inFlightActions");
     expect(beadsView).toContain("beginAction(actionKey");
+    expect(beadsView).toContain("postClientActionSettled");
+    expect(beadsView).toContain('{ command: "actionSettled", clientActionId }');
     expect(beadsView).toContain("formatSkippedParallelTargets");
     expect(beadsView).toContain("workbench.action.chat.openSessionWithPrompt.copilotcli");
     expect(beadsView).toContain("CHAT_FALLBACK_COMMAND_CANDIDATES");
@@ -396,7 +417,13 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("confirmTextProviderRequests");
     expect(beadsView).toContain("confirmAgentWorkspaceEditReview");
     expect(beadsView).toContain("Apply Reviewed Edit");
+    expect(beadsView).toContain("content_check_status=model_passed");
+    expect(beadsView).toContain("acceptance_status=pending_external_validation");
     expect(beadsView).toContain("review_status=human_approved");
+    expect(beadsView).not.toContain("acceptance_status=agent_passed");
+    expect(beadsView).not.toContain("verifier-approved");
+    expect(beadsView).toContain("external validation remains pending");
+    expect(beadsView).toContain("It did not run commands, tests, builds, or runtime checks.");
     expect(beadsView).toContain("Cloud providers may charge for every call.");
     expect(beadsView).toContain("MAX_PARALLEL_TEXT_PROVIDER_REQUESTS = 20");
     expect(beadsView).toContain("vscode.workspace.isTrusted");
@@ -442,6 +469,8 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("nextWorkspaceRenderHtml !== lastWorkspaceRenderHtml");
     expect(beadsMain).toContain("captureRenderViewportAnchor");
     expect(beadsMain).toContain("restoreRenderViewportAnchor");
+    expect(beadsMain).toContain('queryElement<HTMLButtonElement>("#resetEmptyFilters")');
+    expect(beadsMain).toContain("filterEmptyState.hidden");
     expect(beadsMain).toContain("sortRowsAndUpdateIcons");
     expect(beadsMain).toContain("updateGraphViewportPreservingTransform(false)");
     expect(beadsMain).toContain("scrollIntoView: false");

@@ -54,7 +54,7 @@
     "compile-src": "esbuild --bundle src/extension.ts --outfile=out/extension.js --platform=node --format=cjs --target=es6 --external:vscode --minify",
     "compile-web": "esbuild --bundle web/main.ts --outfile=out/web.min.js --minify --target=es6 --format=iife && esbuild --bundle web/beadsMain.ts --outfile=out/beadsWebview.min.js --minify --target=es6 --format=iife",
     "package": "pnpm run clean && pnpm exec vsce package --no-dependencies",
-    "package-and-install": "pnpm run clean && pnpm exec vsce package --no-dependencies && node ./.vscode/install-package.js",
+    "package-and-install": "pnpm run package && node ./scripts/install-package.cjs",
     "format": "oxfmt --check",
     "format:fix": "oxfmt .",
     "lint": "oxlint",
@@ -456,7 +456,7 @@
           "maximum": 500,
           "default": 50,
           "scope": "machine",
-          "description": "Maximum number of plain-text AI generation and verification audit artifacts retained in this workspace's VS Code extension storage. Oldest artifacts are deleted after a successful write."
+          "description": "Maximum number of plain-text AI generation and model content-check audit artifacts retained in this workspace's VS Code extension storage. Oldest artifacts are deleted after a successful write."
         },
         "beads-git-graph.tabIconColourTheme": {
           "type": "string",

@@ -92,6 +92,13 @@ describe("toBeadItem", () => {
       model: "",
       ssot: "",
       artifact: "",
+      providerStatus: "",
+      contentCheckStatus: "",
+      acceptanceStatus: "",
+      reviewStatus: "",
+      outputPath: "",
+      acceptanceCriteria: "",
+      taskInstructions: "",
       worktree: "",
       branch: "",
       pullRequest: "",
@@ -479,6 +486,15 @@ describe("buildBeadHierarchy", () => {
         model: "gpt-5-codex",
         ssot: "AGENTS.md, .beads/issues.jsonl",
         artifact: "beads-response:12345678-1234-4234-8234-123456789abc",
+        acceptance_criteria: "The report passes deterministic checks.",
+        metadata: {
+          provider_status: "edit_applied",
+          content_check_status: "model_passed",
+          acceptance_status: "pending_external_validation",
+          review_status: "human_approved",
+          output_path: "outputs/report.md",
+          task_instructions: "Write the report and record evidence."
+        },
         worktree: "../beads-git-graph-agent-a"
       }
     ]);
@@ -491,6 +507,13 @@ describe("buildBeadHierarchy", () => {
       model: "gpt-5-codex",
       ssot: "AGENTS.md, .beads/issues.jsonl",
       artifact: "beads-response:12345678-1234-4234-8234-123456789abc",
+      providerStatus: "edit_applied",
+      contentCheckStatus: "model_passed",
+      acceptanceStatus: "pending_external_validation",
+      reviewStatus: "human_approved",
+      outputPath: "outputs/report.md",
+      acceptanceCriteria: "The report passes deterministic checks.",
+      taskInstructions: "Write the report and record evidence.",
       worktree: "../beads-git-graph-agent-a"
     });
   });

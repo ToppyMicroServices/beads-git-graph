@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ACTIVE_STATUSES,
   getDetailsReadinessLabel,
+  getScopedBeadKey,
   isCollapsedByEpic,
+  normalizeScopedBeadKeys,
   shouldShowBeadRow
 } from "../web/beadsRowVisibility";
 
@@ -35,37 +37,63 @@ describe("bead row visibility", () => {
   });
 
   it("keeps the epic visible while hiding descendants of collapsed epics", () => {
-    const collapsedEpicIds = new Set(["epic-a"]);
+    const collapsedEpicIds = new Set([getScopedBeadKey("/repo-a", "epic-a")]);
 
     expect(
-      isCollapsedByEpic({ id: "epic-a", epicId: "epic-a", status: "open" }, collapsedEpicIds)
+      isCollapsedByEpic(
+        { workspacePath: "/repo-a", id: "epic-a", epicId: "epic-a", status: "open" },
+        collapsedEpicIds
+      )
     ).toBe(false);
     expect(
-      isCollapsedByEpic({ id: "epic-a.1", epicId: "epic-a", status: "open" }, collapsedEpicIds)
+      isCollapsedByEpic(
+        { workspacePath: "/repo-a", id: "epic-a.1", epicId: "epic-a", status: "open" },
+        collapsedEpicIds
+      )
     ).toBe(true);
+  });
+
+  it("scopes collapsed epic state to one workspace and drops legacy unscoped keys", () => {
+    const collapsedEpicIds = new Set([getScopedBeadKey("/repo-a", "epic-a")]);
+
+    expect(
+      isCollapsedByEpic(
+        { workspacePath: "/repo-a", id: "task-1", epicId: "epic-a", status: "open" },
+        collapsedEpicIds
+      )
+    ).toBe(true);
+    expect(
+      isCollapsedByEpic(
+        { workspacePath: "/repo-b", id: "task-1", epicId: "epic-a", status: "open" },
+        collapsedEpicIds
+      )
+    ).toBe(false);
+    expect(
+      normalizeScopedBeadKeys(["legacy-unscoped-id", getScopedBeadKey("/repo-a", "epic-a"), "", 42])
+    ).toEqual([getScopedBeadKey("/repo-a", "epic-a")]);
   });
 
   it("combines status filters with collapsed epic state", () => {
     const activeStatuses = new Set(["open", "blocked"]);
-    const collapsedEpicIds = new Set(["epic-a"]);
+    const collapsedEpicIds = new Set([getScopedBeadKey("/repo-a", "epic-a")]);
 
     expect(
       shouldShowBeadRow(
-        { id: "task-a", epicId: "", status: "open" },
+        { workspacePath: "/repo-a", id: "task-a", epicId: "", status: "open" },
         activeStatuses,
         collapsedEpicIds
       )
     ).toBe(true);
     expect(
       shouldShowBeadRow(
-        { id: "epic-a.1", epicId: "epic-a", status: "open" },
+        { workspacePath: "/repo-a", id: "epic-a.1", epicId: "epic-a", status: "open" },
         activeStatuses,
         collapsedEpicIds
       )
     ).toBe(false);
     expect(
       shouldShowBeadRow(
-        { id: "task-b", epicId: "", status: "closed" },
+        { workspacePath: "/repo-a", id: "task-b", epicId: "", status: "closed" },
         activeStatuses,
         collapsedEpicIds
       )

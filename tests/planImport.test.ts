@@ -14,6 +14,7 @@ const draft: PlanDraft = {
     {
       id: "draft-a",
       title: "First task",
+      instructions: "Create the first artifact and verify the first criterion.",
       priority: "P1",
       acceptanceCriteria: ["First passes"],
       dependencyIds: [],
@@ -49,7 +50,7 @@ describe("Plan Draft mutations", () => {
       [
         "bd create --title "First task" --priority P1 --type task --silent",
         "bd create --title "Second task" --priority P2 --type task --silent",
-        "bd update <created:draft-a> --acceptance "First passes" --set-metadata "plan_goal=Plan safely" --set-metadata plan_draft_version=1 --set-metadata provider=openai --set-metadata model=gpt-5 --set-metadata ssot=AGENTS.md --set-metadata output_path=outputs/draft-a.md",
+        "bd update <created:draft-a> --acceptance "First passes" --set-metadata "plan_goal=Plan safely" --set-metadata plan_draft_version=1 --set-metadata "task_instructions=Create the first artifact and verify the first criterion." --set-metadata provider=openai --set-metadata model=gpt-5 --set-metadata ssot=AGENTS.md --set-metadata output_path=outputs/draft-a.md",
         "bd update <created:draft-b> --acceptance "Second passes" --set-metadata "plan_goal=Plan safely" --set-metadata plan_draft_version=1 --set-metadata ssot=README.md --set-metadata output_path=outputs/draft-b.md",
         "bd dep add <created:draft-b> <created:draft-a>",
       ]
@@ -82,6 +83,8 @@ describe("Plan Draft mutations", () => {
         "plan_goal=Plan safely",
         "--set-metadata",
         "plan_draft_version=1",
+        "--set-metadata",
+        "task_instructions=Create the first artifact and verify the first criterion.",
         "--set-metadata",
         "provider=openai",
         "--set-metadata",
