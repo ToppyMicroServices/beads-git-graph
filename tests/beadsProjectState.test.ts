@@ -105,6 +105,25 @@ describe("deriveAgentWorkItem", () => {
     });
   });
 
+  it("separates extension-owned live execution from recorded progress", () => {
+    const item = makeBead({
+      status: "in_progress",
+      liveExecution: {
+        runId: "00000000-0000-4000-8000-000000000001",
+        provider: "ollama",
+        model: "qwen2.5-coder:0.5b",
+        startedAt: "2026-07-15T00:00:00.000Z",
+        heartbeatAt: "2026-07-15T00:00:05.000Z"
+      }
+    });
+
+    expect(deriveAgentWorkItem(item)).toMatchObject({
+      lane: "live",
+      reason: "The extension is awaiting provider responses from ollama / qwen2.5-coder:0.5b"
+    });
+    expect(deriveGraphWorkFocus(item)).toBe("live");
+  });
+
   it("routes applied edits to external validation instead of unopened-response review", () => {
     expect(
       deriveAgentWorkItem(
@@ -225,11 +244,12 @@ describe("deriveGraphWorkFocus", () => {
     ).toBe("none");
   });
 
-  it("orders Now and Next before other tasks after visible levels are projected", () => {
+  it("orders Live, Recorded, and Next before other tasks after projection", () => {
     const projected = [
       { id: "unready", level: 0, focus: "none" },
       { id: "ready-after-hidden-dependency", level: 0, focus: "next-ready" },
-      { id: "working", level: 0, focus: "running" }
+      { id: "working", level: 0, focus: "running" },
+      { id: "live", level: 0, focus: "live" }
     ].sort(
       (left, right) =>
         left.level - right.level ||
@@ -237,6 +257,7 @@ describe("deriveGraphWorkFocus", () => {
     );
 
     expect(projected.map((item) => item.id)).toEqual([
+      "live",
       "working",
       "ready-after-hidden-dependency",
       "unready"
@@ -248,6 +269,16 @@ describe("buildAgentWorkQueue", () => {
   it("groups every item in stable lane order and reports counts", () => {
     const queue = buildAgentWorkQueue([
       makeBead({ id: "attention", status: "blocked" }),
+      makeBead({
+        id: "live",
+        liveExecution: {
+          runId: "00000000-0000-4000-8000-000000000002",
+          provider: "openai",
+          model: "gpt-5",
+          startedAt: "2026-07-15T00:00:00.000Z",
+          heartbeatAt: "2026-07-15T00:00:05.000Z"
+        }
+      }),
       makeBead({ id: "review", pullRequest: "17" }),
       makeBead({ id: "running", status: "in progress" }),
       makeBead({ id: "queued" }),
@@ -255,15 +286,16 @@ describe("buildAgentWorkQueue", () => {
       makeBead({ id: "queued-second" })
     ]);
 
-    expect(AGENT_WORK_LANES).toEqual(["attention", "review", "running", "queue", "done"]);
+    expect(AGENT_WORK_LANES).toEqual(["attention", "live", "review", "running", "queue", "done"]);
     expect(queue.counts).toEqual({
       attention: 1,
+      live: 1,
       review: 1,
       running: 1,
       queue: 2,
       done: 1
     });
-    expect(queue.total).toBe(6);
+    expect(queue.total).toBe(7);
     expect(queue.lanes.queue.map((entry) => entry.item.id)).toEqual(["queued", "queued-second"]);
   });
 

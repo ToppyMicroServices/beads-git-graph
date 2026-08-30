@@ -1,14 +1,21 @@
 import { resolveAgentProviderId } from "./agentProvider";
 import { type BeadItem, normalizeBeadPriority, normalizeBeadStatus } from "./beadsData";
 
-export const AGENT_WORK_LANES = ["attention", "review", "running", "queue", "done"] as const;
+export const AGENT_WORK_LANES = [
+  "attention",
+  "live",
+  "review",
+  "running",
+  "queue",
+  "done"
+] as const;
 
 export type AgentWorkLane = (typeof AGENT_WORK_LANES)[number];
 export type AgentWorkReadiness = "confirmed" | "not-confirmed" | "not-applicable";
-export type GraphWorkFocus = "running" | "next-ready" | "none";
+export type GraphWorkFocus = "live" | "running" | "next-ready" | "none";
 
 export function getGraphWorkFocusRank(focus: string | undefined) {
-  return focus === "running" ? 0 : focus === "next-ready" ? 1 : 2;
+  return focus === "live" ? 0 : focus === "running" ? 1 : focus === "next-ready" ? 2 : 3;
 }
 
 export function compareGraphWorkFocusOrder(
@@ -29,6 +36,7 @@ export type AgentWorkReasonCode =
   | "closed"
   | "edit-applied"
   | "in-progress"
+  | "live-activity"
   | "merge-preflight"
   | "pull-request"
   | "ready-confirmed"
@@ -164,6 +172,20 @@ export function deriveAgentWorkItem(item: BeadItem): AgentWorkItem {
     return makeDerivedItem(item, "attention", attentionReasons, readiness);
   }
 
+  if (item.liveExecution !== undefined) {
+    return makeDerivedItem(
+      item,
+      "live",
+      [
+        {
+          code: "live-activity",
+          message: `The extension is awaiting provider responses from ${item.liveExecution.provider} / ${item.liveExecution.model}`
+        }
+      ],
+      readiness
+    );
+  }
+
   if (normalizedStatus === "open" && item.syntheticKind === "parallel-pr-merge") {
     return makeDerivedItem(
       item,
@@ -259,6 +281,9 @@ export function deriveAgentWorkItem(item: BeadItem): AgentWorkItem {
 }
 
 export function deriveGraphWorkFocus(item: BeadItem): GraphWorkFocus {
+  if (item.liveExecution !== undefined) {
+    return "live";
+  }
   const workItem = deriveAgentWorkItem(item);
   if (workItem.lane === "running") {
     return "running";
@@ -272,6 +297,7 @@ export function deriveGraphWorkFocus(item: BeadItem): GraphWorkFocus {
 export function buildAgentWorkQueue(items: BeadItem[]): AgentWorkQueue {
   const lanes: AgentWorkLaneGroups = {
     attention: [],
+    live: [],
     review: [],
     running: [],
     queue: [],
@@ -296,6 +322,7 @@ export function buildAgentWorkQueue(items: BeadItem[]): AgentWorkQueue {
 
   const counts: AgentWorkLaneCounts = {
     attention: lanes.attention.length,
+    live: lanes.live.length,
     review: lanes.review.length,
     running: lanes.running.length,
     queue: lanes.queue.length,

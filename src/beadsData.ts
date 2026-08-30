@@ -1,3 +1,4 @@
+import { type AgentLiveExecution } from "./agentLiveExecution";
 import {
   type AgentProviderId,
   normalizeAgentProviderId,
@@ -45,6 +46,7 @@ export interface BeadItem {
   syncRisk: string;
   synthetic: boolean;
   syntheticKind: "" | "parallel-pr-merge";
+  liveExecution?: AgentLiveExecution;
 }
 
 export interface BeadHierarchyItem {

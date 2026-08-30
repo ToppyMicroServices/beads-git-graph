@@ -24,6 +24,8 @@ export interface BeadLoadResult {
   groups: BeadGroup[];
   emptyWorkspaces: EmptyBeadWorkspace[];
   unavailableWorkspaces: EmptyBeadWorkspace[];
+  uninitializedWorkspaces?: EmptyBeadWorkspace[];
+  workspaces?: EmptyBeadWorkspace[];
   bdExecutableStatus: CommandAvailability;
   errors: { source: string; message: string }[];
   warnings: BeadWarning[];

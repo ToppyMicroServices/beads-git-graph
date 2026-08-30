@@ -129,6 +129,18 @@ describe("Agent Project Manager webview", () => {
               syncRisk: "dirty"
             }),
             makeBead({
+              id: "live-1",
+              title: "Run local implementation",
+              status: "in_progress",
+              liveExecution: {
+                runId: "00000000-0000-4000-8000-000000000003",
+                provider: "ollama",
+                model: "qwen2.5-coder:0.5b",
+                startedAt: "2026-07-15T00:00:00.000Z",
+                heartbeatAt: "2026-07-15T00:00:05.000Z"
+              }
+            }),
+            makeBead({
               id: "review-1",
               title: "Review implementation",
               status: "in_progress",
@@ -189,7 +201,7 @@ describe("Agent Project Manager webview", () => {
     expect(html).toContain("Visible flow begins");
     expect(html).toContain("Visible flow complete");
 
-    for (const lane of ["attention", "review", "running", "queue", "done"]) {
+    for (const lane of ["attention", "live", "review", "running", "queue", "done"]) {
       expect(html).toContain(`data-work-lane="${lane}"`);
       expect(html).toContain(`data-work-summary="${lane}">1</strong>`);
     }
@@ -198,9 +210,11 @@ describe("Agent Project Manager webview", () => {
     expect(html).toContain("Sync risk is reported as &quot;dirty&quot;");
     expect(html).toContain("Checks are reported as &quot;failed&quot;");
     expect(html).toContain(
-      "Derived from Beads status and recorded Git/PR metadata. “Recorded in progress” is not live-agent monitoring."
+      "Live now means this extension is awaiting a direct provider response for the task. Recorded in progress comes from Beads and is not a heartbeat."
     );
     expect(html).toContain("Status is in progress; live agent activity is not confirmed");
+    expect(getAgentCard(html, "live-1")).toContain("liveAgentWorkCard");
+    expect(getAgentCard(html, "live-1")).toContain("Live ollama / qwen2.5-coder:0.5b");
 
     expect(html).toContain('data-graph-details-id="attention-1"');
     expect(html).toContain('data-graph-details-workspace="/tmp/mission&amp;control"');
@@ -791,7 +805,7 @@ describe("Agent Project Manager webview", () => {
     expect(html).not.toContain("Provider GitHub Copilot");
   });
 
-  it("puts recorded work and bd-ready tasks first in the Graph without pulsing review work", () => {
+  it("puts Live, Recorded, and Next first while pulsing only Live work", () => {
     const workspacePath = "/tmp/mission-control";
     const html = renderBeadsWebviewHtml(
       {
@@ -806,6 +820,17 @@ describe("Agent Project Manager webview", () => {
             workspacePath,
             items: [
               makeBead({ id: "unready", parallelizable: true }),
+              makeBead({
+                id: "live",
+                status: "in_progress",
+                liveExecution: {
+                  runId: "00000000-0000-4000-8000-000000000004",
+                  provider: "ollama",
+                  model: "qwen2.5-coder:0.5b",
+                  startedAt: "2026-07-15T00:00:00.000Z",
+                  heartbeatAt: "2026-07-15T00:00:05.000Z"
+                }
+              }),
               makeBead({
                 id: "review-response",
                 status: "in_progress",
@@ -827,6 +852,8 @@ describe("Agent Project Manager webview", () => {
       }
     );
 
+    expect(getGraphNodeOpeningTag(html, "live")).toContain("liveGraphNode");
+    expect(getGraphNodeOpeningTag(html, "live")).toContain('data-work-focus="live"');
     expect(getGraphNodeOpeningTag(html, "working")).toContain("runningGraphNode");
     expect(getGraphNodeOpeningTag(html, "working")).toContain('data-work-focus="running"');
     expect(getGraphNodeOpeningTag(html, "next")).toContain("nextReadyGraphNode");
@@ -834,10 +861,15 @@ describe("Agent Project Manager webview", () => {
     expect(getGraphNodeOpeningTag(html, "review-pr")).toContain('data-work-focus="none"');
     expect(getGraphNodeOpeningTag(html, "review-response")).toContain('data-work-focus="none"');
     expect(getGraphNodeOpeningTag(html, "unready")).toContain('data-work-focus="none"');
-    expect(html).toContain("Now · Recorded");
+    expect(html).toContain("Live · ollama");
+    expect(html).toContain(">Recorded</span>");
     expect(html).toContain("Next · Ready");
-    expect(html).toContain("<strong>1</strong> Now");
+    expect(html).toContain("<strong>1</strong> Live");
+    expect(html).toContain("<strong>1</strong> Recorded");
     expect(html).toContain("<strong>1</strong> Next");
+    expect(html.indexOf('data-graph-id="live"')).toBeLessThan(
+      html.indexOf('data-graph-id="working"')
+    );
     expect(html.indexOf('data-graph-id="working"')).toBeLessThan(
       html.indexOf('data-graph-id="next"')
     );
@@ -846,7 +878,7 @@ describe("Agent Project Manager webview", () => {
     );
   });
 
-  it("does not pulse the Now summary when no recorded work is visible", () => {
+  it("does not pulse the Live summary when no live work is visible", () => {
     const workspacePath = "/tmp/mission-control";
     const html = renderBeadsWebviewHtml(
       {
@@ -871,9 +903,11 @@ describe("Agent Project Manager webview", () => {
       }
     );
 
+    expect(html).toContain('class="summaryPill graphLiveSummary isEmpty"');
+    expect(html).toContain("<strong>0</strong> Live");
+    expect(html).toContain(".graphLiveSummary.isEmpty .graphLiveDot{display:none;animation:none;}");
     expect(html).toContain('class="summaryPill graphRunningSummary isEmpty"');
-    expect(html).toContain("<strong>0</strong> Now (recorded)");
-    expect(html).toContain(".graphRunningSummary.isEmpty .graphRunningDot{display:none");
+    expect(html).toContain("<strong>0</strong> Recorded");
   });
 
   it("moves a linked cross-model handoff from upstream work to the downstream queue", () => {

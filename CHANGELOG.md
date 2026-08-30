@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Highlight direct-provider generation and verification as Live with a heartbeat while keeping
+  Beads-recorded `in_progress` tasks static and explicitly labeled Recorded.
+- Keep AI Plan Draft generation available in Lite mode without a local Beads database.
+- Auto-detect common local `bd` installations and add confirmed **Locate bd…** and local Beads
+  initialization actions without running migration, bootstrap, or destructive reinitialization.
+
 ### Fixed
 
 - Replace same-level task grids with dependency-connected lanes, retain Start/End flow, and use

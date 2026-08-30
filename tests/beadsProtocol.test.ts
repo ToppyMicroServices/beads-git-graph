@@ -8,6 +8,10 @@ describe("isBeadsRequestMessage", () => {
       true
     );
     expect(isBeadsRequestMessage({ command: "syncBeads", workspacePath: "/tmp/demo" })).toBe(true);
+    expect(isBeadsRequestMessage({ command: "configureBdPath" })).toBe(true);
+    expect(isBeadsRequestMessage({ command: "initializeBeads", workspacePath: "/tmp/demo" })).toBe(
+      true
+    );
     expect(
       isBeadsRequestMessage({
         command: "importPlanDraft",
@@ -69,6 +73,8 @@ describe("isBeadsRequestMessage", () => {
   it("rejects malformed messages", () => {
     expect(isBeadsRequestMessage(null)).toBe(false);
     expect(isBeadsRequestMessage({ command: "syncBeads" })).toBe(false);
+    expect(isBeadsRequestMessage({ command: "initializeBeads" })).toBe(false);
+    expect(isBeadsRequestMessage({ command: "initializeBeads", workspacePath: 123 })).toBe(false);
     expect(isBeadsRequestMessage({ command: "openGitGraphForCommit", commitHash: 1234 })).toBe(
       false
     );

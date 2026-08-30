@@ -23,7 +23,9 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("Agent Work Queue");
     expect(beadsWebview).toContain("Needs attention");
     expect(beadsWebview).toContain("Readiness unknown");
-    expect(beadsWebview).toContain("is not live-agent monitoring");
+    expect(beadsWebview).toContain(
+      "Live now means this extension is awaiting a direct provider response for the task"
+    );
     expect(beadsWebview).toContain("agentWorkOverview");
     expect(beadsWebview).toContain("agentWorkLane");
     expect(beadsWebview).toContain("agentWorkCard");
@@ -40,6 +42,16 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("if (!syncAvailable || syncBeadsButton.disabled)");
     expect(beadsMain).toContain("getDetailsReadinessLabel(item)");
     expect(beadsView).toContain('["ready", "--json", "--limit", "0"]');
+    expect(beadsView).toContain("BEADS_LOCAL_INIT_ARGS");
+    expect(beadsView).toContain("bd may add and commit Beads metadata");
+    expect(beadsMain).toContain("postInitializeBeads");
+    expect(beadsMain).toContain("postConfigureBdPath");
+    const liveStartIndex = beadsView.indexOf("const liveRun = this.liveRunRegistry.start");
+    const liveStopIndex = beadsView.indexOf("liveRun.stop()");
+    const humanReviewIndex = beadsView.indexOf("confirmAgentWorkspaceEditReview");
+    expect(liveStartIndex).toBeGreaterThan(-1);
+    expect(liveStopIndex).toBeGreaterThan(liveStartIndex);
+    expect(humanReviewIndex).toBeGreaterThan(liveStopIndex);
   });
 
   it("keeps subproject collapse explicit and double-click driven", () => {
@@ -94,23 +106,29 @@ describe("beads webview presentation metadata", () => {
     expect(beadsWebview).toContain("cycleLegend");
     expect(beadsWebview).toContain("parentLegend");
     expect(beadsWebview).toContain("riskLegend");
+    expect(beadsWebview).toContain("liveLegend");
     expect(beadsWebview).toContain("runningLegend");
     expect(beadsWebview).toContain("nextReadyLegend");
     expect(beadsWebview).toContain("deriveGraphWorkFocus");
     expect(beadsWebview).toContain('data-work-focus="');
     expect(beadsWebview).toContain("graphWorkFocus");
+    expect(beadsWebview).toContain("liveGraphNode");
     expect(beadsWebview).toContain("runningGraphNode");
     expect(beadsWebview).toContain("nextReadyGraphNode");
-    expect(beadsWebview).toContain("Now · Recorded");
+    expect(beadsWebview).toContain("Live ·");
+    expect(beadsWebview).toContain(">Recorded</span>");
     expect(beadsWebview).toContain("Next · Ready");
     expect(beadsWebview).toContain(
-      "@keyframes graphRunningPulse{0%,100%{opacity:.32;}50%{opacity:1;}}"
+      "@keyframes graphLivePulse{0%,100%{opacity:.32;}50%{opacity:1;}}"
     );
     expect(beadsWebview).toContain("@media (prefers-reduced-motion:reduce)");
-    expect(beadsWebview).toContain(".graphRunningDot{animation:none;opacity:1;}");
     expect(beadsWebview).toContain(
-      ".graphRunningSummary.isEmpty .graphRunningDot{display:none;animation:none;}"
+      ".graphLiveDot,.graphNode.liveGraphNode{animation:none;opacity:1;}"
     );
+    expect(beadsWebview).toContain(
+      ".graphLiveSummary.isEmpty .graphLiveDot{display:none;animation:none;}"
+    );
+    expect(beadsWebview).toContain(".graphMiniMapNode.live:not(.chain):not(.cycle)");
     expect(beadsWebview).toContain(".graphMiniMapNode.running:not(.chain):not(.cycle)");
     expect(beadsWebview).toContain(".graphMiniMapNode.nextReady:not(.chain):not(.cycle)");
     expect(beadsWebview).toContain('data-graph-action="focus"');
@@ -121,7 +139,9 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("for (const graphNode of anchor.graphNodes)");
     expect(beadsMain).toContain("computeGraphPanForStableAnchor");
     expect(beadsMain).toContain("compareGraphWorkFocusOrder");
+    expect(beadsMain).toContain('liveSummary.classList.toggle("isEmpty"');
     expect(beadsMain).toContain('runningSummary.classList.toggle("isEmpty"');
+    expect(beadsMain).toContain('node.dataset.workFocus === "live"');
     expect(beadsMain).toContain('node.dataset.workFocus === "running"');
     expect(beadsMain).toContain('node.dataset.workFocus === "next-ready"');
     expect(beadsWebview).toContain("dependencyOverlay");

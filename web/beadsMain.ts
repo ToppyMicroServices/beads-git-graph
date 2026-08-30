@@ -1520,6 +1520,37 @@ function postAssignStartBead(button: HTMLButtonElement) {
   });
 }
 
+function postConfigureBdPath(button: HTMLButtonElement) {
+  if (button.disabled) {
+    return;
+  }
+  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(".configureBdPath"));
+  const clientActionId = beginClientAction("configure-bd-path", buttons, "Selecting…");
+  if (clientActionId === null) {
+    return;
+  }
+  vscode.postMessage({ command: "configureBdPath", clientActionId });
+}
+
+function postInitializeBeads(button: HTMLButtonElement) {
+  const workspacePath = button.dataset.initializeWorkspace || "";
+  if (button.disabled || workspacePath === "") {
+    return;
+  }
+  const buttons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>(".initializeBeads")
+  ).filter((candidate) => candidate.dataset.initializeWorkspace === workspacePath);
+  const clientActionId = beginClientAction(
+    `initialize-beads:${workspacePath}`,
+    buttons,
+    "Initializing…"
+  );
+  if (clientActionId === null) {
+    return;
+  }
+  vscode.postMessage({ command: "initializeBeads", workspacePath, clientActionId });
+}
+
 function postOpenAgentArtifact(button: HTMLButtonElement) {
   const artifactUri = button.dataset.artifactUri || "";
   if (artifactUri.trim() === "" || artifactUri.length > 2048) {
@@ -2451,7 +2482,10 @@ function getVisibleGraphLayoutNodes(pane: HTMLElement) {
 
 function getGraphWorkFocusNodes(pane: HTMLElement) {
   return getVisibleGraphNodes(pane).filter(
-    (node) => node.dataset.workFocus === "running" || node.dataset.workFocus === "next-ready"
+    (node) =>
+      node.dataset.workFocus === "live" ||
+      node.dataset.workFocus === "running" ||
+      node.dataset.workFocus === "next-ready"
   );
 }
 
@@ -2580,14 +2614,27 @@ function refreshGraphDerivedState(pane: HTMLElement) {
       : "0";
   }
 
+  const visibleLiveCount = visibleNodes.filter((node) => node.dataset.workFocus === "live").length;
   const visibleRunningCount = visibleNodes.filter(
     (node) => node.dataset.workFocus === "running"
   ).length;
   const visibleNextReadyCount = visibleNodes.filter(
     (node) => node.dataset.workFocus === "next-ready"
   ).length;
+  const liveSummaryCount = pane.querySelector<HTMLElement>(".graphLiveSummary strong");
   const runningSummaryCount = pane.querySelector<HTMLElement>(".graphRunningSummary strong");
   const nextSummaryCount = pane.querySelector<HTMLElement>(".graphNextSummary strong");
+  if (liveSummaryCount !== null) {
+    liveSummaryCount.textContent = String(visibleLiveCount);
+  }
+  const liveSummary = pane.querySelector<HTMLElement>(".graphLiveSummary");
+  if (liveSummary !== null) {
+    liveSummary.classList.toggle("isEmpty", visibleLiveCount === 0);
+    liveSummary.setAttribute(
+      "aria-label",
+      `${visibleLiveCount} live AI task${visibleLiveCount === 1 ? "" : "s"}`
+    );
+  }
   if (runningSummaryCount !== null) {
     runningSummaryCount.textContent = String(visibleRunningCount);
   }
@@ -2596,7 +2643,7 @@ function refreshGraphDerivedState(pane: HTMLElement) {
     runningSummary.classList.toggle("isEmpty", visibleRunningCount === 0);
     runningSummary.setAttribute(
       "aria-label",
-      `${visibleRunningCount} Now, recorded in progress; live activity is not confirmed`
+      `${visibleRunningCount} recorded in progress; live activity is not confirmed`
     );
   }
   if (nextSummaryCount !== null) {
@@ -2604,7 +2651,7 @@ function refreshGraphDerivedState(pane: HTMLElement) {
   }
   const focusButton = pane.querySelector<HTMLButtonElement>('button[data-graph-action="focus"]');
   if (focusButton !== null) {
-    focusButton.disabled = visibleRunningCount + visibleNextReadyCount === 0;
+    focusButton.disabled = visibleLiveCount + visibleRunningCount + visibleNextReadyCount === 0;
   }
 
   const dependencySummary = pane.querySelector<HTMLElement>(".dependencySummary");
@@ -2959,7 +3006,9 @@ function rebuildGraphMiniMapGeometry(pane: HTMLElement) {
     if (node.classList.contains("graphBoundaryNode")) {
       nodeClasses.push("boundary");
     } else {
-      if (node.dataset.workFocus === "running") {
+      if (node.dataset.workFocus === "live") {
+        nodeClasses.push("live");
+      } else if (node.dataset.workFocus === "running") {
         nodeClasses.push("running");
       } else if (node.dataset.workFocus === "next-ready") {
         nodeClasses.push("nextReady");
@@ -4161,7 +4210,7 @@ generatePlanDraftWithAi.addEventListener("click", () => {
     return;
   }
   if (workspacePath === "") {
-    setPlanGenerationStatus("error", "Choose an initialized Beads workspace first.");
+    setPlanGenerationStatus("error", "Choose an open workspace folder first.");
     return;
   }
 
@@ -4277,6 +4326,18 @@ preset.addEventListener("change", () => {
 document.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof Element)) {
+    return;
+  }
+  const initializeButton = target.closest(".initializeBeads") as HTMLButtonElement | null;
+  if (initializeButton !== null) {
+    event.preventDefault();
+    postInitializeBeads(initializeButton);
+    return;
+  }
+  const configureBdButton = target.closest(".configureBdPath") as HTMLButtonElement | null;
+  if (configureBdButton !== null) {
+    event.preventDefault();
+    postConfigureBdPath(configureBdButton);
     return;
   }
   const artifactButton = target.closest(".openAgentArtifact") as HTMLButtonElement | null;
