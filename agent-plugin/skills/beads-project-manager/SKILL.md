@@ -58,6 +58,9 @@ Use `bd ready --json` as the readiness authority when it is supported. Do not di
 merely because it looks unblocked in a manually reconstructed graph. Claim a selected task
 atomically with `bd update <id> --claim` when supported.
 
+Start other agents only when the host client exposes compatible agent or task tools. Otherwise,
+produce the assignments and handoff prompts for review, and do not claim that workers are running.
+
 For parallel work:
 
 - give each agent one leaf task with its Beads ID, acceptance criteria, allowed scope, and required

@@ -7,9 +7,10 @@ compatible clients. It is separate from the Beads Git Graph VSIX:
 - the agent plugin provides a Beads-aware project-manager skill and a Copilot custom agent;
 - the plugin uses the installed `bd` CLI and does not call the VSIX Extension Host API.
 
-The publishable plugin is isolated under `agent-plugin/`. Marketplace installation therefore does
-not copy the repository's `.beads` database, VSIX files, `node_modules`, or development sources
-into the Agent Plugin cache.
+The active plugin payload is sourced only from `agent-plugin/`. It excludes the repository's
+`.beads` database, VSIX files, `node_modules`, and extension sources. Self-hosted marketplace
+clients can clone the full public repository into a separate marketplace source cache, so that
+source cache can contain tracked files outside the active plugin payload.
 
 ## Install from the repository marketplace
 
@@ -18,30 +19,45 @@ into the Agent Plugin cache.
 
 ```json
 {
+  "chat.plugins.enabled": true,
   "chat.plugins.marketplaces": ["ToppyMicroServices/beads-git-graph"]
 }
 ```
 
 3. Open the Agent Plugins view or search Extensions for `@agentPlugins`.
-4. Install **Beads Agent Project Manager**, review the repository trust prompt, and confirm the
+4. Install **Beads Agent Project Manager**, review the marketplace trust prompt, and confirm the
    installed skill and agent in **Chat: Open Customizations**.
 
 The marketplace is defined by `.github/plugin/marketplace.json` and points only to
 `agent-plugin/`. Review changes before updating because plugins can instruct an agent to run local
 tools.
 
-With GitHub Copilot CLI:
+With GitHub Copilot CLI, use the marketplace form:
 
 ```sh
 copilot plugin marketplace add ToppyMicroServices/beads-git-graph
 copilot plugin install beads-agent-project-manager@toppymicroservices-agent-plugins
 ```
 
-For local development, Copilot CLI also accepts the repository subdirectory explicitly:
+Copilot CLI 1.0.82 still accepts the direct repository form
+`ToppyMicroServices/beads-git-graph:agent-plugin` and lists it in `plugin install --help`, but the
+runtime emits a deprecation warning for direct installs. Use the marketplace form above as the
+recommended forward-compatible path.
 
-```sh
-copilot plugin install ToppyMicroServices/beads-git-graph:agent-plugin
+## Start safely
+
+1. Confirm that Beads is already available with `bd --version`.
+2. Select **Beads Project Manager** in Chat.
+3. Start with a read-only request such as:
+
+```text
+Inspect this repository read-only. Show the ready tasks, dependency waves, and proposed owners.
+Do not mutate Beads or start agents.
 ```
+
+The plugin can coordinate assignments and readiness with the local `bd` CLI. Starting parallel
+agents requires a client that exposes compatible agent or task tools. Without those tools, it
+returns a reviewable allocation plan instead of claiming that workers were started.
 
 This self-hosted marketplace is public when these files are present on the repository's default
 branch. Inclusion in a marketplace that VS Code configures by default is a separate review and
