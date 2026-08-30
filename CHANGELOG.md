@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Replace same-level task grids with dependency-connected lanes, retain Start/End flow, and use
+  direct arrows between adjacent dependency stages.
+
 ## [0.6.3] - 2026-08-26
 
 ### Added

@@ -76,6 +76,20 @@ function getGraphNodeOpeningTag(html: string, issueId: string) {
   return tag ?? "";
 }
 
+function getGraphLayoutNodePosition(html: string, issueId: string) {
+  const tag = html
+    .match(/<div\b[^>]*>/g)
+    ?.find(
+      (candidate) =>
+        candidate.includes("graphLayoutNode") && candidate.includes(`data-graph-id="${issueId}"`)
+    );
+  expect(tag, `Expected a positioned Graph node for ${issueId}`).toBeDefined();
+  return {
+    x: Number(tag?.match(/--graph-x:([\d.-]+)px/)?.[1]),
+    y: Number(tag?.match(/--graph-y:([\d.-]+)px/)?.[1])
+  };
+}
+
 function supportedCapabilities(workspace: string, workspacePath: string) {
   const capability = {
     supported: true,
@@ -230,6 +244,138 @@ describe("Agent Project Manager webview", () => {
     expect(html).not.toContain("<unsafe>");
   });
 
+  it("renders independent active tasks in one connected flow column", () => {
+    const workspacePath = "/tmp/layered-graph";
+    const taskIds = ["task-a", "task-b", "task-c", "task-d"];
+    const result: BeadLoadResult = {
+      groups: [
+        {
+          workspace: "Layered graph",
+          workspacePath,
+          items: taskIds.map((id) => makeBead({ id }))
+        }
+      ],
+      emptyWorkspaces: [],
+      unavailableWorkspaces: [],
+      bdExecutableStatus: { available: true, command: "bd", message: null },
+      ...supportedCapabilities("Layered graph", workspacePath),
+      errors: [],
+      warnings: []
+    };
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      result
+    );
+    const taskPositions = taskIds.map((id) => getGraphLayoutNodePosition(html, id));
+    const start = getGraphLayoutNodePosition(html, "__beads_flow_start__");
+    const end = getGraphLayoutNodePosition(html, "__beads_flow_end__");
+
+    expect(new Set(taskPositions.map(({ x }) => x)).size).toBe(1);
+    expect(new Set(taskPositions.map(({ y }) => y)).size).toBe(taskIds.length);
+    expect(start.x).toBeLessThan(taskPositions[0].x);
+    expect(taskPositions[0].x).toBeLessThan(end.x);
+    for (const id of taskIds) {
+      expect(html).toContain(
+        `data-graph-boundary="start" data-from-id="__beads_flow_start__" data-to-id="${id}"`
+      );
+      expect(html).toContain(
+        `data-graph-boundary="end" data-from-id="${id}" data-to-id="__beads_flow_end__"`
+      );
+    }
+  });
+
+  it("renders a dependency diamond in ordered columns with explicit edges", () => {
+    const workspacePath = "/tmp/diamond-graph";
+    const result: BeadLoadResult = {
+      groups: [
+        {
+          workspace: "Diamond graph",
+          workspacePath,
+          items: [
+            makeBead({ id: "plan", title: "Plan" }),
+            makeBead({ id: "backend", title: "Backend", dependencyIds: ["plan"] }),
+            makeBead({ id: "frontend", title: "Frontend", dependencyIds: ["plan"] }),
+            makeBead({
+              id: "integration",
+              title: "Integration",
+              dependencyIds: ["backend", "frontend"]
+            })
+          ]
+        }
+      ],
+      emptyWorkspaces: [],
+      unavailableWorkspaces: [],
+      bdExecutableStatus: { available: true, command: "bd", message: null },
+      ...supportedCapabilities("Diamond graph", workspacePath),
+      errors: [],
+      warnings: []
+    };
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      result
+    );
+    const plan = getGraphLayoutNodePosition(html, "plan");
+    const backend = getGraphLayoutNodePosition(html, "backend");
+    const frontend = getGraphLayoutNodePosition(html, "frontend");
+    const integration = getGraphLayoutNodePosition(html, "integration");
+
+    expect(plan.x).toBeLessThan(backend.x);
+    expect(backend.x).toBe(frontend.x);
+    expect(backend.y).not.toBe(frontend.y);
+    expect(frontend.x).toBeLessThan(integration.x);
+    for (const [fromId, toId] of [
+      ["plan", "backend"],
+      ["plan", "frontend"],
+      ["backend", "integration"],
+      ["frontend", "integration"]
+    ]) {
+      expect(html).toContain(`data-from-id="${fromId}" data-to-id="${toId}"`);
+    }
+  });
+
+  it("does not paint a visible cycle when the other cycle member is filtered out", () => {
+    const workspacePath = "/tmp/filtered-cycle";
+    const result: BeadLoadResult = {
+      groups: [
+        {
+          workspace: "Filtered cycle",
+          workspacePath,
+          items: [
+            makeBead({ id: "visible", dependencyIds: ["hidden"] }),
+            makeBead({ id: "hidden", status: "closed", dependencyIds: ["visible"] })
+          ]
+        }
+      ],
+      emptyWorkspaces: [],
+      unavailableWorkspaces: [],
+      bdExecutableStatus: { available: true, command: "bd", message: null },
+      ...supportedCapabilities("Filtered cycle", workspacePath),
+      errors: [],
+      warnings: []
+    };
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      result
+    );
+    const visibleTag = getGraphNodeOpeningTag(html, "visible");
+
+    expect(visibleTag).toContain('data-cycle="0"');
+    expect(visibleTag).not.toContain("cycleGraphNode");
+    expect(html).not.toContain("Unavailable: dependency cycle detected");
+  });
+
   it("keeps hidden and missing dependencies visible and reports cycles", () => {
     const workspacePath = "/tmp/graph-diagnostics";
     const result: BeadLoadResult = {
@@ -270,6 +416,9 @@ describe("Agent Project Manager webview", () => {
     expect(html).toContain("Unavailable: dependency cycle detected");
     expect(html).toContain('data-cycle="1"');
     expect(html).toContain("cycleBadge");
+    expect(html).not.toMatch(/class="graphEdge"[^>]*data-from-id="gone"/);
+    expect(html).toContain(`data-from-id="cycle-a" data-to-id="cycle-b"`);
+    expect(html).toContain(`data-from-id="cycle-b" data-to-id="cycle-a"`);
   });
 
   it("enables Start AI only when bd ready confirms the task", () => {

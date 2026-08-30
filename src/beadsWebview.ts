@@ -14,8 +14,17 @@ import {
   normalizeBeadType
 } from "./beadsData";
 import {
+  computeDependencyConnectedGraphLayout,
   computeGraphBoundaryState,
+  computeGraphDirectLevelGap,
+  computeSameColumnGraphRouting,
+  computeVisibleGraphState,
+  countGraphCorridorLanes,
   formatGraphRelationPartition,
+  GRAPH_ROUTE_EXIT_BASE,
+  GRAPH_ROUTE_LANE_GAP,
+  GRAPH_ROUTE_X_LANE_GAP,
+  GRAPH_SAME_COLUMN_BASE_OFFSET,
   partitionGraphRelationIds
 } from "./beadsGraphModel";
 import { beadUpdatedTimestamp, flattenBeadHierarchy } from "./beadsHierarchy";
@@ -25,7 +34,8 @@ import {
   type AgentWorkLane,
   buildAgentWorkQueue,
   compareGraphWorkFocusOrder,
-  deriveGraphWorkFocus
+  deriveGraphWorkFocus,
+  getGraphWorkFocusRank
 } from "./beadsProjectState";
 import { type BeadLoadResult } from "./beadsViewTypes";
 import { escapeHtml, getNonce } from "./utils";
@@ -34,8 +44,8 @@ const BEADS_WEBVIEW_SCRIPT = "beadsWebview.min.js";
 const GRAPH_NODE_WIDTH = 252;
 const GRAPH_NODE_HEIGHT_ESTIMATE = 140;
 const GRAPH_LEVEL_GAP = 56;
-const GRAPH_LEVEL_COLUMN_GAP = 24;
 const GRAPH_LANE_GAP = 30;
+const GRAPH_COMPONENT_GAP = 52;
 const GRAPH_PADDING_X = 28;
 const GRAPH_PADDING_Y = 44;
 const GRAPH_BOUNDARY_NODE_HEIGHT_ESTIMATE = 62;
@@ -448,8 +458,6 @@ function renderBeadsDependencyGraph(
   const graph = buildBeadDependencyGraph(items);
   const dependencyWarnings = buildDependencyLintWarnings(items, graph.cycleIds);
   const mergeRiskWarnings = buildMergeRiskWarnings(items);
-  const maxLevel = Math.max(0, ...graph.nodes.map((node) => node.level));
-  const nodesByLevel = new Map<number, typeof graph.nodes>();
   const blocksById = new Map<string, string[]>();
   const itemsById = new Map(items.map((item) => [item.id, item]));
   const hierarchyById = new Map(hierarchyItems.map((entry) => [entry.item.id, entry]));
@@ -467,10 +475,10 @@ function renderBeadsDependencyGraph(
       .filter((item) => isDefaultVisibleStatus(normalizeBeadStatus(item.status)))
       .map((item) => item.id)
   );
-  const boundaryState = computeGraphBoundaryState(
-    items.map((item) => item.id),
-    graph.edges
-  );
+  const initialGraphState = computeVisibleGraphState(defaultVisibleIds, graph.edges);
+  const initialMaximumTaskLevel = Math.max(0, ...initialGraphState.levelsById.values());
+  const initialEndLevel = initialMaximumTaskLevel + 2;
+  const boundaryState = computeGraphBoundaryState(defaultVisibleIds, initialGraphState.edges);
 
   const renderGraphRelation = (
     label: string,
@@ -496,22 +504,6 @@ function renderBeadsDependencyGraph(
   for (const edge of graph.edges) {
     blocksById.set(edge.fromId, [...(blocksById.get(edge.fromId) ?? []), edge.toId]);
   }
-  for (const node of graph.nodes) {
-    const nodes = nodesByLevel.get(node.level) ?? [];
-    nodes.push(node);
-    nodesByLevel.set(node.level, nodes);
-  }
-  for (const nodes of nodesByLevel.values()) {
-    nodes.sort((left, right) =>
-      compareGraphWorkFocusOrder(
-        graphWorkFocusById.get(left.item.id),
-        left.item.id,
-        graphWorkFocusById.get(right.item.id),
-        right.item.id
-      )
-    );
-  }
-
   const dependencyEdgeHtml = graph.edges
     .map(
       (edge) =>
@@ -528,153 +520,271 @@ function renderBeadsDependencyGraph(
     })
     .join("");
   const edgeHtml = dependencyEdgeHtml + boundaryEdgeHtml;
-  const levelCount = maxLevel + 1;
-  const levelLayouts = Array.from({ length: levelCount }, (_, level) => {
-    const nodes = nodesByLevel.get(level) ?? [];
-    const rowCount = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, nodes.length))));
-    const columnCount = Math.max(1, Math.ceil(Math.max(1, nodes.length) / rowCount));
-    const width =
-      columnCount * GRAPH_NODE_WIDTH + Math.max(0, columnCount - 1) * GRAPH_LEVEL_COLUMN_GAP;
-
-    return { nodes, rowCount, columnCount, width, x: 0 };
-  });
-  const startLevelX = GRAPH_PADDING_X;
-  let nextLevelX = startLevelX + GRAPH_NODE_WIDTH + GRAPH_LEVEL_GAP;
-  for (const layout of levelLayouts) {
-    layout.x = nextLevelX;
-    nextLevelX += layout.width + GRAPH_LEVEL_GAP;
+  const initialVisibleNodes = graph.nodes
+    .filter((node) => defaultVisibleIds.has(node.item.id))
+    .sort((left, right) =>
+      compareGraphWorkFocusOrder(
+        graphWorkFocusById.get(left.item.id),
+        left.item.id,
+        graphWorkFocusById.get(right.item.id),
+        right.item.id
+      )
+    );
+  const initialLayoutEdges = [...initialGraphState.edges];
+  const initialLayoutEdgeKeys = new Set(
+    initialLayoutEdges.map((edge) => `${edge.fromId}->${edge.toId}`)
+  );
+  const initialParentEdges: Array<{ fromId: string; toId: string }> = [];
+  for (const node of initialVisibleNodes) {
+    const parentId = hierarchyById.get(node.item.id)?.parentId ?? node.item.parentId.trim();
+    const key = `${parentId}->${node.item.id}`;
+    if (parentId === "" || parentId === node.item.id || !defaultVisibleIds.has(parentId)) {
+      continue;
+    }
+    initialParentEdges.push({ fromId: parentId, toId: node.item.id });
+    if (!initialLayoutEdgeKeys.has(key)) {
+      initialLayoutEdges.push({ fromId: parentId, toId: node.item.id });
+      initialLayoutEdgeKeys.add(key);
+    }
   }
-  const endLevelX = nextLevelX;
-  const graphRowCount = Math.max(1, ...levelLayouts.map((layout) => layout.rowCount));
-  const graphBodyHeight =
-    graphRowCount * GRAPH_NODE_HEIGHT_ESTIMATE + Math.max(0, graphRowCount - 1) * GRAPH_LANE_GAP;
-  const graphWidth = endLevelX + GRAPH_NODE_WIDTH + GRAPH_PADDING_X;
-  const graphHeight = GRAPH_PADDING_Y * 2 + graphBodyHeight;
-  const boundaryNodeY =
-    GRAPH_PADDING_Y + Math.max(0, (graphBodyHeight - GRAPH_BOUNDARY_NODE_HEIGHT_ESTIMATE) / 2);
-  const taskLevelGuideHtml = Array.from({ length: levelCount }, (_, level) => {
-    const layout = levelLayouts[level];
-    const x = layout.x + layout.width / 2;
+  const initialLayoutNodes = [
+    {
+      id: GRAPH_START_ID,
+      level: 0,
+      height: GRAPH_BOUNDARY_NODE_HEIGHT_ESTIMATE,
+      boundary: true
+    },
+    ...initialVisibleNodes.map((node) => ({
+      id: node.item.id,
+      level: (initialGraphState.levelsById.get(node.item.id) ?? 0) + 1,
+      height: GRAPH_NODE_HEIGHT_ESTIMATE,
+      focusRank: getGraphWorkFocusRank(graphWorkFocusById.get(node.item.id))
+    })),
+    {
+      id: GRAPH_END_ID,
+      level: initialEndLevel,
+      height: GRAPH_BOUNDARY_NODE_HEIGHT_ESTIMATE,
+      boundary: true
+    }
+  ];
+  const initialRenderedEdges = [
+    ...initialGraphState.edges,
+    ...initialParentEdges,
+    ...Array.from(boundaryState.startIds, (toId) => ({
+      fromId: GRAPH_START_ID,
+      toId,
+      boundary: true
+    })),
+    ...Array.from(boundaryState.endIds, (fromId) => ({
+      fromId,
+      toId: GRAPH_END_ID,
+      boundary: true
+    }))
+  ];
+  const initialCorridorLaneCount = countGraphCorridorLanes(
+    initialLayoutNodes,
+    initialRenderedEdges
+  );
+  const initialGraphPaddingY = GRAPH_PADDING_Y + initialCorridorLaneCount * GRAPH_ROUTE_LANE_GAP;
+  const initialDirectLevelGap = computeGraphDirectLevelGap(
+    initialLayoutNodes,
+    initialRenderedEdges,
+    GRAPH_LEVEL_GAP
+  );
+  const initialSameColumnBaseOffset =
+    GRAPH_SAME_COLUMN_BASE_OFFSET + initialCorridorLaneCount * GRAPH_ROUTE_X_LANE_GAP;
+  const initialSameColumnRouting = computeSameColumnGraphRouting(
+    initialLayoutNodes,
+    initialRenderedEdges,
+    initialSameColumnBaseOffset
+  );
+  const initialGraphPaddingX = Math.max(
+    GRAPH_PADDING_X,
+    initialSameColumnRouting.maximumOffset + 12
+  );
+  const initialGraphLevelGap = Math.max(
+    initialDirectLevelGap,
+    initialSameColumnRouting.maximumOffset + 24,
+    GRAPH_ROUTE_EXIT_BASE + Math.max(0, initialCorridorLaneCount - 1) * GRAPH_ROUTE_X_LANE_GAP + 12
+  );
+  const initialLayout = computeDependencyConnectedGraphLayout(
+    initialLayoutNodes,
+    initialLayoutEdges,
+    {
+      nodeWidth: GRAPH_NODE_WIDTH,
+      levelGap: initialGraphLevelGap,
+      laneGap: GRAPH_LANE_GAP,
+      componentGap: GRAPH_COMPONENT_GAP,
+      paddingX: initialGraphPaddingX,
+      paddingY: initialGraphPaddingY
+    }
+  );
+  const initialPositions = new Map(initialLayout.nodes.map((node) => [node.id, node]));
+  const initialLevelCenters = new Map(
+    initialLayout.levels.map((level) => [level.level, level.centerX])
+  );
+  const maximumRenderedTaskLevel = Math.max(0, ...graph.nodes.map((node) => node.level));
+  const taskLevelGuideHtml = Array.from({ length: maximumRenderedTaskLevel + 1 }, (_, level) => {
+    const graphLevel = level + 1;
+    const center =
+      initialLevelCenters.get(graphLevel) ??
+      GRAPH_PADDING_X + graphLevel * (GRAPH_NODE_WIDTH + GRAPH_LEVEL_GAP) + GRAPH_NODE_WIDTH / 2;
     const label = level === 0 ? "Root" : `L${level + 1}`;
     const detail = level === 0 ? "No visible dependency" : "After visible deps";
 
-    return `<span class="graphLevelGuide" data-graph-level="${level + 1}" data-graph-task-level="${level}" style="--graph-guide-x:${x}px"><span class="graphLevelLabel"><strong>${label}</strong><small>${detail}</small></span></span>`;
+    return `<span class="graphLevelGuide" data-graph-level="${graphLevel}" data-graph-task-level="${level}" style="--graph-guide-x:${center}px"${initialLevelCenters.has(graphLevel) ? "" : " hidden"}><span class="graphLevelLabel"><strong>${label}</strong><small>${detail}</small></span></span>`;
   }).join("");
-  const levelGuideHtml = `<span class="graphLevelGuide graphBoundaryGuide" data-graph-level="0" data-graph-boundary="start" style="--graph-guide-x:${startLevelX + GRAPH_NODE_WIDTH / 2}px"><span class="graphLevelLabel"><strong>Start</strong><small>Visible flow begins</small></span></span>${taskLevelGuideHtml}<span class="graphLevelGuide graphBoundaryGuide" data-graph-level="${maxLevel + 2}" data-graph-boundary="end" style="--graph-guide-x:${endLevelX + GRAPH_NODE_WIDTH / 2}px"><span class="graphLevelLabel"><strong>End</strong><small>Visible flow complete</small></span></span>`;
-  const nodeHtml = Array.from({ length: levelCount }, (_, level) => {
-    const layout = levelLayouts[level];
-    const rowOffset =
-      ((graphRowCount - layout.rowCount) * (GRAPH_NODE_HEIGHT_ESTIMATE + GRAPH_LANE_GAP)) / 2;
-
-    return layout.nodes
-      .map((node, lane) => {
-        const item = node.item;
-        const graphWorkFocus = graphWorkFocusById.get(item.id) ?? "none";
-        const column = Math.floor(lane / layout.rowCount);
-        const row = lane % layout.rowCount;
-        const x = layout.x + column * (GRAPH_NODE_WIDTH + GRAPH_LEVEL_COLUMN_GAP);
-        const y = GRAPH_PADDING_Y + rowOffset + row * (GRAPH_NODE_HEIGHT_ESTIMATE + GRAPH_LANE_GAP);
-        const normalizedStatus = normalizeBeadStatus(item.status);
-        const normalizedPriority = normalizeBeadPriority(item.priority);
-        const normalizedType = normalizeBeadType(item.type);
-        const rawAgentLabel = getRawAgentLabel(item, normalizedStatus);
-        const rawModelLabel = getRawModelLabel(item, normalizedStatus);
-        const ownerLabel = getDisplayLabel(rawAgentLabel, agentAliases);
-        const providerLabel = getProviderLabel(item);
-        const modelLabel = getDisplayLabel(rawModelLabel, agentAliases);
-        const worktreeLabel = getWorktreeLabel(item);
-        const pullRequestLabel = getPullRequestLabel(item);
-        const ssotLabel = item.ssot.trim();
-        const artifactLabel = item.artifact.trim();
-        const branchLabel = item.branch.trim();
-        const checkStatusLabel = item.checkStatus.trim();
-        const syncRiskLabel = item.syncRisk.trim();
-        const derivedMerge = isDerivedMergeTask(item);
-        const executionStateLabel = getExecutionStateLabel(item, normalizedStatus, derivedMerge);
-        const graphWorkBadge =
-          graphWorkFocus === "running"
-            ? '<span class="graphWorkBadge running" title="Beads records this task as in progress. Live agent activity is not confirmed."><span class="graphRunningDot" aria-hidden="true"></span>Now · Recorded</span>'
-            : graphWorkFocus === "next-ready"
-              ? '<span class="graphWorkBadge nextReady" title="bd ready confirms this open task can start now.">Next · Ready</span>'
-              : "";
-        const dependencyWarning = dependencyWarnings.get(item.id) ?? "";
-        const mergeRiskWarning = mergeRiskWarnings.get(item.id) ?? "";
-        const blocks = (blocksById.get(item.id) ?? []).sort((a, b) => a.localeCompare(b));
-        const missingDependencyIds = item.dependencyIds
-          .filter((id) => !itemsById.has(id))
-          .sort((a, b) => a.localeCompare(b));
-        const hierarchyEntry = hierarchyById.get(item.id);
-        const parentId = hierarchyEntry?.parentId ?? item.parentId.trim();
-        const epicId = hierarchyEntry?.epicId ?? "";
-        const depth = hierarchyEntry?.depth ?? 0;
-        const dependencyLines = [
-          parentId !== "" && itemsById.has(parentId)
-            ? renderGraphRelation("Parent", [parentId], [], "graphParentRelation")
-            : "",
-          renderGraphRelation("Depends", item.dependencyIds, missingDependencyIds),
-          renderGraphRelation("Blocks", blocks)
-        ]
-          .filter((line) => line !== "")
-          .join("");
-        const assignDisabled =
-          !writeAvailable || normalizedStatus !== "open" || !item.readyByBd ? " disabled" : "";
-        const assignTitle = !writeAvailable
-          ? writeUnavailableReason
-          : normalizedStatus !== "open"
-            ? "Only open beads can be started."
-            : !item.readyByBd
-              ? "Start is unavailable until bd ready confirms this task and its dependencies."
-              : "Choose a provider and requested model, attach SSOT/context, and start this bead.";
-        const initialDisplay = isDefaultVisibleStatus(normalizedStatus) ? "" : "display:none;";
-        const taskActionContext = `${item.id}: ${item.title}`;
-        const actionHtml = derivedMerge
-          ? `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="${escapeHtml(writeAvailable ? "Check agent worktrees, auto-merge their PRs, then sync Beads." : writeUnavailableReason)}" aria-label="${escapeHtml(`Merge PRs for ${taskActionContext}`)}"${writeAvailable ? "" : " disabled"}>Merge PRs</button>`
-          : `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-provider="${escapeHtml(hasExplicitProvider(item) ? item.provider : "")}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(ssotLabel)}" data-assign-start-worktree="${escapeHtml(isCodingSessionProvider(item) ? item.worktree.trim() : "")}" title="${escapeHtml(assignTitle)}" aria-label="${escapeHtml(`Start AI for ${taskActionContext}`)}"${assignDisabled}>Start AI</button>`;
-        const graphBadges = [
-          executionStateLabel === "" || graphWorkFocus !== "none"
-            ? ""
-            : `<span class="executionBadge stateBadge">${escapeHtml(executionStateLabel)}</span>`,
-          derivedMerge ? `<span class="executionBadge mergeBadge">Merge PR</span>` : "",
-          ownerLabel === ""
-            ? ""
-            : `<span class="executionBadge ownerBadge">Owner ${escapeHtml(ownerLabel)}</span>`,
-          derivedMerge
-            ? ""
-            : `<span class="executionBadge providerBadge">Provider ${escapeHtml(providerLabel)}</span>`,
-          modelLabel === ""
-            ? ""
-            : `<span class="executionBadge modelBadge">Model ${escapeHtml(modelLabel)}</span>`,
-          renderArtifactAction(artifactLabel),
-          worktreeLabel === ""
-            ? ""
-            : `<span class="executionBadge worktreeBadge">WT ${escapeHtml(worktreeLabel)}</span>`,
-          branchLabel === ""
-            ? ""
-            : `<span class="executionBadge branchBadge">BR ${escapeHtml(branchLabel)}</span>`,
-          pullRequestLabel === ""
-            ? ""
-            : `<span class="executionBadge prBadge">PR ${escapeHtml(pullRequestLabel)}</span>`,
-          checkStatusLabel === ""
-            ? ""
-            : `<span class="executionBadge checkBadge">Checks ${escapeHtml(checkStatusLabel)}</span>`,
-          syncRiskLabel === ""
-            ? ""
-            : `<span class="executionBadge syncRiskBadge" title="Merge/sync risk">${escapeHtml(syncRiskLabel)}</span>`,
-          ssotLabel === "" ? "" : `<span class="executionBadge ssotBadge">SSOT</span>`,
-          dependencyWarning === ""
-            ? ""
-            : `<span class="executionBadge dependencyWarningBadge" title="${escapeHtml(dependencyWarning)}">Dep warn</span>`,
-          mergeRiskWarning === ""
-            ? ""
-            : `<span class="executionBadge mergeRiskWarningBadge" title="${escapeHtml(mergeRiskWarning)}">Risk</span>`
-        ]
-          .filter((badge) => badge !== "")
-          .join("");
-        return `<div class="graphNode graphLayoutNode ${graphWorkFocus === "running" ? "runningGraphNode " : graphWorkFocus === "next-ready" ? "nextReadyGraphNode " : ""}${node.critical ? "criticalGraphNode" : ""}${node.cycle ? " cycleGraphNode" : ""}${dependencyWarning === "" ? "" : " dependencyWarningGraphNode"}${mergeRiskWarning === "" ? "" : " mergeRiskGraphNode"}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${level + 1}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-work-focus="${graphWorkFocus}" data-critical="${node.critical ? "1" : "0"}" data-cycle="${node.cycle ? "1" : "0"}" data-parent-id="${escapeHtml(parentId)}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" style="${initialDisplay}--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${graphWorkBadge}<span class="criticalBadge"${node.critical ? "" : " hidden"}>Longest chain</span><span class="cycleBadge"${node.cycle ? "" : " hidden"}>Cycle</span></div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${graphBadges}</div>${dependencyWarning === "" ? "" : `<div class="graphWarning">${escapeHtml(dependencyWarning)}</div>`}${mergeRiskWarning === "" ? "" : `<div class="graphWarning graphMergeRisk">${escapeHtml(mergeRiskWarning)}</div>`}${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="graphDetailsBead" type="button" data-graph-details-id="${escapeHtml(item.id)}" data-graph-details-workspace="${escapeHtml(workspacePath)}" aria-label="${escapeHtml(`Details for ${taskActionContext}`)}">Details</button>${actionHtml}</div></div>`;
-      })
-      .join("");
-  }).join("");
-  const boundaryNodeHtml = `<div class="graphBoundaryNode graphLayoutNode" data-graph-id="${GRAPH_START_ID}" data-graph-boundary="start" data-graph-level="0" style="--graph-x:${startLevelX}px;--graph-y:${boundaryNodeY}px"><span class="graphBoundaryIcon" aria-hidden="true">▶</span><strong>Start</strong><small>Visible flow begins</small></div><div class="graphBoundaryNode graphLayoutNode" data-graph-id="${GRAPH_END_ID}" data-graph-boundary="end" data-graph-level="${maxLevel + 2}" style="--graph-x:${endLevelX}px;--graph-y:${boundaryNodeY}px"><span class="graphBoundaryIcon" aria-hidden="true">✓</span><strong>End</strong><small>Visible flow complete</small></div>`;
+  const startPosition = initialPositions.get(GRAPH_START_ID) ?? {
+    x: GRAPH_PADDING_X,
+    y: GRAPH_PADDING_Y
+  };
+  const endPosition = initialPositions.get(GRAPH_END_ID) ?? {
+    x: GRAPH_PADDING_X + initialEndLevel * (GRAPH_NODE_WIDTH + GRAPH_LEVEL_GAP),
+    y: GRAPH_PADDING_Y
+  };
+  const startGuideX = initialLevelCenters.get(0) ?? startPosition.x + GRAPH_NODE_WIDTH / 2;
+  const endGuideX =
+    initialLevelCenters.get(initialEndLevel) ?? endPosition.x + GRAPH_NODE_WIDTH / 2;
+  const levelGuideHtml = `<span class="graphLevelGuide graphBoundaryGuide" data-graph-level="0" data-graph-boundary="start" style="--graph-guide-x:${startGuideX}px"><span class="graphLevelLabel"><strong>Start</strong><small>Visible flow begins</small></span></span>${taskLevelGuideHtml}<span class="graphLevelGuide graphBoundaryGuide" data-graph-level="${initialEndLevel}" data-graph-boundary="end" style="--graph-guide-x:${endGuideX}px"><span class="graphLevelLabel"><strong>End</strong><small>Visible flow complete</small></span></span>`;
+  const graphWidth = initialLayout.width;
+  const graphHeight = initialLayout.height;
+  const renderedGraphNodes = [...graph.nodes].sort((left, right) => {
+    const leftLevel = defaultVisibleIds.has(left.item.id)
+      ? (initialGraphState.levelsById.get(left.item.id) ?? 0)
+      : left.level;
+    const rightLevel = defaultVisibleIds.has(right.item.id)
+      ? (initialGraphState.levelsById.get(right.item.id) ?? 0)
+      : right.level;
+    return (
+      leftLevel - rightLevel ||
+      compareGraphWorkFocusOrder(
+        graphWorkFocusById.get(left.item.id),
+        left.item.id,
+        graphWorkFocusById.get(right.item.id),
+        right.item.id
+      )
+    );
+  });
+  const nodeHtml = renderedGraphNodes
+    .map((node, lane) => {
+      const item = node.item;
+      const graphWorkFocus = graphWorkFocusById.get(item.id) ?? "none";
+      const visibleOnFirstPaint = defaultVisibleIds.has(item.id);
+      const graphLevel = visibleOnFirstPaint
+        ? (initialGraphState.levelsById.get(item.id) ?? 0) + 1
+        : node.level + 1;
+      const initialCritical = visibleOnFirstPaint
+        ? initialGraphState.criticalPathIds.includes(item.id)
+        : node.critical;
+      const initialCycle = visibleOnFirstPaint
+        ? initialGraphState.cycleIds.has(item.id)
+        : node.cycle;
+      const position = initialPositions.get(item.id) ?? {
+        x: GRAPH_PADDING_X + graphLevel * (GRAPH_NODE_WIDTH + GRAPH_LEVEL_GAP),
+        y: GRAPH_PADDING_Y
+      };
+      const x = position.x;
+      const y = position.y;
+      const normalizedStatus = normalizeBeadStatus(item.status);
+      const normalizedPriority = normalizeBeadPriority(item.priority);
+      const normalizedType = normalizeBeadType(item.type);
+      const rawAgentLabel = getRawAgentLabel(item, normalizedStatus);
+      const rawModelLabel = getRawModelLabel(item, normalizedStatus);
+      const ownerLabel = getDisplayLabel(rawAgentLabel, agentAliases);
+      const providerLabel = getProviderLabel(item);
+      const modelLabel = getDisplayLabel(rawModelLabel, agentAliases);
+      const worktreeLabel = getWorktreeLabel(item);
+      const pullRequestLabel = getPullRequestLabel(item);
+      const ssotLabel = item.ssot.trim();
+      const artifactLabel = item.artifact.trim();
+      const branchLabel = item.branch.trim();
+      const checkStatusLabel = item.checkStatus.trim();
+      const syncRiskLabel = item.syncRisk.trim();
+      const derivedMerge = isDerivedMergeTask(item);
+      const executionStateLabel = getExecutionStateLabel(item, normalizedStatus, derivedMerge);
+      const graphWorkBadge =
+        graphWorkFocus === "running"
+          ? '<span class="graphWorkBadge running" title="Beads records this task as in progress. Live agent activity is not confirmed."><span class="graphRunningDot" aria-hidden="true"></span>Now · Recorded</span>'
+          : graphWorkFocus === "next-ready"
+            ? '<span class="graphWorkBadge nextReady" title="bd ready confirms this open task can start now.">Next · Ready</span>'
+            : "";
+      const dependencyWarning = dependencyWarnings.get(item.id) ?? "";
+      const mergeRiskWarning = mergeRiskWarnings.get(item.id) ?? "";
+      const blocks = (blocksById.get(item.id) ?? []).sort((a, b) => a.localeCompare(b));
+      const missingDependencyIds = item.dependencyIds
+        .filter((id) => !itemsById.has(id))
+        .sort((a, b) => a.localeCompare(b));
+      const hierarchyEntry = hierarchyById.get(item.id);
+      const parentId = hierarchyEntry?.parentId ?? item.parentId.trim();
+      const epicId = hierarchyEntry?.epicId ?? "";
+      const depth = hierarchyEntry?.depth ?? 0;
+      const dependencyLines = [
+        parentId !== "" && itemsById.has(parentId)
+          ? renderGraphRelation("Parent", [parentId], [], "graphParentRelation")
+          : "",
+        renderGraphRelation("Depends", item.dependencyIds, missingDependencyIds),
+        renderGraphRelation("Blocks", blocks)
+      ]
+        .filter((line) => line !== "")
+        .join("");
+      const assignDisabled =
+        !writeAvailable || normalizedStatus !== "open" || !item.readyByBd ? " disabled" : "";
+      const assignTitle = !writeAvailable
+        ? writeUnavailableReason
+        : normalizedStatus !== "open"
+          ? "Only open beads can be started."
+          : !item.readyByBd
+            ? "Start is unavailable until bd ready confirms this task and its dependencies."
+            : "Choose a provider and requested model, attach SSOT/context, and start this bead.";
+      const initialDisplay = isDefaultVisibleStatus(normalizedStatus) ? "" : "display:none;";
+      const taskActionContext = `${item.id}: ${item.title}`;
+      const actionHtml = derivedMerge
+        ? `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="${escapeHtml(writeAvailable ? "Check agent worktrees, auto-merge their PRs, then sync Beads." : writeUnavailableReason)}" aria-label="${escapeHtml(`Merge PRs for ${taskActionContext}`)}"${writeAvailable ? "" : " disabled"}>Merge PRs</button>`
+        : `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-provider="${escapeHtml(hasExplicitProvider(item) ? item.provider : "")}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(ssotLabel)}" data-assign-start-worktree="${escapeHtml(isCodingSessionProvider(item) ? item.worktree.trim() : "")}" title="${escapeHtml(assignTitle)}" aria-label="${escapeHtml(`Start AI for ${taskActionContext}`)}"${assignDisabled}>Start AI</button>`;
+      const graphBadges = [
+        executionStateLabel === "" || graphWorkFocus !== "none"
+          ? ""
+          : `<span class="executionBadge stateBadge">${escapeHtml(executionStateLabel)}</span>`,
+        derivedMerge ? `<span class="executionBadge mergeBadge">Merge PR</span>` : "",
+        ownerLabel === ""
+          ? ""
+          : `<span class="executionBadge ownerBadge">Owner ${escapeHtml(ownerLabel)}</span>`,
+        derivedMerge
+          ? ""
+          : `<span class="executionBadge providerBadge">Provider ${escapeHtml(providerLabel)}</span>`,
+        modelLabel === ""
+          ? ""
+          : `<span class="executionBadge modelBadge">Model ${escapeHtml(modelLabel)}</span>`,
+        renderArtifactAction(artifactLabel),
+        worktreeLabel === ""
+          ? ""
+          : `<span class="executionBadge worktreeBadge">WT ${escapeHtml(worktreeLabel)}</span>`,
+        branchLabel === ""
+          ? ""
+          : `<span class="executionBadge branchBadge">BR ${escapeHtml(branchLabel)}</span>`,
+        pullRequestLabel === ""
+          ? ""
+          : `<span class="executionBadge prBadge">PR ${escapeHtml(pullRequestLabel)}</span>`,
+        checkStatusLabel === ""
+          ? ""
+          : `<span class="executionBadge checkBadge">Checks ${escapeHtml(checkStatusLabel)}</span>`,
+        syncRiskLabel === ""
+          ? ""
+          : `<span class="executionBadge syncRiskBadge" title="Merge/sync risk">${escapeHtml(syncRiskLabel)}</span>`,
+        ssotLabel === "" ? "" : `<span class="executionBadge ssotBadge">SSOT</span>`,
+        dependencyWarning === ""
+          ? ""
+          : `<span class="executionBadge dependencyWarningBadge" title="${escapeHtml(dependencyWarning)}">Dep warn</span>`,
+        mergeRiskWarning === ""
+          ? ""
+          : `<span class="executionBadge mergeRiskWarningBadge" title="${escapeHtml(mergeRiskWarning)}">Risk</span>`
+      ]
+        .filter((badge) => badge !== "")
+        .join("");
+      return `<div class="graphNode graphLayoutNode ${graphWorkFocus === "running" ? "runningGraphNode " : graphWorkFocus === "next-ready" ? "nextReadyGraphNode " : ""}${initialCritical ? "criticalGraphNode" : ""}${initialCycle ? " cycleGraphNode" : ""}${dependencyWarning === "" ? "" : " dependencyWarningGraphNode"}${mergeRiskWarning === "" ? "" : " mergeRiskGraphNode"}" data-graph-id="${escapeHtml(item.id)}" data-graph-level="${graphLevel}" data-graph-lane="${lane}" data-status="${escapeHtml(normalizedStatus)}" data-work-focus="${graphWorkFocus}" data-critical="${initialCritical ? "1" : "0"}" data-cycle="${initialCycle ? "1" : "0"}" data-parent-id="${escapeHtml(parentId)}" data-epic-id="${escapeHtml(epicId ?? "")}" data-depth="${depth}" style="${initialDisplay}--graph-x:${x}px;--graph-y:${y}px"><div class="graphNodeTop"><span class="typeBadge type-${escapeHtml(normalizedType)}">${escapeHtml(item.type)}</span>${graphWorkBadge}<span class="criticalBadge"${initialCritical ? "" : " hidden"}>Longest chain</span><span class="cycleBadge"${initialCycle ? "" : " hidden"}>Cycle</span></div><div class="beadId">${escapeHtml(item.id)}</div><div class="graphNodeTitle">${escapeHtml(item.title)}</div><div class="graphNodeBadges"><span class="statusBadge status-${escapeHtml(normalizedStatus.replace(/_/g, "-"))}">${escapeHtml(beadStatusLabel(normalizedStatus))}</span><span class="priorityBadge priority-${escapeHtml(normalizedPriority.toLowerCase())}">${escapeHtml(normalizedPriority)}</span>${graphBadges}</div>${dependencyWarning === "" ? "" : `<div class="graphWarning">${escapeHtml(dependencyWarning)}</div>`}${mergeRiskWarning === "" ? "" : `<div class="graphWarning graphMergeRisk">${escapeHtml(mergeRiskWarning)}</div>`}${dependencyLines === "" ? "" : `<div class="graphRelations">${dependencyLines}</div>`}<div class="graphNodeActions"><button class="graphDetailsBead" type="button" data-graph-details-id="${escapeHtml(item.id)}" data-graph-details-workspace="${escapeHtml(workspacePath)}" aria-label="${escapeHtml(`Details for ${taskActionContext}`)}">Details</button>${actionHtml}</div></div>`;
+    })
+    .join("");
+  const boundaryNodeHtml = `<div class="graphBoundaryNode graphLayoutNode" data-graph-id="${GRAPH_START_ID}" data-graph-boundary="start" data-graph-level="0" style="--graph-x:${startPosition.x}px;--graph-y:${startPosition.y}px"><span class="graphBoundaryIcon" aria-hidden="true">▶</span><strong>Start</strong><small>Visible flow begins</small></div><div class="graphBoundaryNode graphLayoutNode" data-graph-id="${GRAPH_END_ID}" data-graph-boundary="end" data-graph-level="${initialEndLevel}" style="--graph-x:${endPosition.x}px;--graph-y:${endPosition.y}px"><span class="graphBoundaryIcon" aria-hidden="true">✓</span><strong>End</strong><small>Visible flow complete</small></div>`;
   const dependencyWarningSummary =
     dependencyWarnings.size > 0
       ? `<span class="summaryPill dependencyWarningSummary">${dependencyWarnings.size} warnings</span>`
@@ -706,20 +816,20 @@ function renderBeadsDependencyGraph(
           .join("")}</div></details>`
       : "";
   const graphWorkSummary = `<span class="summaryPill graphRunningSummary${runningCount === 0 ? " isEmpty" : ""}" aria-label="${runningCount} Now, recorded in progress; live activity is not confirmed" title="Beads records these tasks as in progress; this is not a live heartbeat"><span class="graphRunningDot" aria-hidden="true"></span><strong>${runningCount}</strong> Now (recorded)</span><span class="summaryPill graphNextSummary" title="Open tasks confirmed by bd ready"><strong>${nextReadyCount}</strong> Next</span>`;
-  const criticalSummary = `<span class="summaryPill criticalSummary" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}"${graph.criticalPathIds.length > 0 ? "" : " hidden"}>${graph.criticalPathIds.length} chain</span>`;
-  const cycleSummary = `<span class="summaryPill cycleSummary"${graph.cycleIds.size > 0 ? "" : " hidden"}>${graph.cycleIds.size} cycle</span>`;
-  const pathUnavailable = graph.cycleIds.size > 0;
+  const criticalSummary = `<span class="summaryPill criticalSummary" title="${escapeHtml(initialGraphState.criticalPathIds.join(" -> "))}"${initialGraphState.criticalPathIds.length > 0 ? "" : " hidden"}>${initialGraphState.criticalPathIds.length} chain</span>`;
+  const cycleSummary = `<span class="summaryPill cycleSummary"${initialGraphState.cycleIds.size > 0 ? "" : " hidden"}>${initialGraphState.cycleIds.size} cycle</span>`;
+  const pathUnavailable = initialGraphState.cycleIds.size > 0;
   const pathText = pathUnavailable
     ? "Unavailable: dependency cycle detected"
-    : graph.criticalPathIds.length > 0
-      ? graph.criticalPathIds.join(" -> ")
+    : initialGraphState.criticalPathIds.length > 0
+      ? initialGraphState.criticalPathIds.join(" -> ")
       : "No dependency path yet";
-  const criticalPathHtml = `<div class="graphPathStrip${graph.criticalPathIds.length > 0 ? "" : " emptyCriticalPath"}${pathUnavailable ? " cycleGraphPath" : ""}"><span>Longest Chain</span><strong class="graphPathValue" title="${escapeHtml(pathText)}">${escapeHtml(pathText)}</strong></div>`;
+  const criticalPathHtml = `<div class="graphPathStrip${initialGraphState.criticalPathIds.length > 0 ? "" : " emptyCriticalPath"}${pathUnavailable ? " cycleGraphPath" : ""}"><span>Longest Chain</span><strong class="graphPathValue" title="${escapeHtml(pathText)}">${escapeHtml(pathText)}</strong></div>`;
   const graphLegendHtml =
     '<div class="graphLegend"><span class="runningLegend">Now (recorded)</span><span class="nextReadyLegend">Next ready</span><span class="flowLegend">Visible flow</span><span class="dependencyLegend">Dependency</span><span class="criticalLegend">Longest chain</span><span class="cycleLegend">Cycle</span><span class="parentLegend">Parent</span><span class="riskLegend">Merge/worktree risk</span></div>';
   const graphIssuesHtml = `<div class="graphIssueStack">${dependencyWarningHtml}${mergeRiskHtml}</div>`;
 
-  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">A new viewport focuses Now/Next; saved views keep their position · Point anywhere and wheel to zoom there · Drag to pan · Option/Alt+drag a box to zoom · Double-click to fit all</div></div><div class="graphHeaderActions"><div class="workspaceSummary">${graphWorkSummary}<span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${cycleSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="focus" title="Center recorded in-progress and ready-next tasks"${runningCount + nextReadyCount === 0 ? " disabled" : ""}>Focus</button><button type="button" data-graph-action="fit">Fit all</button></div></div></div>${graphIssuesHtml}<div class="graphDetailsHost"></div><div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div><svg class="graphMiniMap" role="img" aria-label="Graph overview. The outlined rectangle is the current viewport."></svg></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to pan, Option or Alt drag a box to zoom, use arrow keys to pan, press F to focus Now and Next, and press zero to fit all."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${boundaryNodeHtml}${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
+  return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">A new viewport focuses Now/Next; saved views keep their position · Point anywhere and wheel to zoom there · Drag to pan · Option/Alt+drag a box to zoom · Double-click to fit all</div></div><div class="graphHeaderActions"><div class="workspaceSummary">${graphWorkSummary}<span class="summaryPill dependencySummary">${initialGraphState.edges.length} deps</span>${criticalSummary}${cycleSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="focus" title="Center recorded in-progress and ready-next tasks"${runningCount + nextReadyCount === 0 ? " disabled" : ""}>Focus</button><button type="button" data-graph-action="fit">Fit all</button></div></div></div>${graphIssuesHtml}<div class="graphDetailsHost"></div><div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div><svg class="graphMiniMap" role="img" aria-label="Graph overview. The outlined rectangle is the current viewport."></svg></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to pan, Option or Alt drag a box to zoom, use arrow keys to pan, press F to focus Now and Next, and press zero to fit all."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${boundaryNodeHtml}${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
 }
 
 export function renderBeadsWebviewHtml(
@@ -1405,20 +1515,21 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphRiskBand span{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border-radius:6px;border:1px solid rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:var(--vscode-errorForeground,#ef4444);font-size:10px;font-weight:650;}
 .graphScroller{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;background:var(--vscode-editor-background);cursor:grab;user-select:none;}
 .graphScroller.isPanning{cursor:grabbing;}
-.graphCanvas{position:relative;min-width:100%;min-height:100%;overflow:hidden;background-color:var(--vscode-editor-background);background-image:linear-gradient(rgba(128,128,128,.1) 1px, transparent 1px),linear-gradient(90deg, rgba(128,128,128,.1) 1px, transparent 1px);background-size:48px 48px;}
+.graphCanvas{position:relative;min-width:100%;min-height:100%;overflow:hidden;background:var(--vscode-editor-background);}
 .graphContent{position:absolute;left:0;top:0;transform:translate(var(--graph-pan-x,0px),var(--graph-pan-y,0px)) scale(var(--graph-zoom,1));transform-origin:0 0;}
 .graphZoomSelection{position:absolute;z-index:6;border:1px solid var(--vscode-focusBorder,#3b82f6);background:rgba(59,130,246,.16);box-shadow:0 0 0 1px rgba(59,130,246,.18) inset;pointer-events:none;}
 .dependencyOverlay{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none;overflow:visible;}
-.dependencyPath{fill:none;stroke:rgba(148,163,184,.8);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
-.dependencyPath.boundaryDependencyPath{stroke:var(--vscode-textLink-foreground,#3b82f6);stroke-width:1.8;}
+.graphPathCasing{fill:none;stroke:var(--vscode-editor-background);stroke-width:var(--graph-path-casing-width,6);stroke-linecap:butt;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
+.dependencyPath{fill:none;stroke:color-mix(in srgb,var(--vscode-foreground) 66%,transparent);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
+.dependencyPath.boundaryDependencyPath{stroke:var(--vscode-textLink-foreground,#3b82f6);stroke-width:2;}
 .dependencyPath.criticalDependencyPath{stroke:var(--vscode-charts-pink,#ec4899);stroke-width:2;}
 .dependencyPath.cycleDependencyPath{stroke:var(--vscode-charts-purple,#a855f7);stroke-width:2;stroke-dasharray:4 3;}
 .graphParentPath{fill:none;stroke:var(--vscode-textLink-foreground,#3b82f6);stroke-width:1.4;stroke-dasharray:6 5;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
-.dependencyArrowHead{fill:rgba(148,163,184,.88);}
+.dependencyArrowHead{fill:color-mix(in srgb,var(--vscode-foreground) 74%,transparent);}
 .boundaryDependencyArrowHead{fill:var(--vscode-textLink-foreground,#3b82f6);}
 .criticalDependencyArrowHead{fill:var(--vscode-charts-pink,#ec4899);}
 .cycleDependencyArrowHead{fill:var(--vscode-charts-purple,#a855f7);}
-.graphLevelGuide{position:absolute;top:0;bottom:18px;left:var(--graph-guide-x);z-index:0;border-left:1px dashed rgba(128,128,128,.28);}
+.graphLevelGuide{position:absolute;top:0;bottom:18px;left:var(--graph-guide-x);z-index:0;border-left:1px dashed rgba(128,128,128,.2);}
 .graphLevelLabel{position:absolute;top:10px;left:8px;display:grid;gap:1px;min-width:82px;color:var(--vscode-descriptionForeground);letter-spacing:0;}
 .graphLevelLabel strong{font-size:11px;font-weight:800;line-height:1.1;color:var(--vscode-foreground);}
 .graphLevelLabel small{font-size:10px;font-weight:650;line-height:1.15;color:var(--vscode-descriptionForeground);}
