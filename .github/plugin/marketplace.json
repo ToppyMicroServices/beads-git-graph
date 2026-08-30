@@ -1,0 +1,18 @@
+{
+  "name": "toppymicroservices-agent-plugins",
+  "owner": {
+    "name": "ToppyMicroServices"
+  },
+  "metadata": {
+    "description": "Local-first agent project management plugins from ToppyMicroServices.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "beads-agent-project-manager",
+      "description": "Plan dependency-linked work, dispatch ready tasks, and track verified progress with Beads.",
+      "version": "0.1.0",
+      "source": "./agent-plugin"
+    }
+  ]
+}

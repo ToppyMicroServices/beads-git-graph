@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add a separate Agent Plugins 1.0 package with a Beads project-manager skill, Copilot custom
+  agent, and self-hosted plugin marketplace metadata.
+
 ## [0.6.3] - 2026-08-26
 
 ### Added

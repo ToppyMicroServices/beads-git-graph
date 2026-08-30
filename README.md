@@ -42,6 +42,24 @@ before approving an import or starting work.
 If your workspace has a `.beads` directory, the extension detects it automatically. Set the
 machine-scoped `beads-git-graph.bdPath` setting if `bd` is not on `PATH`.
 
+## Use as an Agent Plugin
+
+The repository also ships `beads-agent-project-manager`, an Agent Plugins 1.0 package for GitHub
+Copilot in VS Code and compatible clients. It adds a Beads-aware project-manager skill and a
+dedicated Copilot agent. The plugin is separate from the VSIX and uses the locally installed `bd`
+CLI; it does not expose the extension host as an MCP server.
+
+In VS Code, add this repository as a plugin marketplace:
+
+```json
+{ "chat.plugins.marketplaces": ["ToppyMicroServices/beads-git-graph"] }
+```
+
+Then search Extensions for `@agentPlugins` and install **Beads Agent Project Manager**. See the
+[Agent plugin installation and safety notes](./docs/agent-plugin.md). The plugin is isolated under
+`agent-plugin/`; installing it does not package the repository's Beads database, VSIX files, or
+development dependencies.
+
 ## Manage Agent Work
 
 Open **Manage** in the Beads view to see the Agent Work Queue. It derives each lane from Beads status and recorded worktree, PR, check, and sync-risk metadata:

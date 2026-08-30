@@ -1,0 +1,17 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "beads-agent-project-manager",
+  "description": "Plan dependency-linked work, dispatch ready tasks, and track verified progress with Beads.",
+  "version": "0.1.0",
+  "author": {
+    "name": "ToppyMicroServices",
+    "url": "https://github.com/ToppyMicroServices"
+  },
+  "homepage": "https://github.com/ToppyMicroServices/beads-git-graph#use-as-an-agent-plugin",
+  "repository": "https://github.com/ToppyMicroServices/beads-git-graph",
+  "license": "MIT",
+  "keywords": ["agents", "beads", "dependencies", "multi-agent", "project-management"],
+  "extensions": {
+    "com.github.copilot": {}
+  }
+}
