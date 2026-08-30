@@ -76,6 +76,20 @@ function getGraphNodeOpeningTag(html: string, issueId: string) {
   return tag ?? "";
 }
 
+function getGraphLayoutNodePosition(html: string, issueId: string) {
+  const tag = html
+    .match(/<div\b[^>]*>/g)
+    ?.find(
+      (candidate) =>
+        candidate.includes("graphLayoutNode") && candidate.includes(`data-graph-id="${issueId}"`)
+    );
+  expect(tag, `Expected a positioned Graph node for ${issueId}`).toBeDefined();
+  return {
+    x: Number(tag?.match(/--graph-x:([\d.-]+)px/)?.[1]),
+    y: Number(tag?.match(/--graph-y:([\d.-]+)px/)?.[1])
+  };
+}
+
 function supportedCapabilities(workspace: string, workspacePath: string) {
   const capability = {
     supported: true,
@@ -113,6 +127,18 @@ describe("Agent Project Manager webview", () => {
               status: "blocked",
               checkStatus: "failed",
               syncRisk: "dirty"
+            }),
+            makeBead({
+              id: "live-1",
+              title: "Run local implementation",
+              status: "in_progress",
+              liveExecution: {
+                runId: "00000000-0000-4000-8000-000000000003",
+                provider: "ollama",
+                model: "qwen2.5-coder:0.5b",
+                startedAt: "2026-07-15T00:00:00.000Z",
+                heartbeatAt: "2026-07-15T00:00:05.000Z"
+              }
             }),
             makeBead({
               id: "review-1",
@@ -175,7 +201,7 @@ describe("Agent Project Manager webview", () => {
     expect(html).toContain("Visible flow begins");
     expect(html).toContain("Visible flow complete");
 
-    for (const lane of ["attention", "review", "running", "queue", "done"]) {
+    for (const lane of ["attention", "live", "review", "running", "queue", "done"]) {
       expect(html).toContain(`data-work-lane="${lane}"`);
       expect(html).toContain(`data-work-summary="${lane}">1</strong>`);
     }
@@ -184,9 +210,11 @@ describe("Agent Project Manager webview", () => {
     expect(html).toContain("Sync risk is reported as &quot;dirty&quot;");
     expect(html).toContain("Checks are reported as &quot;failed&quot;");
     expect(html).toContain(
-      "Derived from Beads status and recorded Git/PR metadata. “Recorded in progress” is not live-agent monitoring."
+      "Live now means this extension is awaiting a direct provider response for the task. Recorded in progress comes from Beads and is not a heartbeat."
     );
     expect(html).toContain("Status is in progress; live agent activity is not confirmed");
+    expect(getAgentCard(html, "live-1")).toContain("liveAgentWorkCard");
+    expect(getAgentCard(html, "live-1")).toContain("Live ollama / qwen2.5-coder:0.5b");
 
     expect(html).toContain('data-graph-details-id="attention-1"');
     expect(html).toContain('data-graph-details-workspace="/tmp/mission&amp;control"');
@@ -230,6 +258,138 @@ describe("Agent Project Manager webview", () => {
     expect(html).not.toContain("<unsafe>");
   });
 
+  it("renders independent active tasks in one connected flow column", () => {
+    const workspacePath = "/tmp/layered-graph";
+    const taskIds = ["task-a", "task-b", "task-c", "task-d"];
+    const result: BeadLoadResult = {
+      groups: [
+        {
+          workspace: "Layered graph",
+          workspacePath,
+          items: taskIds.map((id) => makeBead({ id }))
+        }
+      ],
+      emptyWorkspaces: [],
+      unavailableWorkspaces: [],
+      bdExecutableStatus: { available: true, command: "bd", message: null },
+      ...supportedCapabilities("Layered graph", workspacePath),
+      errors: [],
+      warnings: []
+    };
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      result
+    );
+    const taskPositions = taskIds.map((id) => getGraphLayoutNodePosition(html, id));
+    const start = getGraphLayoutNodePosition(html, "__beads_flow_start__");
+    const end = getGraphLayoutNodePosition(html, "__beads_flow_end__");
+
+    expect(new Set(taskPositions.map(({ x }) => x)).size).toBe(1);
+    expect(new Set(taskPositions.map(({ y }) => y)).size).toBe(taskIds.length);
+    expect(start.x).toBeLessThan(taskPositions[0].x);
+    expect(taskPositions[0].x).toBeLessThan(end.x);
+    for (const id of taskIds) {
+      expect(html).toContain(
+        `data-graph-boundary="start" data-from-id="__beads_flow_start__" data-to-id="${id}"`
+      );
+      expect(html).toContain(
+        `data-graph-boundary="end" data-from-id="${id}" data-to-id="__beads_flow_end__"`
+      );
+    }
+  });
+
+  it("renders a dependency diamond in ordered columns with explicit edges", () => {
+    const workspacePath = "/tmp/diamond-graph";
+    const result: BeadLoadResult = {
+      groups: [
+        {
+          workspace: "Diamond graph",
+          workspacePath,
+          items: [
+            makeBead({ id: "plan", title: "Plan" }),
+            makeBead({ id: "backend", title: "Backend", dependencyIds: ["plan"] }),
+            makeBead({ id: "frontend", title: "Frontend", dependencyIds: ["plan"] }),
+            makeBead({
+              id: "integration",
+              title: "Integration",
+              dependencyIds: ["backend", "frontend"]
+            })
+          ]
+        }
+      ],
+      emptyWorkspaces: [],
+      unavailableWorkspaces: [],
+      bdExecutableStatus: { available: true, command: "bd", message: null },
+      ...supportedCapabilities("Diamond graph", workspacePath),
+      errors: [],
+      warnings: []
+    };
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      result
+    );
+    const plan = getGraphLayoutNodePosition(html, "plan");
+    const backend = getGraphLayoutNodePosition(html, "backend");
+    const frontend = getGraphLayoutNodePosition(html, "frontend");
+    const integration = getGraphLayoutNodePosition(html, "integration");
+
+    expect(plan.x).toBeLessThan(backend.x);
+    expect(backend.x).toBe(frontend.x);
+    expect(backend.y).not.toBe(frontend.y);
+    expect(frontend.x).toBeLessThan(integration.x);
+    for (const [fromId, toId] of [
+      ["plan", "backend"],
+      ["plan", "frontend"],
+      ["backend", "integration"],
+      ["frontend", "integration"]
+    ]) {
+      expect(html).toContain(`data-from-id="${fromId}" data-to-id="${toId}"`);
+    }
+  });
+
+  it("does not paint a visible cycle when the other cycle member is filtered out", () => {
+    const workspacePath = "/tmp/filtered-cycle";
+    const result: BeadLoadResult = {
+      groups: [
+        {
+          workspace: "Filtered cycle",
+          workspacePath,
+          items: [
+            makeBead({ id: "visible", dependencyIds: ["hidden"] }),
+            makeBead({ id: "hidden", status: "closed", dependencyIds: ["visible"] })
+          ]
+        }
+      ],
+      emptyWorkspaces: [],
+      unavailableWorkspaces: [],
+      bdExecutableStatus: { available: true, command: "bd", message: null },
+      ...supportedCapabilities("Filtered cycle", workspacePath),
+      errors: [],
+      warnings: []
+    };
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      result
+    );
+    const visibleTag = getGraphNodeOpeningTag(html, "visible");
+
+    expect(visibleTag).toContain('data-cycle="0"');
+    expect(visibleTag).not.toContain("cycleGraphNode");
+    expect(html).not.toContain("Unavailable: dependency cycle detected");
+  });
+
   it("keeps hidden and missing dependencies visible and reports cycles", () => {
     const workspacePath = "/tmp/graph-diagnostics";
     const result: BeadLoadResult = {
@@ -270,6 +430,9 @@ describe("Agent Project Manager webview", () => {
     expect(html).toContain("Unavailable: dependency cycle detected");
     expect(html).toContain('data-cycle="1"');
     expect(html).toContain("cycleBadge");
+    expect(html).not.toMatch(/class="graphEdge"[^>]*data-from-id="gone"/);
+    expect(html).toContain(`data-from-id="cycle-a" data-to-id="cycle-b"`);
+    expect(html).toContain(`data-from-id="cycle-b" data-to-id="cycle-a"`);
   });
 
   it("enables Start AI only when bd ready confirms the task", () => {
@@ -642,7 +805,7 @@ describe("Agent Project Manager webview", () => {
     expect(html).not.toContain("Provider GitHub Copilot");
   });
 
-  it("puts recorded work and bd-ready tasks first in the Graph without pulsing review work", () => {
+  it("puts Live, Recorded, and Next first while pulsing only Live work", () => {
     const workspacePath = "/tmp/mission-control";
     const html = renderBeadsWebviewHtml(
       {
@@ -657,6 +820,17 @@ describe("Agent Project Manager webview", () => {
             workspacePath,
             items: [
               makeBead({ id: "unready", parallelizable: true }),
+              makeBead({
+                id: "live",
+                status: "in_progress",
+                liveExecution: {
+                  runId: "00000000-0000-4000-8000-000000000004",
+                  provider: "ollama",
+                  model: "qwen2.5-coder:0.5b",
+                  startedAt: "2026-07-15T00:00:00.000Z",
+                  heartbeatAt: "2026-07-15T00:00:05.000Z"
+                }
+              }),
               makeBead({
                 id: "review-response",
                 status: "in_progress",
@@ -678,6 +852,8 @@ describe("Agent Project Manager webview", () => {
       }
     );
 
+    expect(getGraphNodeOpeningTag(html, "live")).toContain("liveGraphNode");
+    expect(getGraphNodeOpeningTag(html, "live")).toContain('data-work-focus="live"');
     expect(getGraphNodeOpeningTag(html, "working")).toContain("runningGraphNode");
     expect(getGraphNodeOpeningTag(html, "working")).toContain('data-work-focus="running"');
     expect(getGraphNodeOpeningTag(html, "next")).toContain("nextReadyGraphNode");
@@ -685,10 +861,15 @@ describe("Agent Project Manager webview", () => {
     expect(getGraphNodeOpeningTag(html, "review-pr")).toContain('data-work-focus="none"');
     expect(getGraphNodeOpeningTag(html, "review-response")).toContain('data-work-focus="none"');
     expect(getGraphNodeOpeningTag(html, "unready")).toContain('data-work-focus="none"');
-    expect(html).toContain("Now · Recorded");
+    expect(html).toContain("Live · ollama");
+    expect(html).toContain(">Recorded</span>");
     expect(html).toContain("Next · Ready");
-    expect(html).toContain("<strong>1</strong> Now");
+    expect(html).toContain("<strong>1</strong> Live");
+    expect(html).toContain("<strong>1</strong> Recorded");
     expect(html).toContain("<strong>1</strong> Next");
+    expect(html.indexOf('data-graph-id="live"')).toBeLessThan(
+      html.indexOf('data-graph-id="working"')
+    );
     expect(html.indexOf('data-graph-id="working"')).toBeLessThan(
       html.indexOf('data-graph-id="next"')
     );
@@ -697,7 +878,7 @@ describe("Agent Project Manager webview", () => {
     );
   });
 
-  it("does not pulse the Now summary when no recorded work is visible", () => {
+  it("does not pulse the Live summary when no live work is visible", () => {
     const workspacePath = "/tmp/mission-control";
     const html = renderBeadsWebviewHtml(
       {
@@ -722,9 +903,11 @@ describe("Agent Project Manager webview", () => {
       }
     );
 
+    expect(html).toContain('class="summaryPill graphLiveSummary isEmpty"');
+    expect(html).toContain("<strong>0</strong> Live");
+    expect(html).toContain(".graphLiveSummary.isEmpty .graphLiveDot{display:none;animation:none;}");
     expect(html).toContain('class="summaryPill graphRunningSummary isEmpty"');
-    expect(html).toContain("<strong>0</strong> Now (recorded)");
-    expect(html).toContain(".graphRunningSummary.isEmpty .graphRunningDot{display:none");
+    expect(html).toContain("<strong>0</strong> Recorded");
   });
 
   it("moves a linked cross-model handoff from upstream work to the downstream queue", () => {

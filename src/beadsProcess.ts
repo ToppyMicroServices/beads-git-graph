@@ -5,6 +5,14 @@ import { type CommandAvailability } from "./commandAvailability";
 export const RESTRICTED_MODE_BEADS_MESSAGE =
   "Beads CLI execution is disabled in Restricted Mode. Trust this workspace to run bd.";
 
+export const BEADS_LOCAL_INIT_ARGS = [
+  "init",
+  "--non-interactive",
+  "--skip-agents",
+  "--skip-hooks",
+  "--init-if-missing"
+] as const;
+
 type ExecutableChecker = (
   command: string,
   args: string[],
@@ -30,10 +38,23 @@ export function assertBeadsProcessTrusted(isTrusted: boolean) {
   }
 }
 
+export function getBdExecutableFallbackCommands(
+  platform: NodeJS.Platform = process.platform
+): string[] {
+  if (platform === "darwin") {
+    return ["/opt/homebrew/bin/bd", "/usr/local/bin/bd"];
+  }
+  if (platform === "linux") {
+    return ["/home/linuxbrew/.linuxbrew/bin/bd", "/usr/local/bin/bd"];
+  }
+  return [];
+}
+
 export async function resolveBdExecutableStatus(
   command: string,
   isTrusted: boolean,
-  checkExecutable: ExecutableChecker
+  checkExecutable: ExecutableChecker,
+  fallbackCommands: readonly string[] = getBdExecutableFallbackCommands()
 ): Promise<CommandAvailability> {
   if (!isTrusted) {
     return {
@@ -42,5 +63,15 @@ export async function resolveBdExecutableStatus(
       message: RESTRICTED_MODE_BEADS_MESSAGE
     };
   }
-  return checkExecutable(command, ["--version"], createBdSpawnOptions());
+  const primary = await checkExecutable(command, ["--version"], createBdSpawnOptions());
+  if (primary.available || command !== "bd") {
+    return primary;
+  }
+  for (const fallback of fallbackCommands) {
+    const status = await checkExecutable(fallback, ["--version"], createBdSpawnOptions());
+    if (status.available) {
+      return status;
+    }
+  }
+  return primary;
 }

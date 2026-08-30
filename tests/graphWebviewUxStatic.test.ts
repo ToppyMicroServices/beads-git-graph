@@ -57,6 +57,16 @@ describe("Graph webview UX contracts", () => {
     );
   });
 
+  it("fits the complete routed canvas, including outer corridors", () => {
+    const fitSource = sourceBetween(
+      "function getGraphFitZoomForPane",
+      "function focusGraphWorkToPane"
+    );
+
+    expect(fitSource).toContain("getGraphRequiredSize(pane, getGraphBaseSize(canvas))");
+    expect(fitSource).not.toContain("{ width: 1, height: 1 }");
+  });
+
   it("updates only the minimap viewport during pan and zoom", () => {
     const applyTransformSource = sourceBetween(
       "function applyGraphZoomToPane",
@@ -77,6 +87,24 @@ describe("Graph webview UX contracts", () => {
     expect(viewportSource).not.toContain("replaceChildren");
     expect(viewportSource).not.toContain("getVisibleGraphLayoutNodes");
     expect(geometrySource).toContain("replaceChildren");
+  });
+
+  it("keeps crossing casings separated and Start/End paths in front", () => {
+    const applyTransformSource = sourceBetween(
+      "function applyGraphZoomToPane",
+      "function applyGraphZoomToAll"
+    );
+
+    expect(applyTransformSource).toContain('"--graph-path-casing-width"');
+    expect(applyTransformSource).toContain("GRAPH_PATH_CASING_MIN_ZOOM");
+    expect(beadsMain).toContain("buildDirectGraphCasingPath");
+    expect(beadsMain).toContain("buildObstacleAvoidingGraphCasingPath");
+    expect(beadsMain).toContain("getGraphPortEndpointKey");
+    expect(beadsMain).toContain('connection.boundary === "start"');
+    expect(beadsMain).toContain('connection.boundary === "end"');
+    expect(beadsMain).toContain("sameColumnSide");
+    expect(beadsMain).toContain("boundaryBranchForegroundPaths");
+    expect(beadsMain).toContain('data-graph-boundary-branch="1"');
   });
 
   it("keys reordered Manage cards and settles Retry through the host protocol", () => {

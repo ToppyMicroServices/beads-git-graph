@@ -6,6 +6,8 @@ export type BeadsRequestMessage = (
   | { command: "openGitGraph" }
   | { command: "syncAllBeads" }
   | { command: "syncBeads"; workspacePath: string }
+  | { command: "configureBdPath" }
+  | { command: "initializeBeads"; workspacePath: string }
   | {
       command: "generatePlanDraft";
       requestId: string;
@@ -199,8 +201,11 @@ export function isBeadsRequestMessage(message: unknown): message is BeadsRequest
     case "openGitGraph":
     case "syncAllBeads":
       return true;
+    case "configureBdPath":
+      return true;
     case "syncBeads":
     case "createBead":
+    case "initializeBeads":
       return typeof record.workspacePath === "string";
     case "generatePlanDraft":
       return (

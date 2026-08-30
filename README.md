@@ -23,15 +23,18 @@ before approving an import or starting work.
 - Lets you switch between Git Graph and Beads from the toolbar
 - Lets you refresh, create, close, and sync Beads items inside VS Code
 - Shows optional parallel, AI provider/model, audit artifact, SSOT/context, worktree, branch, PR, check, and sync-risk hints on Beads items
-- Shows a Beads execution map that focuses a new viewport on recorded in-progress and `bd ready`
-  work while preserving a saved viewport, with Critical Path, dependency arrows, dashed parent-child
-  lines, merge/worktree risk, Start AI, Start Parallel, and merge actions
+- Shows a Beads execution map that focuses a new viewport on Live, recorded in-progress, and
+  `bd ready` work while preserving a saved viewport, with Critical Path, dependency arrows, dashed
+  parent-child lines, merge/worktree risk, Start AI, Start Parallel, and merge actions
 - Zooms the execution map around the location under the pointer, pans with normal drag, box-zooms
   with Option/Alt-drag, and preserves the transform when switching views, resizing, or refreshing
 - Refreshes task data in place without moving the visible area while preserving the selected view,
   open details, filters, sorting, collapsed groups, scroll position, and graph transform
-- Adds a Manage view that groups recorded work into Needs attention, Review, Recorded in progress, Queue, and Done
-- Adds an AI Plan Draft workflow that turns a goal into editable tasks, then validates and previews dependencies, Critical Path, parallel groups, requested provider/model transitions, and exact Beads mutations before import
+- Adds a Manage view that separates direct-provider Live work from Beads-recorded progress, review,
+  queued work, and completed work
+- Adds a Lite AI Plan Draft workflow that works before Beads is initialized, then validates and
+  previews dependencies, Critical Path, parallel groups, requested provider/model transitions, and
+  exact Beads mutations before import
 
 ## Use It
 
@@ -39,8 +42,15 @@ before approving an import or starting work.
 2. Open the Beads view from the Activity Bar.
 3. Use the toolbar to refresh, sync, or switch views.
 
-If your workspace has a `.beads` directory, the extension detects it automatically. Set the
-machine-scoped `beads-git-graph.bdPath` setting if `bd` is not on `PATH`.
+If your workspace has a `.beads` directory, the extension detects it automatically. It checks `bd`
+on `PATH` and common Homebrew or Linuxbrew locations. Use **Locate bd…** or the machine-scoped
+`beads-git-graph.bdPath` setting for another installation.
+
+Without `.beads`, Plan remains available in Lite mode. **Initialize Beads** runs only after a modal
+confirmation and only when `.beads` is absent. It uses this fixed command:
+`bd init --non-interactive --skip-agents --skip-hooks --init-if-missing`. Depending on the installed
+Beads version and repository state, `bd` may add and commit `.beads` metadata and `.gitignore`
+changes. The extension never runs `bd migrate`, `bd bootstrap`, or a destructive reinitialization.
 
 ## Use as an Agent Plugin
 
@@ -69,15 +79,20 @@ public repository into its marketplace source cache.
 Open **Manage** in the Beads view to see the Agent Work Queue. It derives each lane from Beads status and recorded worktree, PR, check, and sync-risk metadata:
 
 - **Needs attention**: explicitly blocked work, known failing checks, dangerous sync risk, or an unrecognized status
+- **Live now**: this extension is awaiting direct-provider generation or verification for the task
 - **Review**: a pull request is recorded and no supported failure signal is present
-- **Recorded in progress**: Beads reports the task as in progress
+- **Recorded in progress**: Beads reports the task as in progress, without a live heartbeat
 - **Queue**: open work, with confirmed readiness distinguished from readiness not yet confirmed by `bd ready`
 - **Done**: Beads reports the task as closed
 
-The Manage view does not claim live agent monitoring. “Recorded in progress” reflects Beads status,
-and unavailable evidence remains unconfirmed. In Manage, **Start AI** is enabled only when
-`bd ready` confirms readiness. Use **Details**, **Start AI**, and **Merge PRs** to continue through
-the existing workflow.
+Live highlighting is limited to direct-provider generation and verification launched through this
+extension. It stops before human review begins. GitHub Copilot does not expose completion telemetry
+to this extension after the coding session opens, so Copilot and work launched outside the extension
+are not shown as Live. “Recorded in progress” reflects Beads status only, and
+unavailable evidence remains unconfirmed.
+
+In Manage, **Start AI** is enabled only when `bd ready` confirms readiness. Use **Details**, **Start
+AI**, and **Merge PRs** to continue through the existing workflow.
 
 ## Plan Agent Work
 
@@ -92,9 +107,10 @@ Open **Plan** in the Beads view and follow the explicit four-step flow:
 4. Select **Import Plan** only after the draft is correct, then move to **Manage** to run work that
    Beads currently reports as ready.
 
+Lite Plan generation requires an open workspace folder but does not require `bd` or `.beads`.
 AI generation creates an editable draft only. It does not import tasks, mutate Beads, execute the
-response, or start an agent. The planning request contains the goal, workspace display name,
-available relative SSOT references, and configured provider/model choices; it does not include file
+response, initialize Beads, or start an agent. The planning request contains the goal, workspace
+display name, available relative SSOT references, and configured provider/model choices; it does not include file
 contents, an absolute workspace path, or credentials. The raw provider response is retained as a
 local, plain-text, untrusted artifact for review. Do not put credentials or other secrets in the
 goal or draft. GitHub Copilot is not used for draft generation because its integration opens a
@@ -111,9 +127,10 @@ Host parses and validates the draft again, repeats the capability check, shows t
 and asks for explicit approval before executing it. Discarding the draft performs no Beads write.
 
 A missing executable, unsupported command, or schema mismatch keeps import disabled and shows the
-observed reason. The extension does not initialize, bootstrap, or migrate a Beads database. If an
-approved import fails partway through, it stops, reports created IDs plus failed and unexecuted
-operations, and does not claim rollback.
+observed reason. Guided initialization is a separate confirmed action for a workspace with no
+`.beads` directory. It never migrates, bootstraps, or replaces an existing database. If an approved
+import fails partway through, it stops, reports created IDs plus failed and unexecuted operations,
+and does not claim rollback.
 
 ## Multi-Agent Hints
 
@@ -254,8 +271,9 @@ secrets in prompts, generated responses, task titles, descriptions, notes, or la
 
 Beads data is also local plain text and can be tracked by Git. This repository's default Beads setup
 tracks selected JSONL/configuration records, so data committed to a public repository becomes
-public. Review `.beads` changes before committing. The extension does not initialize, bootstrap, or
-migrate a Beads database, and it preserves schema-mismatch failures instead of bypassing them.
+public. Review `.beads` and `.gitignore` changes before publishing. Confirmed guided initialization
+may let `bd` create a Git commit. The extension does not silently initialize, never bootstraps or
+migrates a database, and preserves schema-mismatch failures instead of bypassing them.
 
 ## SSOT Usage
 

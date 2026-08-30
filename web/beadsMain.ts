@@ -8,16 +8,36 @@ import {
   resolveAgentProviderId
 } from "../src/agentProvider";
 import {
+  buildBoundaryBusGraphBranchPath,
+  buildBoundaryBusGraphCasingPath,
+  buildBoundaryBusGraphPath,
+  buildDirectGraphCasingPath,
+  buildFaninBusGraphPath,
+  buildFanoutBusGraphPath,
+  buildObstacleAvoidingGraphCasingPath,
   buildObstacleAvoidingGraphPath,
+  buildSameColumnGraphCasingPath,
   computeCenteredBoundaryY,
+  computeDependencyConnectedGraphLayout,
   computeGraphBoundaryState,
-  computePackedGraphLayout,
+  computeGraphCorridorSpineRouting,
+  computeGraphDirectLevelGap,
+  computeGraphFaninBusKeys,
+  computeGraphFanoutBusKeys,
+  computeGraphPortOffsets,
+  computeSameColumnGraphRouting,
   computeVisibleGraphState,
+  countGraphCorridorLanes,
   formatGraphRelationPartition,
+  GRAPH_BOUNDARY_BUS_OFFSET,
+  GRAPH_ROUTE_EXIT_BASE,
+  GRAPH_ROUTE_LANE_GAP,
+  GRAPH_ROUTE_X_LANE_GAP,
+  GRAPH_SAME_COLUMN_BASE_OFFSET,
   graphEdgeKey,
   partitionGraphRelationIds
 } from "../src/beadsGraphModel";
-import { compareGraphWorkFocusOrder } from "../src/beadsProjectState";
+import { compareGraphWorkFocusOrder, getGraphWorkFocusRank } from "../src/beadsProjectState";
 import {
   type BeadsHostMessage,
   type BeadsRequestMessage,
@@ -174,14 +194,17 @@ const GRAPH_FIT_PADDING = 16;
 const GRAPH_SELECTION_MIN_SIZE = 12;
 const GRAPH_NODE_WIDTH = 252;
 const GRAPH_LEVEL_GAP = 56;
-const GRAPH_LEVEL_COLUMN_GAP = 24;
 const GRAPH_LANE_GAP = 30;
+const GRAPH_COMPONENT_GAP = 52;
 const GRAPH_PADDING_X = 28;
 const GRAPH_PADDING_Y = 44;
 const GRAPH_KEYBOARD_PAN_STEP = 40;
 const GRAPH_MINIMUM_VISIBLE_SIZE = 48;
 const GRAPH_NODE_VISIBILITY_MINIMUM = 12;
 const GRAPH_FOCUS_PADDING = 16;
+const GRAPH_INITIAL_READABLE_ZOOM = 0.75;
+const GRAPH_PATH_CASING_MIN_ZOOM = 0.5;
+const GRAPH_PATH_CASING_WIDTH = 6;
 const PLAN_DRAFT_EXAMPLE = JSON.stringify(
   {
     version: 1,
@@ -1497,6 +1520,37 @@ function postAssignStartBead(button: HTMLButtonElement) {
   });
 }
 
+function postConfigureBdPath(button: HTMLButtonElement) {
+  if (button.disabled) {
+    return;
+  }
+  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(".configureBdPath"));
+  const clientActionId = beginClientAction("configure-bd-path", buttons, "Selecting…");
+  if (clientActionId === null) {
+    return;
+  }
+  vscode.postMessage({ command: "configureBdPath", clientActionId });
+}
+
+function postInitializeBeads(button: HTMLButtonElement) {
+  const workspacePath = button.dataset.initializeWorkspace || "";
+  if (button.disabled || workspacePath === "") {
+    return;
+  }
+  const buttons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>(".initializeBeads")
+  ).filter((candidate) => candidate.dataset.initializeWorkspace === workspacePath);
+  const clientActionId = beginClientAction(
+    `initialize-beads:${workspacePath}`,
+    buttons,
+    "Initializing…"
+  );
+  if (clientActionId === null) {
+    return;
+  }
+  vscode.postMessage({ command: "initializeBeads", workspacePath, clientActionId });
+}
+
 function postOpenAgentArtifact(button: HTMLButtonElement) {
   const artifactUri = button.dataset.artifactUri || "";
   if (artifactUri.trim() === "" || artifactUri.length > 2048) {
@@ -2428,7 +2482,10 @@ function getVisibleGraphLayoutNodes(pane: HTMLElement) {
 
 function getGraphWorkFocusNodes(pane: HTMLElement) {
   return getVisibleGraphNodes(pane).filter(
-    (node) => node.dataset.workFocus === "running" || node.dataset.workFocus === "next-ready"
+    (node) =>
+      node.dataset.workFocus === "live" ||
+      node.dataset.workFocus === "running" ||
+      node.dataset.workFocus === "next-ready"
   );
 }
 
@@ -2557,14 +2614,27 @@ function refreshGraphDerivedState(pane: HTMLElement) {
       : "0";
   }
 
+  const visibleLiveCount = visibleNodes.filter((node) => node.dataset.workFocus === "live").length;
   const visibleRunningCount = visibleNodes.filter(
     (node) => node.dataset.workFocus === "running"
   ).length;
   const visibleNextReadyCount = visibleNodes.filter(
     (node) => node.dataset.workFocus === "next-ready"
   ).length;
+  const liveSummaryCount = pane.querySelector<HTMLElement>(".graphLiveSummary strong");
   const runningSummaryCount = pane.querySelector<HTMLElement>(".graphRunningSummary strong");
   const nextSummaryCount = pane.querySelector<HTMLElement>(".graphNextSummary strong");
+  if (liveSummaryCount !== null) {
+    liveSummaryCount.textContent = String(visibleLiveCount);
+  }
+  const liveSummary = pane.querySelector<HTMLElement>(".graphLiveSummary");
+  if (liveSummary !== null) {
+    liveSummary.classList.toggle("isEmpty", visibleLiveCount === 0);
+    liveSummary.setAttribute(
+      "aria-label",
+      `${visibleLiveCount} live AI task${visibleLiveCount === 1 ? "" : "s"}`
+    );
+  }
   if (runningSummaryCount !== null) {
     runningSummaryCount.textContent = String(visibleRunningCount);
   }
@@ -2573,7 +2643,7 @@ function refreshGraphDerivedState(pane: HTMLElement) {
     runningSummary.classList.toggle("isEmpty", visibleRunningCount === 0);
     runningSummary.setAttribute(
       "aria-label",
-      `${visibleRunningCount} Now, recorded in progress; live activity is not confirmed`
+      `${visibleRunningCount} recorded in progress; live activity is not confirmed`
     );
   }
   if (nextSummaryCount !== null) {
@@ -2581,7 +2651,7 @@ function refreshGraphDerivedState(pane: HTMLElement) {
   }
   const focusButton = pane.querySelector<HTMLButtonElement>('button[data-graph-action="focus"]');
   if (focusButton !== null) {
-    focusButton.disabled = visibleRunningCount + visibleNextReadyCount === 0;
+    focusButton.disabled = visibleLiveCount + visibleRunningCount + visibleNextReadyCount === 0;
   }
 
   const dependencySummary = pane.querySelector<HTMLElement>(".dependencySummary");
@@ -2658,21 +2728,73 @@ function layoutGraphPane(pane: HTMLElement) {
       )
     );
   });
-  const layout = computePackedGraphLayout(
-    visibleNodes.map((node) => ({
-      id: node.dataset.graphId || "",
-      level: parseInt(node.dataset.graphLevel || "0", 10),
-      height: node.offsetHeight
-    })),
-    {
-      nodeWidth: GRAPH_NODE_WIDTH,
-      levelGap: GRAPH_LEVEL_GAP,
-      columnGap: GRAPH_LEVEL_COLUMN_GAP,
-      laneGap: GRAPH_LANE_GAP,
-      paddingX: GRAPH_PADDING_X,
-      paddingY: GRAPH_PADDING_Y
+  const visibleIds = new Set(visibleNodes.map((node) => node.dataset.graphId || ""));
+  const renderedGraphEdges = Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge"))
+    .filter(
+      (edge) =>
+        !edge.hidden &&
+        visibleIds.has(edge.dataset.fromId || "") &&
+        visibleIds.has(edge.dataset.toId || "")
+    )
+    .map((edge) => ({
+      fromId: edge.dataset.fromId || "",
+      toId: edge.dataset.toId || "",
+      boundary: edge.dataset.graphBoundary !== undefined
+    }));
+  const layoutEdges = renderedGraphEdges
+    .filter((edge) => !edge.boundary)
+    .map(({ fromId, toId }) => ({ fromId, toId }));
+  const layoutEdgeKeys = new Set(layoutEdges.map((edge) => graphEdgeKey(edge.fromId, edge.toId)));
+  const parentEdges: Array<{ fromId: string; toId: string }> = [];
+  for (const node of visibleNodes) {
+    if (node.classList.contains("graphBoundaryNode")) {
+      continue;
     }
+    const fromId = node.dataset.parentId || "";
+    const toId = node.dataset.graphId || "";
+    const key = graphEdgeKey(fromId, toId);
+    if (fromId === "" || fromId === toId || !visibleIds.has(fromId) || !visibleIds.has(toId)) {
+      continue;
+    }
+    parentEdges.push({ fromId, toId });
+    if (!layoutEdgeKeys.has(key)) {
+      layoutEdges.push({ fromId, toId });
+      layoutEdgeKeys.add(key);
+    }
+  }
+
+  const layoutNodes = visibleNodes.map((node) => ({
+    id: node.dataset.graphId || "",
+    level: parseInt(node.dataset.graphLevel || "0", 10),
+    height: node.offsetHeight,
+    focusRank: getGraphWorkFocusRank(node.dataset.workFocus),
+    boundary: node.classList.contains("graphBoundaryNode")
+  }));
+  const renderedEdges = [...renderedGraphEdges, ...parentEdges];
+  const corridorLaneCount = countGraphCorridorLanes(layoutNodes, renderedEdges);
+  const graphPaddingY = GRAPH_PADDING_Y + corridorLaneCount * GRAPH_ROUTE_LANE_GAP;
+  const directLevelGap = computeGraphDirectLevelGap(layoutNodes, renderedEdges, GRAPH_LEVEL_GAP);
+  const sameColumnBaseOffset =
+    GRAPH_SAME_COLUMN_BASE_OFFSET + corridorLaneCount * GRAPH_ROUTE_X_LANE_GAP;
+  const sameColumnRouting = computeSameColumnGraphRouting(
+    layoutNodes,
+    renderedEdges,
+    sameColumnBaseOffset
   );
+  const graphPaddingX = Math.max(GRAPH_PADDING_X, sameColumnRouting.maximumOffset + 12);
+  const graphLevelGap = Math.max(
+    directLevelGap,
+    sameColumnRouting.maximumOffset + 24,
+    GRAPH_ROUTE_EXIT_BASE + Math.max(0, corridorLaneCount - 1) * GRAPH_ROUTE_X_LANE_GAP + 12
+  );
+  const layout = computeDependencyConnectedGraphLayout(layoutNodes, layoutEdges, {
+    nodeWidth: GRAPH_NODE_WIDTH,
+    levelGap: graphLevelGap,
+    laneGap: GRAPH_LANE_GAP,
+    componentGap: GRAPH_COMPONENT_GAP,
+    paddingX: graphPaddingX,
+    paddingY: graphPaddingY
+  });
   const positions = new Map(layout.nodes.map((node) => [node.id, node]));
   for (const node of visibleNodes) {
     const position = positions.get(node.dataset.graphId || "");
@@ -2884,7 +3006,9 @@ function rebuildGraphMiniMapGeometry(pane: HTMLElement) {
     if (node.classList.contains("graphBoundaryNode")) {
       nodeClasses.push("boundary");
     } else {
-      if (node.dataset.workFocus === "running") {
+      if (node.dataset.workFocus === "live") {
+        nodeClasses.push("live");
+      } else if (node.dataset.workFocus === "running") {
         nodeClasses.push("running");
       } else if (node.dataset.workFocus === "next-ready") {
         nodeClasses.push("nextReady");
@@ -3025,6 +3149,10 @@ function applyGraphZoomToPane(pane: HTMLElement) {
   canvas.style.width = `${viewport.width}px`;
   canvas.style.height = `${viewport.height}px`;
   content.style.setProperty("--graph-zoom", String(transform.zoom));
+  content.style.setProperty(
+    "--graph-path-casing-width",
+    transform.zoom >= GRAPH_PATH_CASING_MIN_ZOOM ? String(GRAPH_PATH_CASING_WIDTH) : "0"
+  );
   content.style.setProperty("--graph-pan-x", `${transform.pan.x}px`);
   content.style.setProperty("--graph-pan-y", `${transform.pan.y}px`);
   const zoomValue = pane.querySelector<HTMLElement>(".graphZoomValue");
@@ -3052,7 +3180,7 @@ function getGraphFitZoomForPane(pane: HTMLElement) {
     return 1;
   }
 
-  const requiredSize = getGraphRequiredSize(pane, { width: 1, height: 1 });
+  const requiredSize = getGraphRequiredSize(pane, getGraphBaseSize(canvas));
   const availableWidth = Math.max(1, viewport.width - GRAPH_FIT_PADDING * 2);
   const availableHeight = Math.max(1, viewport.height - GRAPH_FIT_PADDING * 2);
   const fitZoom = Math.min(
@@ -3065,16 +3193,21 @@ function getGraphFitZoomForPane(pane: HTMLElement) {
 
 function focusGraphWorkToPane(pane: HTMLElement, persist: boolean = true) {
   const scroller = getGraphScroller(pane);
-  const focusBounds = getGraphRectBounds(getGraphWorkFocusNodes(pane).map(getGraphNodeRect));
+  const focusRects = getGraphWorkFocusNodes(pane).map(getGraphNodeRect);
+  const focusBounds = getGraphRectBounds(focusRects);
   if (scroller === null || focusBounds === null) {
     return false;
   }
   const viewport = getGraphViewportSize(scroller);
   const focused = computeGraphFitTransformForRect(viewport, focusBounds, GRAPH_FOCUS_PADDING);
-  const zoom = normalizeGraphZoom(focused.zoom);
+  const useReadableAnchor = focused.zoom < GRAPH_INITIAL_READABLE_ZOOM;
+  const zoom = normalizeGraphZoom(useReadableAnchor ? GRAPH_INITIAL_READABLE_ZOOM : focused.zoom);
+  const focusRect = useReadableAnchor
+    ? [...focusRects].sort((left, right) => left.y - right.y || left.x - right.x)[0]
+    : focusBounds;
   const pan = clampGraphPanForPane(
     pane,
-    zoom === focused.zoom ? focused.pan : computeGraphPanToCenterRect(viewport, focusBounds, zoom),
+    computeGraphPanToCenterRect(viewport, focusRect, zoom),
     zoom
   );
   initializedGraphPanes.add(pane);
@@ -3119,6 +3252,38 @@ function fitGraphToPane(pane: HTMLElement, persist: boolean = true) {
   }
 }
 
+function showReadableGraphStart(pane: HTMLElement, persist: boolean = true) {
+  const fitZoom = getGraphFitZoomForPane(pane);
+  if (fitZoom >= GRAPH_INITIAL_READABLE_ZOOM) {
+    fitGraphToPane(pane, persist);
+    return;
+  }
+  const scroller = getGraphScroller(pane);
+  const firstTaskRect = getVisibleGraphNodes(pane)
+    .map(getGraphNodeRect)
+    .sort((left, right) => left.y - right.y || left.x - right.x)[0];
+  if (scroller === null || firstTaskRect === undefined) {
+    fitGraphToPane(pane, persist);
+    return;
+  }
+  const viewport = getGraphViewportSize(scroller);
+  const zoom = normalizeGraphZoom(GRAPH_INITIAL_READABLE_ZOOM);
+  const pan = clampGraphPanForPane(
+    pane,
+    computeGraphPanToCenterRect(viewport, firstTaskRect, zoom),
+    zoom
+  );
+  initializedGraphPanes.add(pane);
+  setGraphTransform(pane, { zoom, pan });
+  applyGraphZoomToPane(pane);
+  scroller.scrollLeft = 0;
+  scroller.scrollTop = 0;
+  saveGraphScroll(pane);
+  if (persist) {
+    saveGraphTransforms();
+  }
+}
+
 function hasPersistedGraphTransform(pane: HTMLElement) {
   return (
     Object.prototype.hasOwnProperty.call(graphTransforms, getGraphWorkspaceKey(pane)) ||
@@ -3136,7 +3301,7 @@ function updateGraphViewportPreservingTransform(
     }
     if (!initializedGraphPanes.has(pane) && !hasPersistedGraphTransform(pane)) {
       if (!focusGraphWorkToPane(pane, false)) {
-        fitGraphToPane(pane, false);
+        showReadableGraphStart(pane, false);
       }
     } else {
       const transform = getGraphTransform(pane);
@@ -3602,53 +3767,371 @@ function renderDependencyGraphOverlays() {
     const criticalMarkerId = `criticalDependencyArrow-${paneIndex}`;
     const cycleMarkerId = `cycleDependencyArrow-${paneIndex}`;
     const markerDefs = `<defs><marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="dependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${boundaryMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="boundaryDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${criticalMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="criticalDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${cycleMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="cycleDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker></defs>`;
-    const getConnectionPath = (fromNode: HTMLElement, toNode: HTMLElement, routeIndex: number) => {
-      const fromRect = getGraphNodeRect(fromNode);
-      const toRect = getGraphNodeRect(toNode);
-      return buildObstacleAvoidingGraphPath(
-        {
+    type GraphRenderConnection = {
+      key: string;
+      fromId: string;
+      toId: string;
+      fromNode: HTMLElement;
+      toNode: HTMLElement;
+      edge?: HTMLElement;
+      boundary: "" | "start" | "end";
+    };
+    const parentConnections: GraphRenderConnection[] = [];
+    for (const childNode of nodesById.values()) {
+      const fromId = childNode.dataset.parentId || "";
+      const toId = childNode.dataset.graphId || "";
+      const parentNode = nodesById.get(fromId);
+      if (parentNode !== undefined) {
+        parentConnections.push({
+          key: `parent:${fromId}:${toId}`,
+          fromId,
+          toId,
+          fromNode: parentNode,
+          toNode: childNode,
+          boundary: ""
+        });
+      }
+    }
+    const edgeConnections = Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge")).flatMap(
+      (edge): GraphRenderConnection[] => {
+        if (edge.hidden) {
+          return [];
+        }
+        const fromId = edge.dataset.fromId || "";
+        const toId = edge.dataset.toId || "";
+        const fromNode = nodesById.get(fromId);
+        const toNode = nodesById.get(toId);
+        if (fromNode === undefined || toNode === undefined) {
+          return [];
+        }
+        return [
+          {
+            key: `edge:${fromId}:${toId}:${edge.dataset.graphBoundary || ""}`,
+            fromId,
+            toId,
+            fromNode,
+            toNode,
+            edge,
+            boundary:
+              edge.dataset.graphBoundary === "start" || edge.dataset.graphBoundary === "end"
+                ? edge.dataset.graphBoundary
+                : ""
+          }
+        ];
+      }
+    );
+    const connections = [...parentConnections, ...edgeConnections];
+    const routingNodes = Array.from(nodesById, ([id, node]) => {
+      const rect = getGraphNodeRect(node);
+      return {
+        id,
+        level: Number.parseInt(node.dataset.graphLevel || "0", 10),
+        centerY: rect.y + rect.height / 2
+      };
+    });
+    const routingEdges = connections.map((connection) => ({
+      key: connection.key,
+      fromId: connection.fromId,
+      toId: connection.toId,
+      boundary: connection.boundary !== ""
+    }));
+    const corridorLaneCount = countGraphCorridorLanes(routingNodes, routingEdges);
+    const sameColumnBaseOffset =
+      GRAPH_SAME_COLUMN_BASE_OFFSET + corridorLaneCount * GRAPH_ROUTE_X_LANE_GAP;
+    const sameColumnRouting = computeSameColumnGraphRouting(
+      routingNodes,
+      routingEdges,
+      sameColumnBaseOffset
+    );
+    const sharedBusOffset = Math.max(
+      GRAPH_BOUNDARY_BUS_OFFSET,
+      sameColumnRouting.maximumOffset + 12
+    );
+    const boundaryBusOffset = sameColumnRouting.maximumOffset > 0 ? 12 : GRAPH_BOUNDARY_BUS_OFFSET;
+    const fanoutBusKeys = computeGraphFanoutBusKeys(routingNodes, routingEdges);
+    const faninBusKeys = computeGraphFaninBusKeys(routingNodes, routingEdges);
+    const getGraphPortEndpointKey = (connectionKey: string, endpoint: "source" | "target") =>
+      connectionKey + "\0" + endpoint;
+    const graphPortOffsets = computeGraphPortOffsets(
+      connections.flatMap((connection) => {
+        const fromRect = getGraphNodeRect(connection.fromNode);
+        const toRect = getGraphNodeRect(connection.toNode);
+        const fromLevel = Number.parseInt(connection.fromNode.dataset.graphLevel || "0", 10);
+        const toLevel = Number.parseInt(connection.toNode.dataset.graphLevel || "0", 10);
+        const sameColumn = toLevel === fromLevel && Math.abs(toRect.x - fromRect.x) < 1;
+        const sameColumnRouteIndex = sameColumnRouting.routeIndexByKey.get(connection.key) ?? 0;
+        const sameColumnSide = Math.abs(sameColumnRouteIndex) % 2 === 0 ? "right" : "left";
+        const sourceSide = sameColumn ? sameColumnSide : "right";
+        const targetSide = sameColumn ? sameColumnSide : "left";
+        return [
+          ...(connection.boundary === "start"
+            ? []
+            : [
+                {
+                  key: getGraphPortEndpointKey(connection.key, "source"),
+                  nodeId: connection.fromId + "\0" + sourceSide,
+                  oppositeY: toRect.y + toRect.height / 2,
+                  availableHeight: fromRect.height
+                }
+              ]),
+          ...(connection.boundary === "end"
+            ? []
+            : [
+                {
+                  key: getGraphPortEndpointKey(connection.key, "target"),
+                  nodeId: connection.toId + "\0" + targetSide,
+                  oppositeY: fromRect.y + fromRect.height / 2,
+                  availableHeight: toRect.height
+                }
+              ])
+        ];
+      })
+    );
+    const connectionGeometryByKey = new Map(
+      connections.map((connection) => {
+        const fromRect = getGraphNodeRect(connection.fromNode);
+        const toRect = getGraphNodeRect(connection.toNode);
+        const fromLevel = Number.parseInt(connection.fromNode.dataset.graphLevel || "0", 10);
+        const toLevel = Number.parseInt(connection.toNode.dataset.graphLevel || "0", 10);
+        const fromConnectionRect = {
           left: fromRect.x,
           top: fromRect.y,
           right: fromRect.x + fromRect.width,
-          bottom: fromRect.y + fromRect.height
-        },
-        {
+          bottom: fromRect.y + fromRect.height,
+          anchorY:
+            fromRect.y +
+            fromRect.height / 2 +
+            (fanoutBusKeys.has(connection.key)
+              ? 0
+              : (graphPortOffsets.get(getGraphPortEndpointKey(connection.key, "source")) ?? 0))
+        };
+        const toConnectionRect = {
           left: toRect.x,
           top: toRect.y,
           right: toRect.x + toRect.width,
-          bottom: toRect.y + toRect.height
-        },
+          bottom: toRect.y + toRect.height,
+          anchorY:
+            toRect.y +
+            toRect.height / 2 +
+            (faninBusKeys.has(connection.key)
+              ? 0
+              : (graphPortOffsets.get(getGraphPortEndpointKey(connection.key, "target")) ?? 0))
+        };
+        return [
+          connection.key,
+          {
+            fromConnectionRect,
+            toConnectionRect,
+            fromLevel,
+            toLevel,
+            directlyConnectedLevels:
+              toLevel === fromLevel + 1 && toRect.x >= fromRect.x + fromRect.width,
+            sameColumn: toLevel === fromLevel && Math.abs(toRect.x - fromRect.x) < 1
+          }
+        ] as const;
+      })
+    );
+    const levelById = new Map(routingNodes.map((node) => [node.id, node.level]));
+    const corridorRouteIndexByKey = new Map(
+      connections
+        .filter((connection) => {
+          if (connection.boundary !== "") {
+            return false;
+          }
+          const fromLevel = levelById.get(connection.fromId);
+          const toLevel = levelById.get(connection.toId);
+          return (
+            fromLevel !== undefined &&
+            toLevel !== undefined &&
+            toLevel !== fromLevel &&
+            toLevel !== fromLevel + 1
+          );
+        })
+        .sort(
+          (left, right) =>
+            left.fromId.localeCompare(right.fromId) ||
+            left.toId.localeCompare(right.toId) ||
+            left.key.localeCompare(right.key)
+        )
+        .map((connection, index) => [connection.key, index])
+    );
+    const corridorSpineRouting = computeGraphCorridorSpineRouting(
+      connections.flatMap((connection) => {
+        const geometry = connectionGeometryByKey.get(connection.key);
+        if (geometry === undefined) {
+          return [];
+        }
+        let routeIndex = corridorRouteIndexByKey.get(connection.key);
+        let sharedTargetBus = false;
+        if (connection.boundary !== "") {
+          if (connection.boundary !== "end" || geometry.toLevel <= geometry.fromLevel + 1) {
+            return [];
+          }
+          routeIndex = corridorRouteIndexByKey.size;
+          sharedTargetBus = true;
+        } else if (routeIndex === undefined) {
+          return [];
+        }
+        return [
+          {
+            key: connection.key,
+            fromLevel: geometry.fromLevel,
+            toLevel: geometry.toLevel,
+            sourceY: geometry.fromConnectionRect.anchorY,
+            targetY: geometry.toConnectionRect.anchorY,
+            routeIndex,
+            sharedTargetBus
+          }
+        ];
+      }),
+      height
+    );
+    const getConnectionPath = (connection: GraphRenderConnection) => {
+      const geometry = connectionGeometryByKey.get(connection.key);
+      if (geometry === undefined) {
+        return "";
+      }
+      const {
+        fromConnectionRect,
+        toConnectionRect,
+        fromLevel,
+        toLevel,
+        directlyConnectedLevels,
+        sameColumn
+      } = geometry;
+      if (connection.boundary !== "") {
+        return buildBoundaryBusGraphPath(
+          fromConnectionRect,
+          toConnectionRect,
+          connection.boundary,
+          height,
+          connection.boundary === "end" && toLevel > fromLevel + 1,
+          corridorRouteIndexByKey.size,
+          corridorLaneCount,
+          boundaryBusOffset,
+          corridorSpineRouting.sourceSpineIndexByKey.get(connection.key)
+        );
+      }
+      if (directlyConnectedLevels && fanoutBusKeys.has(connection.key)) {
+        return buildFanoutBusGraphPath(fromConnectionRect, toConnectionRect, sharedBusOffset);
+      }
+      if (directlyConnectedLevels && faninBusKeys.has(connection.key)) {
+        return buildFaninBusGraphPath(fromConnectionRect, toConnectionRect, sharedBusOffset);
+      }
+      const routeIndex = directlyConnectedLevels
+        ? 0
+        : sameColumn
+          ? (sameColumnRouting.routeIndexByKey.get(connection.key) ?? 0)
+          : (corridorRouteIndexByKey.get(connection.key) ?? 0);
+      return buildObstacleAvoidingGraphPath(
+        fromConnectionRect,
+        toConnectionRect,
         height,
-        routeIndex
+        routeIndex,
+        directlyConnectedLevels,
+        sameColumn,
+        connection.fromId === connection.toId,
+        corridorLaneCount,
+        corridorSpineRouting.sourceSpineIndexByKey.get(connection.key),
+        corridorSpineRouting.targetSpineIndexByKey.get(connection.key),
+        sameColumnBaseOffset
       );
     };
-    let parentPaths = "";
-    let routeIndex = 0;
-    for (const childNode of nodesById.values()) {
-      const parentId = childNode.dataset.parentId || "";
-      const parentNode = nodesById.get(parentId);
-      if (parentNode === undefined) {
-        continue;
+    const getPathCasing = (connection: GraphRenderConnection) => {
+      const geometry = connectionGeometryByKey.get(connection.key);
+      if (geometry === undefined) {
+        return null;
       }
-      parentPaths += `<path class="graphParentPath" d="${getConnectionPath(parentNode, childNode, routeIndex)}" />`;
-      routeIndex += 1;
+      if (connection.boundary !== "") {
+        if (connection.boundary !== "end" || geometry.toLevel <= geometry.fromLevel + 1) {
+          return null;
+        }
+        return buildBoundaryBusGraphCasingPath(
+          geometry.fromConnectionRect,
+          geometry.toConnectionRect,
+          height,
+          corridorRouteIndexByKey.size,
+          corridorLaneCount,
+          boundaryBusOffset,
+          corridorSpineRouting.sourceSpineIndexByKey.get(connection.key)
+        );
+      }
+      if (
+        geometry.directlyConnectedLevels &&
+        !fanoutBusKeys.has(connection.key) &&
+        !faninBusKeys.has(connection.key)
+      ) {
+        return buildDirectGraphCasingPath(geometry.fromConnectionRect, geometry.toConnectionRect);
+      }
+      const corridorRouteIndex = corridorRouteIndexByKey.get(connection.key);
+      if (corridorRouteIndex !== undefined) {
+        return buildObstacleAvoidingGraphCasingPath(
+          geometry.fromConnectionRect,
+          geometry.toConnectionRect,
+          height,
+          corridorRouteIndex,
+          corridorLaneCount,
+          corridorSpineRouting.sourceSpineIndexByKey.get(connection.key),
+          corridorSpineRouting.targetSpineIndexByKey.get(connection.key)
+        );
+      }
+      if (!geometry.sameColumn) {
+        return null;
+      }
+      return buildSameColumnGraphCasingPath(
+        geometry.fromConnectionRect,
+        geometry.toConnectionRect,
+        sameColumnRouting.routeIndexByKey.get(connection.key) ?? 0,
+        connection.fromId === connection.toId,
+        sameColumnBaseOffset
+      );
+    };
+    const getBoundaryBranchPath = (connection: GraphRenderConnection) => {
+      const geometry = connectionGeometryByKey.get(connection.key);
+      if (
+        geometry === undefined ||
+        connection.boundary !== "end" ||
+        geometry.toLevel <= geometry.fromLevel + 1
+      ) {
+        return null;
+      }
+      return buildBoundaryBusGraphBranchPath(
+        geometry.fromConnectionRect,
+        geometry.toConnectionRect,
+        boundaryBusOffset,
+        corridorSpineRouting.sourceSpineIndexByKey.get(connection.key)
+      );
+    };
+    let basePaths = "";
+    let crossingPathBodies = "";
+    let casedCrossingPaths = "";
+    let boundaryBranchForegroundPaths = "";
+    for (const connection of parentConnections) {
+      const d = getConnectionPath(connection);
+      const path = '<path class="graphParentPath" d="' + d + '" />';
+      const casing = getPathCasing(connection);
+      if (casing !== null) {
+        crossingPathBodies += path;
+        casedCrossingPaths +=
+          '<path class="graphPathCasing" d="' +
+          casing +
+          '" /><path class="graphParentPath graphPathBridge" data-graph-bridge="1" d="' +
+          casing +
+          '" />';
+      } else {
+        basePaths += path;
+      }
     }
-    let paths = "";
-    for (const edge of Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge"))) {
-      if (edge.hidden) {
+    for (const connection of edgeConnections) {
+      const edge = connection.edge;
+      if (edge === undefined) {
         continue;
       }
-      const fromNode = nodesById.get(edge.dataset.fromId || "");
-      const toNode = nodesById.get(edge.dataset.toId || "");
-      if (fromNode === undefined || toNode === undefined) {
-        continue;
-      }
-
-      const d = getConnectionPath(fromNode, toNode, routeIndex);
-      routeIndex += 1;
+      const d = getConnectionPath(connection);
       const boundaryClass = edge.dataset.graphBoundary ? " boundaryDependencyPath" : "";
       const criticalClass = edge.dataset.critical === "1" ? " criticalDependencyPath" : "";
       const cycleClass = edge.dataset.cycle === "1" ? " cycleDependencyPath" : "";
+      const pathClass = "dependencyPath" + boundaryClass + criticalClass + cycleClass;
       const arrowId =
         edge.dataset.cycle === "1"
           ? cycleMarkerId
@@ -3657,9 +4140,48 @@ function renderDependencyGraphOverlays() {
             : edge.dataset.graphBoundary
               ? boundaryMarkerId
               : markerId;
-      paths += `<path class="dependencyPath${boundaryClass}${criticalClass}${cycleClass}" data-from-id="${edge.dataset.fromId || ""}" data-to-id="${edge.dataset.toId || ""}" marker-end="url(#${arrowId})" d="${d}" />`;
+      const path =
+        '<path class="' +
+        pathClass +
+        '" data-from-id="' +
+        connection.fromId +
+        '" data-to-id="' +
+        connection.toId +
+        '" marker-end="url(#' +
+        arrowId +
+        ')" d="' +
+        d +
+        '" />';
+      const casing = getPathCasing(connection);
+      if (casing !== null) {
+        crossingPathBodies += path;
+        casedCrossingPaths +=
+          '<path class="graphPathCasing" d="' +
+          casing +
+          '" /><path class="' +
+          pathClass +
+          ' graphPathBridge" data-graph-bridge="1" d="' +
+          casing +
+          '" />';
+        const boundaryBranch = getBoundaryBranchPath(connection);
+        if (boundaryBranch !== null) {
+          boundaryBranchForegroundPaths +=
+            '<path class="' +
+            pathClass +
+            ' graphPathBridge" data-graph-boundary-branch="1" d="' +
+            boundaryBranch +
+            '" />';
+        }
+      } else {
+        basePaths += path;
+      }
     }
-    overlay.innerHTML = markerDefs + parentPaths + paths;
+    overlay.innerHTML =
+      markerDefs +
+      basePaths +
+      crossingPathBodies +
+      casedCrossingPaths +
+      boundaryBranchForegroundPaths;
     rebuildGraphMiniMapGeometry(pane);
   }
 }
@@ -3688,7 +4210,7 @@ generatePlanDraftWithAi.addEventListener("click", () => {
     return;
   }
   if (workspacePath === "") {
-    setPlanGenerationStatus("error", "Choose an initialized Beads workspace first.");
+    setPlanGenerationStatus("error", "Choose an open workspace folder first.");
     return;
   }
 
@@ -3804,6 +4326,18 @@ preset.addEventListener("change", () => {
 document.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof Element)) {
+    return;
+  }
+  const initializeButton = target.closest(".initializeBeads") as HTMLButtonElement | null;
+  if (initializeButton !== null) {
+    event.preventDefault();
+    postInitializeBeads(initializeButton);
+    return;
+  }
+  const configureBdButton = target.closest(".configureBdPath") as HTMLButtonElement | null;
+  if (configureBdButton !== null) {
+    event.preventDefault();
+    postConfigureBdPath(configureBdButton);
     return;
   }
   const artifactButton = target.closest(".openAgentArtifact") as HTMLButtonElement | null;

@@ -8,6 +8,7 @@ import { AgentArtifactStore, type AgentResponseArtifact } from "./agentArtifactS
 import { buildAgentBeadUpdateArgs } from "./agentBeadUpdate";
 import { AgentCredentialStore } from "./agentCredentialStore";
 import { runBoundedAllSettled, WorkspaceSerialQueue } from "./agentExecutionCoordinator";
+import { AgentLiveRunRegistry } from "./agentLiveRunRegistry";
 import {
   buildAgentModelOptions,
   DEFAULT_AGENT_MODEL,
@@ -53,6 +54,7 @@ import {
 } from "./beadsData";
 import {
   assertBeadsProcessTrusted,
+  BEADS_LOCAL_INIT_ARGS,
   createBdSpawnOptions,
   resolveBdExecutableStatus
 } from "./beadsProcess";
@@ -133,6 +135,18 @@ type PreparedAgentExecution =
       attempts: number;
     };
 
+interface AgentStartValues {
+  workspacePath: string;
+  issueId: string;
+  title: string | undefined;
+  provider: AgentProviderId;
+  model: string;
+  ssot: string;
+  worktree: string;
+  signal?: AbortSignal;
+  writeCapabilityAlreadyChecked?: boolean;
+}
+
 interface GitWorktreeInfo {
   path: string;
   branch: string;
@@ -172,6 +186,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private readonly extensionUri: vscode.Uri;
   private readonly credentialStore: AgentCredentialStore;
   private readonly artifactStore: AgentArtifactStore;
+  private readonly liveRunRegistry: AgentLiveRunRegistry;
   private readonly agentExecutionQueue = new WorkspaceSerialQueue<string>();
   private readonly inFlightActions = new Set<string>();
 
@@ -183,6 +198,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     this.extensionUri = extensionUri;
     this.credentialStore = credentialStore;
     this.artifactStore = artifactStore;
+    this.liveRunRegistry = new AgentLiveRunRegistry(() => this.scheduleRefresh());
     this.branchSyncCoordinator = new BranchSwitchSyncCoordinator(
       (workspacePath) => this.loadCurrentBranchKey(workspacePath),
       async (workspacePath) => {
@@ -250,6 +266,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       this.disposables.pop()?.dispose();
     }
     this.inFlightActions.clear();
+    this.liveRunRegistry.dispose();
   }
 
   public resolveWebviewView(webviewView: vscode.WebviewView) {
@@ -430,6 +447,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const groups: BeadGroup[] = [];
     const emptyWorkspaces: EmptyBeadWorkspace[] = [];
     const unavailableWorkspaces: EmptyBeadWorkspace[] = [];
+    const uninitializedWorkspaces: EmptyBeadWorkspace[] = [];
     const errors: { source: string; message: string }[] = [];
     const warnings: BeadWarning[] = [];
     const planImportCapabilities: NonNullable<BeadLoadResult["planImportCapabilities"]> = [];
@@ -514,15 +532,32 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         emptyWorkspaces.push(workspaceInfo);
       } else if (hasBeadsDirectory && !bdExecutableStatus.available) {
         unavailableWorkspaces.push(workspaceInfo);
+      } else if (!hasBeadsDirectory) {
+        uninitializedWorkspaces.push(workspaceInfo);
       }
     }
 
     return {
-      groups: groups.sort((a, b) => a.workspace.localeCompare(b.workspace)),
+      groups: groups
+        .sort((a, b) => a.workspace.localeCompare(b.workspace))
+        .map((group) => ({
+          ...group,
+          items: group.items.map((item) => {
+            const liveExecution = this.liveRunRegistry.get(group.workspacePath, item.id);
+            return liveExecution === null ? item : { ...item, liveExecution };
+          })
+        })),
       emptyWorkspaces: emptyWorkspaces.sort((a, b) => a.workspace.localeCompare(b.workspace)),
       unavailableWorkspaces: unavailableWorkspaces.sort((a, b) =>
         a.workspace.localeCompare(b.workspace)
       ),
+      uninitializedWorkspaces: uninitializedWorkspaces.sort((a, b) =>
+        a.workspace.localeCompare(b.workspace)
+      ),
+      workspaces: workspaceFolders.map((folder) => ({
+        workspace: folder.name,
+        workspacePath: folder.uri.fsPath
+      })),
       bdExecutableStatus,
       errors,
       warnings,
@@ -596,6 +631,115 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
     if (message.command === "openGitGraph") {
       await vscode.commands.executeCommand("beads-git-graph.view");
+      return;
+    }
+
+    if (message.command === "configureBdPath") {
+      const actionKey = "configure-bd-path";
+      if (
+        !this.beginAction(actionKey, "Beads CLI selection", message.clientActionId, sourceWebview)
+      ) {
+        return;
+      }
+      try {
+        assertBeadsProcessTrusted(vscode.workspace.isTrusted);
+        const selected = await vscode.window.showOpenDialog({
+          canSelectFiles: true,
+          canSelectFolders: false,
+          canSelectMany: false,
+          title: "Select the bd executable",
+          openLabel: "Use bd"
+        });
+        const executable = selected?.[0]?.fsPath;
+        if (executable === undefined) {
+          return;
+        }
+        const status = await resolveBdExecutableStatus(executable, true, checkExecutable, []);
+        if (!status.available) {
+          vscode.window.showErrorMessage(
+            status.message ?? "The selected file is not a usable Beads CLI executable."
+          );
+          return;
+        }
+        await vscode.workspace
+          .getConfiguration("beads-git-graph")
+          .update("bdPath", executable, vscode.ConfigurationTarget.Global);
+        await this.refresh();
+        vscode.window.showInformationMessage(`Using Beads CLI: ${executable}`);
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          error instanceof Error ? error.message : "Unable to configure the Beads CLI."
+        );
+      } finally {
+        this.settleClientAction(actionKey, message.clientActionId, sourceWebview);
+      }
+      return;
+    }
+
+    if (message.command === "initializeBeads") {
+      const workspacePath = this.resolveWorkspaceFolderPath(message.workspacePath);
+      if (workspacePath === null) {
+        vscode.window.showWarningMessage(
+          "Refusing to initialize Beads outside an open workspace folder."
+        );
+        this.postClientActionSettled(message.clientActionId, sourceWebview);
+        return;
+      }
+      const actionKey = `initialize-beads:${workspacePath}`;
+      if (
+        !this.beginAction(actionKey, "Beads initialization", message.clientActionId, sourceWebview)
+      ) {
+        return;
+      }
+      try {
+        assertBeadsProcessTrusted(vscode.workspace.isTrusted);
+        const beadsDirUri = vscode.Uri.joinPath(vscode.Uri.file(workspacePath), ".beads");
+        if (await this.pathExists(beadsDirUri)) {
+          vscode.window.showInformationMessage(
+            `Beads is already initialized in ${path.basename(workspacePath)}.`
+          );
+          await this.refresh();
+          return;
+        }
+        const executableStatus = await this.getBdExecutableStatus();
+        if (!executableStatus.available) {
+          vscode.window.showWarningMessage(
+            executableStatus.message ??
+              "The Beads CLI is unavailable. Select its executable before initialization."
+          );
+          return;
+        }
+        const confirmation = await vscode.window.showWarningMessage(
+          `Initialize a local Beads database in ${path.basename(workspacePath)}?`,
+          {
+            modal: true,
+            detail: `This creates .beads with ${executableStatus.command} ${BEADS_LOCAL_INIT_ARGS.join(" ")}. bd may add and commit Beads metadata and .gitignore changes using its defaults. This action does not migrate, bootstrap, or replace an existing database.`
+          },
+          "Initialize Beads"
+        );
+        if (confirmation !== "Initialize Beads") {
+          return;
+        }
+        if (await this.pathExists(beadsDirUri)) {
+          vscode.window.showInformationMessage(
+            `Beads became initialized in ${path.basename(workspacePath)} before setup ran.`
+          );
+          await this.refresh();
+          return;
+        }
+        await this.runBdInitCommand(executableStatus.command, workspacePath);
+        await this.syncBranchWatchers();
+        await this.refresh();
+        vscode.window.showInformationMessage(
+          `Initialized local Beads data in ${path.basename(workspacePath)}.`
+        );
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          error instanceof Error ? error.message : "Unable to initialize Beads."
+        );
+      } finally {
+        this.settleClientAction(actionKey, message.clientActionId, sourceWebview);
+      }
       return;
     }
 
@@ -1083,12 +1227,12 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
     let artifactUri: string | undefined;
     try {
-      const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath.trim());
+      const workspacePath = this.resolveWorkspaceFolderPath(message.workspacePath.trim());
       if (workspacePath === null) {
         reply({
           command: "planDraftGenerationResult",
           status: "error",
-          message: "Choose an initialized Beads workspace before generating a plan."
+          message: "Choose an open workspace folder before generating a plan."
         });
         return;
       }
@@ -1368,17 +1512,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     );
   }
 
-  private async assignAndStartBead(values: {
-    workspacePath: string;
-    issueId: string;
-    title: string | undefined;
-    provider: AgentProviderId;
-    model: string;
-    ssot: string;
-    worktree: string;
-    signal?: AbortSignal;
-    writeCapabilityAlreadyChecked?: boolean;
-  }) {
+  private async assignAndStartBead(values: AgentStartValues) {
     let preparedForFinalization: PreparedAgentExecution | undefined;
     return runReadinessGuardedStart<PreparedAgentExecution, AssignAgentOpenResult>({
       issueId: values.issueId,
@@ -1420,25 +1554,37 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           loadUpstreamArtifacts: () =>
             this.loadAgentUpstreamArtifacts(values.workspacePath, dependencyIds)
         });
-        const result = await generateVerifiedAgentEdit({
-          task,
-          provider: directProvider,
-          model: values.model,
-          ssot: values.ssot,
-          dependencyIds,
-          currentContent: workspaceContext.currentContent,
-          upstreamArtifacts: workspaceContext.upstreamArtifacts,
-          request: (prompt, phase) =>
-            this.requestTextProviderPrompt(
-              {
-                provider: directProvider,
-                model: values.model
-              },
-              prompt,
-              values.signal,
-              phase === "verification"
-            )
-        });
+        const result = await (async () => {
+          const liveRun = this.liveRunRegistry.start({
+            workspacePath: values.workspacePath,
+            issueId: values.issueId,
+            provider: values.provider,
+            model: values.model
+          });
+          try {
+            return await generateVerifiedAgentEdit({
+              task,
+              provider: directProvider,
+              model: values.model,
+              ssot: values.ssot,
+              dependencyIds,
+              currentContent: workspaceContext.currentContent,
+              upstreamArtifacts: workspaceContext.upstreamArtifacts,
+              request: (prompt, phase) =>
+                this.requestTextProviderPrompt(
+                  {
+                    provider: directProvider,
+                    model: values.model
+                  },
+                  prompt,
+                  values.signal,
+                  phase === "verification"
+                )
+            });
+          } finally {
+            liveRun.stop();
+          }
+        })();
         const capture = await this.artifactStore.writeOrOpenFallback({
           issueId: values.issueId,
           title: task.title || values.title,
@@ -3106,7 +3252,7 @@ A provider can write only its declared relative target after its model content c
     }
   }
 
-  private async resolveAuthorizedWorkspacePath(workspacePath: string) {
+  private resolveWorkspaceFolderPath(workspacePath: string) {
     const normalizedPath = workspacePath.trim();
     if (normalizedPath === "") {
       return null;
@@ -3116,12 +3262,16 @@ A provider can write only its declared relative target after its model content c
     const workspaceFolder = (vscode.workspace.workspaceFolders ?? []).find(
       (folder) => path.resolve(folder.uri.fsPath) === resolvedPath
     );
-    if (!workspaceFolder) {
+    return workspaceFolder?.uri.fsPath ?? null;
+  }
+
+  private async resolveAuthorizedWorkspacePath(workspacePath: string) {
+    const resolvedWorkspacePath = this.resolveWorkspaceFolderPath(workspacePath);
+    if (resolvedWorkspacePath === null) {
       return null;
     }
-
-    const beadsDirUri = vscode.Uri.joinPath(workspaceFolder.uri, ".beads");
-    return (await this.pathExists(beadsDirUri)) ? workspaceFolder.uri.fsPath : null;
+    const beadsDirUri = vscode.Uri.joinPath(vscode.Uri.file(resolvedWorkspacePath), ".beads");
+    return (await this.pathExists(beadsDirUri)) ? resolvedWorkspacePath : null;
   }
 
   private async syncBranchWatchers() {
@@ -3413,6 +3563,37 @@ A provider can write only its declared relative target after its model content c
     }
   }
 
+  private async runBdInitCommand(bdPath: string, workspacePath: string) {
+    assertBeadsProcessTrusted(vscode.workspace.isTrusted);
+    if (this.resolveWorkspaceFolderPath(workspacePath) === null) {
+      throw new Error("Refusing to initialize Beads outside an open workspace folder.");
+    }
+    const args = [...BEADS_LOCAL_INIT_ARGS];
+    return new Promise<string>((resolve, reject) => {
+      const child = cp.spawn(bdPath, args, createBdSpawnOptions(workspacePath));
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString();
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+      child.on("error", reject);
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolve(stdout);
+          return;
+        }
+        reject(
+          new Error(
+            stderr.trim() || `${bdPath} ${args.join(" ")} failed with exit code ${code ?? -1}.`
+          )
+        );
+      });
+    });
+  }
+
   private async runBdCommand(args: string[], cwd: string) {
     assertBeadsProcessTrusted(vscode.workspace.isTrusted);
     const workspacePath = await this.resolveAuthorizedWorkspacePath(cwd);
@@ -3420,8 +3601,12 @@ A provider can write only its declared relative target after its model content c
       throw new Error("Refusing to run bd outside an initialized workspace folder.");
     }
 
+    const executableStatus = await this.getBdExecutableStatus();
+    if (!executableStatus.available) {
+      throw new Error(executableStatus.message ?? "The Beads CLI is unavailable.");
+    }
+    const bdPath = executableStatus.command;
     return new Promise<string>((resolve, reject) => {
-      const bdPath = getConfig().bdPath();
       const child = cp.spawn(bdPath, args, createBdSpawnOptions(workspacePath));
       let stdout = "";
       let stderr = "";
@@ -3458,8 +3643,16 @@ A provider can write only its declared relative target after its model content c
       throw new Error("Refusing to probe bd outside an initialized workspace folder.");
     }
 
+    const executableStatus = await this.getBdExecutableStatus();
+    if (!executableStatus.available) {
+      throw new Error(executableStatus.message ?? "The Beads CLI is unavailable.");
+    }
     return new Promise((resolve, reject) => {
-      const child = cp.spawn(getConfig().bdPath(), [...args], createBdSpawnOptions(workspacePath));
+      const child = cp.spawn(
+        executableStatus.command,
+        [...args],
+        createBdSpawnOptions(workspacePath)
+      );
       let stdout = "";
       let stderr = "";
       child.stdout.on("data", (chunk) => {
