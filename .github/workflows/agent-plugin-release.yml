@@ -1,0 +1,34 @@
+name: Agent Plugin release check
+
+on:
+  push:
+    tags:
+      - agent-plugin-v*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Agent Plugin tag to validate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 22
+
+      - name: Validate tag and manifests
+        env:
+          AGENT_PLUGIN_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: node ./scripts/check-agent-plugin-release.mjs --tag "$AGENT_PLUGIN_TAG"

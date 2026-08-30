@@ -52,13 +52,17 @@ CLI; it does not expose the extension host as an MCP server.
 In VS Code, add this repository as a plugin marketplace:
 
 ```json
-{ "chat.plugins.marketplaces": ["ToppyMicroServices/beads-git-graph"] }
+{
+  "chat.plugins.enabled": true,
+  "chat.plugins.marketplaces": ["ToppyMicroServices/beads-git-graph"]
+}
 ```
 
 Then search Extensions for `@agentPlugins` and install **Beads Agent Project Manager**. See the
-[Agent plugin installation and safety notes](./docs/agent-plugin.md). The plugin is isolated under
-`agent-plugin/`; installing it does not package the repository's Beads database, VSIX files, or
-development dependencies.
+[Agent plugin installation and safety notes](./docs/agent-plugin.md). The active plugin payload is
+sourced from `agent-plugin/` and excludes the repository's Beads database, VSIX files,
+`node_modules`, and extension sources. A self-hosted marketplace client may still clone the full
+public repository into its marketplace source cache.
 
 ## Manage Agent Work
 

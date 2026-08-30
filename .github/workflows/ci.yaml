@@ -43,6 +43,9 @@ jobs:
       - name: Check PR head contains latest base
         run: node ./scripts/worktree-sync-guard.mjs --base "origin/${{ github.base_ref }}"
 
+      - name: Check Agent Plugin version bump
+        run: node ./scripts/check-agent-plugin-release.mjs --base "origin/${{ github.base_ref }}"
+
   lint:
     runs-on: ubuntu-latest
     strategy:
