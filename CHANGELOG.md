@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+<!-- daily-generated:start -->
+
+### Daily Snapshot
+
+- [`1c5411d`](https://github.com/ToppyMicroServices/beads-git-graph/commit/1c5411db6e5e8dda84a7f6c8272991d5a9473899) fix(agent-plugin): harden release and install boundaries (#287)
+- [`2a933e3`](https://github.com/ToppyMicroServices/beads-git-graph/commit/2a933e359b2cf8bbd3ef58331aa5aad59db200e3) build(deps): bump github/codeql-action/init from 4.37.7 to 4.37.9 (#276)
+- [`d907172`](https://github.com/ToppyMicroServices/beads-git-graph/commit/d907172e26b1e0ac2973012677ed95a4e3fd0b1e) build(deps): bump github/codeql-action/upload-sarif (#275)
+- [`e81015d`](https://github.com/ToppyMicroServices/beads-git-graph/commit/e81015de68e855bf477af2fb1b23df2c6318e081) build(deps): bump github/codeql-action/analyze from 4.37.7 to 4.37.9 (#277)
+- [`9e829af`](https://github.com/ToppyMicroServices/beads-git-graph/commit/9e829af57be40605ed82bb1ff0237b6bab50415e) feat(agent-plugin): add Beads project manager plugin (#286)
+- [`46ca10f`](https://github.com/ToppyMicroServices/beads-git-graph/commit/46ca10f6b5fd2914f30165f30eb72ec427c045de) build(deps-dev): bump oxlint from 1.79.0 to 1.80.0 (#284)
+- [`0cdf23b`](https://github.com/ToppyMicroServices/beads-git-graph/commit/0cdf23b0d5514bc61f4a46a2e90baec83c628b8b) build(deps-dev): bump oxfmt from 0.64.0 to 0.65.0 (#282)
+
+<!-- daily-generated:end -->
+
 ## [0.6.3] - 2026-08-26
 
 ### Added
