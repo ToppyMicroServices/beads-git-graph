@@ -73,7 +73,7 @@
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "fast-check": "^4.9.0",
     "ovsx": "1.1.1",
-    "oxfmt": "^0.65.0",
+    "oxfmt": "^0.66.0",
     "oxlint": "^1.80.0",
     "typescript": "^6.0.3",
     "vite": "^8.2.2",
