@@ -304,7 +304,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsMain).toContain("childNode.dataset.parentId");
     expect(beadsWebview).toContain(".graphParentPath{");
     expect(beadsMain).toContain('markerWidth="6.5"');
-    expect(beadsMain).toContain("buildObstacleAvoidingGraphPath");
+    expect(beadsMain).toContain("buildRoutedGraphPath");
     expect(beadsMain).toContain(
       "agent: normalizeOptionalDatasetValue(button.dataset.assignStartAgent)"
     );

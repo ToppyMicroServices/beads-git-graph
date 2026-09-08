@@ -1,11 +1,122 @@
 import { resolveAgentProviderId } from "./agentProvider";
-import { type BeadItem, normalizeBeadPriority, normalizeBeadStatus } from "./beadsData";
+import {
+  type BeadItem,
+  normalizeBeadPriority,
+  normalizeBeadStatus,
+  normalizeBeadType
+} from "./beadsData";
 
 export const AGENT_WORK_LANES = ["attention", "review", "running", "queue", "done"] as const;
 
 export type AgentWorkLane = (typeof AGENT_WORK_LANES)[number];
 export type AgentWorkReadiness = "confirmed" | "not-confirmed" | "not-applicable";
 export type GraphWorkFocus = "running" | "next-ready" | "none";
+
+export type StartAiEligibilityCode =
+  | "derived-item"
+  | "epic"
+  | "already-running"
+  | "not-open"
+  | "readiness-unknown"
+  | "not-ready"
+  | "write-unavailable"
+  | "ready";
+
+export interface StartAiEligibilityContext {
+  writeAvailable: boolean;
+  writeUnavailableReason: string;
+  readinessKnown: boolean;
+}
+
+export interface StartAiEligibility {
+  code: StartAiEligibilityCode;
+  enabled: boolean;
+  reason: string;
+}
+
+const DEFAULT_WRITE_UNAVAILABLE_REASON = "Task changes are currently unavailable.";
+const MAX_VISIBLE_WRITE_REASON_LENGTH = 180;
+
+function normalizeVisibleWriteReason(reason: string) {
+  const normalized = reason.trim().replace(/\s+/g, " ");
+  if (
+    normalized === "" ||
+    normalized.length > MAX_VISIBLE_WRITE_REASON_LENGTH ||
+    ["{", "}", "[", "]"].some((delimiter) => normalized.includes(delimiter)) ||
+    /"(?:error|hint|remote_migrate_gate|schema_version)"\s*:/i.test(normalized)
+  ) {
+    return DEFAULT_WRITE_UNAVAILABLE_REASON;
+  }
+  return normalized;
+}
+
+export function deriveStartAiEligibility(
+  item: BeadItem,
+  context: StartAiEligibilityContext
+): StartAiEligibility {
+  if (item.synthetic || item.syntheticKind !== "") {
+    return {
+      code: "derived-item",
+      enabled: false,
+      reason: "Derived work cannot be started directly."
+    };
+  }
+
+  if (normalizeBeadType(item.type) === "epic") {
+    return {
+      code: "epic",
+      enabled: false,
+      reason: "Epics cannot be started directly."
+    };
+  }
+
+  const normalizedStatus = normalizeBeadStatus(item.status);
+  if (normalizedStatus === "in_progress") {
+    return {
+      code: "already-running",
+      enabled: false,
+      reason: "This task is already in progress."
+    };
+  }
+  if (normalizedStatus !== "open") {
+    return {
+      code: "not-open",
+      enabled: false,
+      reason: "Only open tasks can be started."
+    };
+  }
+
+  if (!context.readinessKnown) {
+    return {
+      code: "readiness-unknown",
+      enabled: false,
+      reason: "Task readiness is unknown because bd ready could not be checked."
+    };
+  }
+
+  if (!item.readyByBd) {
+    return {
+      code: "not-ready",
+      enabled: false,
+      reason:
+        "bd ready does not currently report this task as ready. Check blockers or deferred state."
+    };
+  }
+
+  if (!context.writeAvailable) {
+    return {
+      code: "write-unavailable",
+      enabled: false,
+      reason: normalizeVisibleWriteReason(context.writeUnavailableReason)
+    };
+  }
+
+  return {
+    code: "ready",
+    enabled: true,
+    reason: "Ready. Provider and model are selected next."
+  };
+}
 
 export function getGraphWorkFocusRank(focus: string | undefined) {
   return focus === "running" ? 0 : focus === "next-ready" ? 1 : 2;

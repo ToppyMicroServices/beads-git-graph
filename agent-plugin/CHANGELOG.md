@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.2] - 2026-09-08
+
+### Fixed
+
+- Explain task-start blockers and keep provider/model labels separate from runner availability.
+- Distinguish unknown readiness from confirmed not-ready tasks, and treat missing sibling
+  dependency edges as advisory rather than a start blocker.
+- Require fresh open leaf-task evidence before dispatch and use a unique actor for atomic claims
+  when the installed Beads CLI supports it. Failed or unavailable claims do not start workers.
+
 ## [0.1.1] - 2026-08-30
 
 ### Fixed

@@ -1,7 +1,7 @@
 {
   "name": "beads-git-graph",
   "displayName": "Beads Git Graph",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Git graph and Beads issue tools for VS Code.",
   "categories": [
     "Other",
@@ -488,10 +488,11 @@
   "pnpm": {
     "overrides": {
       "brace-expansion": "5.0.9",
-      "fast-uri": "3.1.5",
+      "fast-uri": "3.1.6",
       "js-yaml": "4.3.1",
       "nanoid": "3.3.18",
-      "postcss": "8.5.25"
+      "postcss": "8.5.25",
+      "qs": "6.16.0"
     }
   },
   "capabilities": {

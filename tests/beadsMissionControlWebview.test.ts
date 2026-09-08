@@ -106,6 +106,7 @@ describe("Agent Project Manager webview", () => {
         {
           workspace: "Mission Control",
           workspacePath,
+          readinessKnown: true,
           items: [
             makeBead({
               id: "attention-1",
@@ -237,6 +238,7 @@ describe("Agent Project Manager webview", () => {
         {
           workspace: "Graph diagnostics",
           workspacePath,
+          readinessKnown: true,
           items: [
             makeBead({ id: "missing-task", dependencyIds: ["gone"] }),
             makeBead({ id: "done", status: "closed" }),
@@ -278,15 +280,23 @@ describe("Agent Project Manager webview", () => {
         {
           workspace: "Mission Control",
           workspacePath: "/tmp/mission-control",
+          readinessKnown: true,
           items: [
-            makeBead({ id: "ready-1", readyByBd: true }),
+            makeBead({
+              id: "tt-icml.3.1",
+              title: "Run the ready stage",
+              priority: "P0",
+              readyByBd: true,
+              provider: "copilot",
+              providerExplicit: true
+            }),
             makeBead({
               id: "ready-explicit",
               readyByBd: true,
               parallelizable: true,
               parallelizableSource: "explicit"
             }),
-            makeBead({ id: "unknown-1" }),
+            makeBead({ id: "unknown-1", parentId: "epic-1" }),
             makeBead({
               id: "ready-serial",
               readyByBd: true,
@@ -295,9 +305,11 @@ describe("Agent Project Manager webview", () => {
             makeBead({
               id: "explicit-unready",
               parallelizable: true,
-              parallelizableSource: "explicit"
+              parallelizableSource: "explicit",
+              parentId: "epic-1"
             }),
-            makeBead({ id: "waiting-1", status: "waiting" })
+            makeBead({ id: "waiting-1", status: "waiting" }),
+            makeBead({ id: "epic-1", type: "epic", readyByBd: true })
           ]
         }
       ],
@@ -317,10 +329,19 @@ describe("Agent Project Manager webview", () => {
       result
     );
 
-    const readyCard = getAgentCard(html, "ready-1");
-    expect(getTagContaining(readyCard, "button", 'data-assign-start-id="ready-1"')).not.toContain(
-      " disabled"
+    const readyCard = getAgentCard(html, "tt-icml.3.1");
+    const readyManageButton = getTagContaining(
+      readyCard,
+      "button",
+      'data-assign-start-id="tt-icml.3.1"'
     );
+    const readyGraphButton = getTagContaining(html, "button", 'data-assign-start-id="tt-icml.3.1"');
+    expect(readyManageButton).not.toContain(" disabled");
+    expect(readyManageButton).not.toContain('aria-disabled="true"');
+    expect(readyGraphButton).not.toContain(" disabled");
+    expect(readyGraphButton).not.toContain('aria-disabled="true"');
+    expect(readyCard).toContain('data-start-eligibility="ready"');
+    expect(readyCard).toContain("Provider GitHub Copilot");
     expect(
       getTagContaining(
         getAgentCard(html, "ready-explicit"),
@@ -341,15 +362,32 @@ describe("Agent Project Manager webview", () => {
       "button",
       'data-assign-start-id="unknown-1"'
     );
-    expect(unknownButton).toContain(" disabled");
-    expect(unknownButton).toContain("Start is unavailable until bd ready confirms this task.");
+    expect(unknownButton).toContain('aria-disabled="true"');
+    expect(unknownButton).not.toContain(" disabled>");
+    expect(unknownButton).toContain('aria-describedby="');
+    expect(unknownButton).toContain(
+      "bd ready does not currently report this task as ready. Check blockers or deferred state."
+    );
+    expect(unknownCard).toContain('data-start-eligibility="not-ready"');
+    expect(unknownCard).toContain('class="startAiReason"');
+    expect(unknownCard).not.toContain('class="startAiReason" role="status"');
+    expect(html).toContain("Advisory only; this warning does not disable Start AI.");
     expect(
       getTagContaining(
         getAgentCard(html, "explicit-unready"),
         "button",
         'data-assign-start-id="explicit-unready"'
       )
-    ).toContain(" disabled");
+    ).toContain('aria-disabled="true"');
+    const epicButton = getTagContaining(
+      getAgentCard(html, "epic-1"),
+      "button",
+      'data-assign-start-id="epic-1"'
+    );
+    expect(epicButton).toContain('aria-disabled="true"');
+    expect(epicButton).not.toContain(" disabled>");
+    expect(epicButton).toContain("Epics cannot be started directly.");
+    expect(getAgentCard(html, "epic-1")).toContain('data-start-eligibility="epic"');
 
     const parallelButton = getTagContaining(html, "button", 'class="startParallelBeads');
     const encodedTargets = parallelButton.match(/data-start-parallel-items="([^"]+)"/)?.[1];
@@ -358,12 +396,83 @@ describe("Agent Project Manager webview", () => {
       issueId: string;
       provider?: string;
     }>;
-    expect(targets.map((target) => target.issueId)).toEqual(["ready-1", "ready-explicit"]);
-    expect(targets.map((target) => target.provider)).toEqual([undefined, undefined]);
+    expect(targets.map((target) => target.issueId)).toEqual(["ready-explicit", "tt-icml.3.1"]);
+    expect(targets.map((target) => target.provider)).toEqual([undefined, "copilot"]);
 
     const waitingCard = getAgentCard(html, "waiting-1");
     expect(waitingCard).toContain("Status &quot;waiting&quot; is not recognized");
     expect(getTagContaining(html, "tr", 'data-id="waiting-1"')).not.toContain("display:none");
+  });
+
+  it("shows when bd ready could not be checked", () => {
+    const workspacePath = "/tmp/readiness-unknown";
+    const result: BeadLoadResult = {
+      groups: [
+        {
+          workspace: "Readiness unknown",
+          workspacePath,
+          readinessKnown: false,
+          items: [makeBead({ id: "ready-but-unconfirmed", readyByBd: true })]
+        }
+      ],
+      emptyWorkspaces: [],
+      unavailableWorkspaces: [],
+      bdExecutableStatus: { available: true, command: "bd", message: null },
+      ...supportedCapabilities("Readiness unknown", workspacePath),
+      errors: [],
+      warnings: []
+    };
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      result
+    );
+
+    const card = getAgentCard(html, "ready-but-unconfirmed");
+    const button = getTagContaining(card, "button", 'data-assign-start-id="ready-but-unconfirmed"');
+    expect(button).toContain('aria-disabled="true"');
+    expect(button).not.toContain(" disabled>");
+    expect(card).toContain('data-start-eligibility="readiness-unknown"');
+    expect(card).toContain("Task readiness is unknown because bd ready could not be checked.");
+  });
+
+  it("fails closed when a renderer caller omits readinessKnown", () => {
+    const workspacePath = "/tmp/readiness-omitted";
+    const group = {
+      workspace: "Readiness omitted",
+      workspacePath,
+      items: [makeBead({ id: "ready-without-proof", readyByBd: true })]
+    } as unknown as BeadLoadResult["groups"][number];
+    const result: BeadLoadResult = {
+      groups: [group],
+      emptyWorkspaces: [],
+      unavailableWorkspaces: [],
+      bdExecutableStatus: { available: true, command: "bd", message: null },
+      ...supportedCapabilities("Readiness omitted", workspacePath),
+      errors: [],
+      warnings: []
+    };
+    const html = renderBeadsWebviewHtml(
+      {
+        cspSource: "vscode-webview:",
+        asWebviewUri: () => ({ toString: () => "vscode-webview:/out/beadsWebview.min.js" })
+      } as never,
+      { path: "/extension" } as never,
+      result
+    );
+
+    const startButtons = (html.match(/<button\b[^>]*class="assignStartBead"[^>]*>/g) ?? []).filter(
+      (button) => button.includes('data-assign-start-id="ready-without-proof"')
+    );
+    expect(startButtons).toHaveLength(2);
+    for (const button of startButtons) {
+      expect(button).toContain('aria-disabled="true"');
+      expect(button).not.toContain(" disabled>");
+    }
+    expect(html.match(/data-start-eligibility="readiness-unknown"/g)).toHaveLength(2);
   });
 
   it("disables provider calls when the Beads schema cannot be updated safely", () => {
@@ -373,6 +482,7 @@ describe("Agent Project Manager webview", () => {
         {
           workspace: "Schema mismatch",
           workspacePath,
+          readinessKnown: true,
           items: [
             makeBead({ id: "ready-1", readyByBd: true }),
             makeBead({ id: "ready-2", readyByBd: true })
@@ -438,7 +548,8 @@ describe("Agent Project Manager webview", () => {
       "button",
       'data-assign-start-id="ready-1"'
     );
-    expect(startButton).toContain(" disabled");
+    expect(startButton).toContain('aria-disabled="true"');
+    expect(startButton).not.toContain(" disabled>");
     expect(startButton).toContain("AI actions are disabled because Beads cannot be updated safely");
     expect(getTagContaining(html, "button", 'class="startParallelBeads')).toContain(" disabled");
     expect(html).toContain('data-write-available="0"');
@@ -453,6 +564,7 @@ describe("Agent Project Manager webview", () => {
         {
           workspace: "Mission Control",
           workspacePath: "/tmp/mission-control",
+          readinessKnown: true,
           items: [
             makeBead({
               id: "response-1",
@@ -501,6 +613,7 @@ describe("Agent Project Manager webview", () => {
           {
             workspace: "Mission Control",
             workspacePath,
+            readinessKnown: true,
             items: [
               makeBead({
                 id: "edit-applied",
@@ -542,6 +655,7 @@ describe("Agent Project Manager webview", () => {
         {
           workspace: "Mission Control",
           workspacePath: "/tmp/mission-control",
+          readinessKnown: true,
           items: [
             makeBead({ id: "single-ready", readyByBd: true }),
             makeBead({
@@ -623,6 +737,7 @@ describe("Agent Project Manager webview", () => {
           {
             workspace: "Mission Control",
             workspacePath,
+            readinessKnown: true,
             items: [makeBead({ id: "unassigned", readyByBd: true })]
           }
         ],
@@ -655,6 +770,7 @@ describe("Agent Project Manager webview", () => {
           {
             workspace: "Mission Control",
             workspacePath,
+            readinessKnown: true,
             items: [
               makeBead({ id: "unready", parallelizable: true }),
               makeBead({
@@ -710,6 +826,7 @@ describe("Agent Project Manager webview", () => {
           {
             workspace: "Mission Control",
             workspacePath,
+            readinessKnown: true,
             items: [makeBead({ id: "next", readyByBd: true })]
           }
         ],
@@ -740,6 +857,7 @@ describe("Agent Project Manager webview", () => {
             {
               workspace: "Mission Control",
               workspacePath: "/tmp/mission-control",
+              readinessKnown: true,
               items
             }
           ],
@@ -781,7 +899,8 @@ describe("Agent Project Manager webview", () => {
       "button",
       'data-assign-start-id="implement"'
     );
-    expect(blockedHandoff).toContain(" disabled");
+    expect(blockedHandoff).toContain('aria-disabled="true"');
+    expect(blockedHandoff).not.toContain(" disabled>");
     expect(blockedHandoff).toContain('data-assign-start-provider="ollama"');
     expect(blockedHandoff).toContain('data-assign-start-model="coding-model"');
     expect(blockedHandoff).toContain('data-assign-start-ssot="docs/decision.md"');
@@ -790,9 +909,10 @@ describe("Agent Project Manager webview", () => {
       "button",
       'data-assign-start-id="implement"'
     );
-    expect(blockedGraphHandoff).toContain(" disabled");
+    expect(blockedGraphHandoff).toContain('aria-disabled="true"');
+    expect(blockedGraphHandoff).not.toContain(" disabled>");
     expect(blockedGraphHandoff).toContain(
-      "Start is unavailable until bd ready confirms this task and its dependencies."
+      "bd ready does not currently report this task as ready. Check blockers or deferred state."
     );
     expect(getAgentCard(before, "research")).toContain("Provider Hugging Face Inference");
     expect(getAgentCard(before, "implement")).toContain("Provider Ollama");
@@ -821,6 +941,7 @@ describe("Agent Project Manager webview", () => {
         {
           workspace: "Mission Control",
           workspacePath: "/tmp/mission-control",
+          readinessKnown: true,
           items: [
             makeBead({
               id: "ready-1",
@@ -868,7 +989,8 @@ describe("Agent Project Manager webview", () => {
       'data-assign-start-id="ready-1"'
     );
     expect(readyButton).toContain("The Beads CLI is unavailable");
-    expect(readyButton).toContain(" disabled");
+    expect(readyButton).toContain('aria-disabled="true"');
+    expect(readyButton).not.toContain(" disabled>");
 
     const mergeCard = getAgentCard(html, "merge:epic-1");
     const mergeButton = getTagContaining(mergeCard, "button", 'data-merge-id="merge:epic-1"');
@@ -879,7 +1001,7 @@ describe("Agent Project Manager webview", () => {
     expect(getTagContaining(html, "button", 'class="warningAction')).toContain(" disabled");
     expect(getTagContaining(html, "button", 'class="startParallelBeads')).toContain(" disabled");
     expect(getTagContaining(html, "button", 'data-assign-start-id="ready-1"')).toContain(
-      " disabled"
+      'aria-disabled="true"'
     );
     expect(getTagContaining(html, "button", 'data-merge-id="merge:epic-1"')).toContain(" disabled");
 

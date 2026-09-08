@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildObstacleAvoidingGraphPath,
+  buildRoutedGraphPath,
   computeCenteredBoundaryY,
   computeGraphBoundaryState,
   computePackedGraphLayout,
@@ -146,6 +147,30 @@ describe("beads graph layout", () => {
     );
 
     expect(path).toBe("M280.0 94.0 H292.0 V12.0 H576.0 V224.0 H588.0");
+  });
+
+  it("uses a short level-gap route when no card blocks it", () => {
+    expect(
+      buildRoutedGraphPath(
+        { left: 28, top: 44, right: 280, bottom: 144 },
+        { left: 336, top: 174, right: 588, bottom: 274 },
+        500,
+        0,
+        []
+      )
+    ).toBe("M280.0 94.0 H308.0 V224.0 H336.0");
+  });
+
+  it("falls back to the outer corridor when another card blocks the local route", () => {
+    expect(
+      buildRoutedGraphPath(
+        { left: 28, top: 44, right: 280, bottom: 144 },
+        { left: 588, top: 174, right: 840, bottom: 274 },
+        500,
+        0,
+        [{ left: 300, top: 70, right: 560, bottom: 250 }]
+      )
+    ).toBe("M280.0 94.0 H292.0 V12.0 H576.0 V224.0 H588.0");
   });
 
   it("centers Start and End nodes within the graph height", () => {

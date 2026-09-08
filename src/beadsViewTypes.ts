@@ -7,6 +7,8 @@ export interface BeadGroup {
   workspace: string;
   workspacePath: string;
   items: BeadItem[];
+  /** Whether `bd ready` completed successfully for this snapshot. */
+  readinessKnown: boolean;
 }
 
 export interface EmptyBeadWorkspace {
@@ -47,4 +49,5 @@ export interface BeadLoadResult {
 export interface CliLoadResult {
   items: BeadItem[];
   warnings: BeadWarning[];
+  readinessKnown: boolean;
 }

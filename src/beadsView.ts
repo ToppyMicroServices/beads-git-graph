@@ -49,6 +49,8 @@ import {
   extractBeadItems,
   inferReadyParallelizableItems,
   mergeBeadItems,
+  normalizeBeadStatus,
+  normalizeBeadType,
   toBeadItem
 } from "./beadsData";
 import {
@@ -93,6 +95,48 @@ import { executePlanImport, formatPlanMutation, projectPlanDraftMutations } from
 type CreateBeadType = "task" | "feature" | "bug" | "epic" | "chore";
 type CreateBeadStatus = "open" | "in_progress" | "blocked" | "closed";
 type CreateBeadPriority = "P0" | "P1" | "P2" | "P3" | "P4";
+
+export function isUnsupportedReadyLimitOptionError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return (
+    /(?:unknown|unsupported|unrecognized|no such)\s+(?:flag|option)(?:\s+named)?\s*[:=]?\s*["']?(?:--limit|-limit)\b/i.test(
+      message
+    ) ||
+    /flag provided but not defined\s*:\s*(?:--limit|-limit)\b/i.test(message) ||
+    /(?:does not|doesn't) support\s+(?:the\s+)?(?:--limit|-limit)\b/i.test(message) ||
+    /(?:--limit|-limit)\b\s+(?:is\s+)?(?:an?\s+)?(?:unknown|unsupported|unrecognized)(?:\s+(?:flag|option))?/i.test(
+      message
+    )
+  );
+}
+
+export async function queryReadyItemIdsWithLimitFallback(
+  runBdCommand: (args: string[]) => Promise<string>
+) {
+  let stdout: string;
+  try {
+    stdout = await runBdCommand(["ready", "--json", "--limit", "0"]);
+  } catch (error) {
+    if (!isUnsupportedReadyLimitOptionError(error)) throw error;
+    stdout = await runBdCommand(["ready", "--json"]);
+  }
+  const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
+  return new Set(extractBeadItems(parsed).map((item) => item.id));
+}
+
+export function getAgentStartBlockReason(
+  item: Pick<BeadItem, "id" | "status" | "type">
+): string | null {
+  if (normalizeBeadType(item.type) === "epic") {
+    return `Refusing to start ${item.id}: epics organize work and cannot be started by AI. Start an open child task instead.`;
+  }
+  const status = normalizeBeadStatus(item.status);
+  if (status !== "open") {
+    return `Refusing to start ${item.id}: current Beads status is ${status}; only open tasks can be started.`;
+  }
+  return null;
+}
+
 const SSOT_USAGE_MANIFEST_CANDIDATES = [
   "ssot-usage.json",
   ".beads/ssot-usage.json",
@@ -485,6 +529,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           if (cliItems.length > 0) {
             groups.push({
               ...workspaceInfo,
+              readinessKnown: cliResult.readinessKnown,
               items: deriveParallelMergeItems(cliItems)
             });
           } else {
@@ -508,6 +553,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       if (legacyResult.items.length > 0) {
         groups.push({
           ...workspaceInfo,
+          readinessKnown: false,
           items: deriveParallelMergeItems(legacyResult.items)
         });
       } else if (legacyResult.hasFiles) {
@@ -3239,7 +3285,7 @@ A provider can write only its declared relative target after its model content c
     const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
     const cliItems = extractBeadItems(parsed);
     const warnings: BeadWarning[] = [];
-    const readyItemIds = await this.loadReadyItemIds(cwd, warnings);
+    const readiness = await this.loadReadyItemIds(cwd, warnings);
     const itemsNeedingParentLookup = new Set<string>(
       beadsAsArray(parsed)
         .map((item) => {
@@ -3315,44 +3361,57 @@ A provider can write only its declared relative target after its model content c
         });
       }
 
-      return { items: inferReadyParallelizableItems(mergedItems, readyItemIds), warnings };
+      return {
+        items: inferReadyParallelizableItems(mergedItems, readiness.itemIds),
+        warnings,
+        readinessKnown: readiness.known
+      };
     } catch {
       const missingParentIds = cliItems
         .filter((item) => item.parentId.trim() === "" && itemsNeedingParentLookup.has(item.id))
         .map((item) => item.id);
       if (missingParentIds.length === 0) {
-        return { items: inferReadyParallelizableItems(cliItems, readyItemIds), warnings };
+        return {
+          items: inferReadyParallelizableItems(cliItems, readiness.itemIds),
+          warnings,
+          readinessKnown: readiness.known
+        };
       }
 
       const parentLookupItems = await this.loadBdShowItems(missingParentIds, cwd);
       return {
         items: inferReadyParallelizableItems(
           mergeBeadItems(cliItems, parentLookupItems),
-          readyItemIds
+          readiness.itemIds
         ),
-        warnings
+        warnings,
+        readinessKnown: readiness.known
       };
     }
   }
 
   private async loadReadyItemIds(cwd: string, warnings: BeadWarning[]) {
     try {
-      return await this.queryReadyItemIds(cwd);
+      return {
+        itemIds: await this.queryReadyItemIds(cwd),
+        known: true
+      };
     } catch {
       warnings.push({
         source: path.join(cwd, ".beads"),
         workspacePath: cwd,
         message:
-          "Unable to infer ready tasks because bd ready failed. Task start readiness is unknown."
+          "Unable to determine ready tasks because bd ready failed. Start AI remains unavailable until readiness can be confirmed."
       });
-      return new Set<string>();
+      return {
+        itemIds: new Set<string>(),
+        known: false
+      };
     }
   }
 
   private async queryReadyItemIds(cwd: string) {
-    const stdout = await this.runBdCommand(["ready", "--json", "--limit", "0"], cwd);
-    const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
-    return new Set(extractBeadItems(parsed).map((item) => item.id));
+    return queryReadyItemIdsWithLimitFallback((args) => this.runBdCommand(args, cwd));
   }
 
   private async queryDependencyIdsForStart(issueIds: readonly string[], cwd: string) {
@@ -3366,6 +3425,15 @@ A provider can write only its declared relative target after its model content c
       throw new Error(
         `Unable to verify current Beads dependencies for: ${missingIssueIds.join(", ")}. No work was started.`
       );
+    }
+
+    for (const issueId of uniqueIssueIds) {
+      const item = itemById.get(issueId);
+      if (item === undefined) continue;
+      const blockReason = getAgentStartBlockReason(item);
+      if (blockReason !== null) {
+        throw new Error(blockReason);
+      }
     }
 
     return new Map(

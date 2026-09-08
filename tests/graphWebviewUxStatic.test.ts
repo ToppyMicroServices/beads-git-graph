@@ -14,6 +14,9 @@ function sourceBetween(start: string, end: string) {
   expect(endIndex).toBeGreaterThan(startIndex);
   return beadsMain.slice(startIndex, endIndex);
 }
+function countOccurrences(source: string, value: string) {
+  return source.split(value).length - 1;
+}
 
 describe("Graph webview UX contracts", () => {
   it("keeps Graph visibility independent from collapsed Table rows", () => {
@@ -54,6 +57,116 @@ describe("Graph webview UX contracts", () => {
     expect(visibilitySource).toContain("removeExpandedDetails");
     expect(visibilitySource).not.toContain(
       'selectedRow !== null && selectedRow.style.display === "none"'
+    );
+  });
+
+  it("shows Parent edges only around the selected task without filtering dependencies", () => {
+    const openDetailsSource = sourceBetween(
+      "function openGraphBeadDetails",
+      "function findIssueRow"
+    );
+    const clearDetailsSource = sourceBetween(
+      "function clearSelectedRow",
+      "function expandDetailsRow"
+    );
+    const overlaySource = sourceBetween(
+      "function renderDependencyGraphOverlays",
+      'addFilter.addEventListener("click"'
+    );
+
+    expect(openDetailsSource).toContain("renderDependencyGraphOverlays()");
+    expect(clearDetailsSource).toContain("renderDependencyGraphOverlays()");
+    expect(overlaySource).toContain("selectedGraphId");
+    expect(overlaySource).toContain("childId === selectedGraphId || parentId === selectedGraphId");
+    expect(overlaySource).toContain(".filter((edge) => !edge.hidden)");
+    expect(overlaySource).not.toContain("selectedGraphId === fromId");
+    expect(overlaySource).toContain("parentRouteIndex");
+    expect(overlaySource).toContain("dependencyRouteIndex");
+  });
+
+  it("routes visible dependency edges deterministically around card obstacles", () => {
+    const overlaySource = sourceBetween(
+      "function renderDependencyGraphOverlays",
+      'addFilter.addEventListener("click"'
+    );
+
+    expect(overlaySource).toContain("nodeRectsById");
+    expect(overlaySource).toContain("const obstacles = Array.from(nodeRectsById)");
+    expect(overlaySource).toContain("buildRoutedGraphPath");
+    expect(overlaySource).toContain("left.dataset.fromId");
+    expect(overlaySource).toContain("left.dataset.toId");
+    expect(overlaySource).toContain("dependencyRouteIndexes");
+    expect(overlaySource).toContain("routeGroup");
+  });
+
+  it("paints emphasized dependencies after ordinary paths in both maps", () => {
+    const overlaySource = sourceBetween(
+      "function renderDependencyGraphOverlays",
+      'addFilter.addEventListener("click"'
+    );
+    const miniMapSource = sourceBetween(
+      "function rebuildGraphMiniMapGeometry",
+      "function updateGraphMiniMapViewport"
+    );
+
+    expect(overlaySource).toContain("ordinaryPaths += path");
+    expect(overlaySource).toContain("emphasizedPaths += path");
+    expect(overlaySource).toContain('edge.dataset.critical === "1" || edge.dataset.cycle === "1"');
+    expect(overlaySource).toContain("markerDefs + parentPaths + ordinaryPaths + emphasizedPaths");
+    expect(miniMapSource).toContain("getEdgePaintLayer");
+    expect(miniMapSource.indexOf(".sort(")).toBeLessThan(
+      miniMapSource.indexOf("for (const edge of miniMapEdges)")
+    );
+  });
+
+  it("batches Graph overlay rebuilding around layout changes", () => {
+    const openDetailsSource = sourceBetween(
+      "function openGraphBeadDetails",
+      "function findIssueRow"
+    );
+    const clearDetailsSource = sourceBetween(
+      "function clearSelectedRow",
+      "function expandDetailsRow"
+    );
+    const renderUpdateSource = sourceBetween(
+      "function applyBeadsRenderUpdate",
+      "function closeContextMenu"
+    );
+    const visibilitySource = sourceBetween(
+      "function refreshRowVisibility",
+      "function updateViewModeControls"
+    );
+    const viewModeSource = sourceBetween("function applyViewMode", "function isCollapsibleRow");
+
+    expect(openDetailsSource).toContain("options.renderOverlay !== false");
+    expect(clearDetailsSource).toContain("options.renderOverlay !== false");
+    expect(renderUpdateSource).toContain("renderOverlay: false");
+    expect(visibilitySource).toContain("clearSelectedRow({ renderOverlay: false })");
+    expect(viewModeSource).toContain(
+      "openGraphBeadDetails(detailsButton, { renderOverlay: false })"
+    );
+    expect(countOccurrences(renderUpdateSource, "renderDependencyGraphOverlays()")).toBe(1);
+    expect(countOccurrences(visibilitySource, "renderDependencyGraphOverlays()")).toBe(1);
+    expect(countOccurrences(viewModeSource, "renderDependencyGraphOverlays()")).toBe(1);
+    expect(beadsMain).toContain(
+      "restoreSelectedIssue(normalizeSelectedIssue(initialWebviewState?.selectedIssue),"
+    );
+    expect(beadsMain).toContain(
+      "refreshRowVisibility({ refreshGraph: false, renderHierarchy: false })"
+    );
+    expect(beadsMain).toContain("openGraphBeadDetails(graphDetailsButton);");
+    expect(openDetailsSource).toContain("clearSelectedRow();");
+  });
+
+  it("blocks aria-disabled Start AI actions before posting", () => {
+    const startSource = sourceBetween(
+      "function postAssignStartBead",
+      "function postOpenAgentArtifact"
+    );
+
+    expect(startSource).toContain('button.getAttribute("aria-disabled") === "true"');
+    expect(startSource.indexOf('button.getAttribute("aria-disabled")')).toBeLessThan(
+      startSource.indexOf("beginClientAction(")
     );
   });
 
