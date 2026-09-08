@@ -25,7 +25,9 @@ import {
   type AgentWorkLane,
   buildAgentWorkQueue,
   compareGraphWorkFocusOrder,
-  deriveGraphWorkFocus
+  deriveGraphWorkFocus,
+  deriveStartAiEligibility,
+  type StartAiEligibility
 } from "./beadsProjectState";
 import { type BeadLoadResult } from "./beadsViewTypes";
 import { escapeHtml, getNonce } from "./utils";
@@ -108,6 +110,27 @@ function renderArtifactAction(artifactUri: string) {
 
 function getBeadDetailsId(workspacePath: string, issueId: string) {
   return `bead-details-${encodeURIComponent(`${workspacePath}:${issueId}`).replace(/%/g, "_")}`;
+}
+
+type StartAiSurface = "graph" | "manage";
+
+function renderStartAiAction(
+  surface: StartAiSurface,
+  item: BeadItem,
+  workspacePath: string,
+  eligibility: StartAiEligibility
+) {
+  const taskActionContext = `${item.id}: ${item.title}`;
+  const reasonId = `${getBeadDetailsId(workspacePath, item.id)}-start-reason-${surface}`;
+  const title = eligibility.enabled
+    ? "Choose a provider and model, attach SSOT/context, and start this task."
+    : eligibility.reason;
+  const describedBy = eligibility.enabled ? "" : ` aria-describedby="${escapeHtml(reasonId)}"`;
+  const reason = eligibility.enabled
+    ? ""
+    : `<span id="${escapeHtml(reasonId)}" class="startAiReason">Cannot start: ${escapeHtml(eligibility.reason)}</span>`;
+
+  return `<div class="startAiAction" data-start-eligibility="${escapeHtml(eligibility.code)}"><button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-provider="${escapeHtml(hasExplicitProvider(item) ? item.provider : "")}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(item.ssot.trim())}" data-assign-start-worktree="${escapeHtml(isCodingSessionProvider(item) ? item.worktree.trim() : "")}" title="${escapeHtml(title)}" aria-label="${escapeHtml(`Start AI for ${taskActionContext}`)}"${describedBy}${eligibility.enabled ? "" : ' aria-disabled="true"'}>Start AI</button>${reason}</div>`;
 }
 
 function isDefaultVisibleStatus(status: string) {
@@ -269,7 +292,10 @@ function buildDependencyLintWarnings(
       (siblingCounts.get(parentId) ?? 0) > 1 &&
       (status === "open" || status === "in_progress")
     ) {
-      warnings.set(item.id, "Sibling task has no dependency edge.");
+      warnings.set(
+        item.id,
+        "Sibling task has no dependency edge. Advisory only; this warning does not disable Start AI."
+      );
     }
   }
 
@@ -337,7 +363,8 @@ function renderAgentWorkCard(
   workspacePath: string,
   agentAliases: ReadonlyMap<string, string>,
   writeAvailable: boolean,
-  writeUnavailableReason: string
+  writeUnavailableReason: string,
+  readinessKnown: boolean
 ) {
   const item = entry.item;
   const normalizedStatus = normalizeBeadStatus(item.status);
@@ -351,7 +378,9 @@ function renderAgentWorkCard(
     entry.readiness === "confirmed"
       ? "Ready confirmed"
       : entry.readiness === "not-confirmed"
-        ? "Readiness unknown"
+        ? readinessKnown
+          ? "Not ready"
+          : "Readiness unknown"
         : item.syntheticKind === "parallel-pr-merge"
           ? "Readiness N/A"
           : "";
@@ -384,14 +413,13 @@ function renderAgentWorkCard(
   const taskActionContext = `${item.id}: ${item.title}`;
   const detailsAction = `<button class="graphDetailsBead agentWorkDetails" type="button" data-graph-details-id="${escapeHtml(item.id)}" data-graph-details-workspace="${escapeHtml(workspacePath)}" aria-label="${escapeHtml(`Details for ${taskActionContext}`)}">Details</button>`;
   let primaryAction = "";
-  if (entry.lane === "queue" && !item.synthetic && normalizedStatus === "open") {
-    const startDisabled = !writeAvailable || entry.readiness !== "confirmed";
-    const startTitle = !writeAvailable
-      ? writeUnavailableReason
-      : entry.readiness !== "confirmed"
-        ? "Start is unavailable until bd ready confirms this task."
-        : "Choose a provider and requested model, attach SSOT/context, and start this bead.";
-    primaryAction = `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-provider="${escapeHtml(hasExplicitProvider(item) ? item.provider : "")}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(item.ssot.trim())}" data-assign-start-worktree="${escapeHtml(isCodingSessionProvider(item) ? item.worktree.trim() : "")}" title="${escapeHtml(startTitle)}" aria-label="${escapeHtml(`Start AI for ${taskActionContext}`)}"${startDisabled ? " disabled" : ""}>Start AI</button>`;
+  if (entry.lane === "queue" && !item.synthetic) {
+    const eligibility = deriveStartAiEligibility(item, {
+      writeAvailable,
+      writeUnavailableReason,
+      readinessKnown
+    });
+    primaryAction = renderStartAiAction("manage", item, workspacePath, eligibility);
   } else if (
     entry.lane === "queue" &&
     item.syntheticKind === "parallel-pr-merge" &&
@@ -412,6 +440,7 @@ function renderAgentWorkQueue(
   agentAliases: ReadonlyMap<string, string>,
   writeAvailable: boolean,
   writeUnavailableReason: string,
+  readinessKnown: boolean,
   diagnosticHtml: string
 ) {
   const queue = buildAgentWorkQueue(items);
@@ -427,7 +456,8 @@ function renderAgentWorkQueue(
           workspacePath,
           agentAliases,
           writeAvailable,
-          writeUnavailableReason
+          writeUnavailableReason,
+          readinessKnown
         )
       )
       .join("");
@@ -442,7 +472,8 @@ function renderBeadsDependencyGraph(
   workspacePath: string,
   agentAliases: ReadonlyMap<string, string>,
   writeAvailable: boolean,
-  writeUnavailableReason: string
+  writeUnavailableReason: string,
+  readinessKnown: boolean
 ) {
   const items = hierarchyItems.map((entry) => entry.item);
   const graph = buildBeadDependencyGraph(items);
@@ -616,20 +647,16 @@ function renderBeadsDependencyGraph(
         ]
           .filter((line) => line !== "")
           .join("");
-        const assignDisabled =
-          !writeAvailable || normalizedStatus !== "open" || !item.readyByBd ? " disabled" : "";
-        const assignTitle = !writeAvailable
-          ? writeUnavailableReason
-          : normalizedStatus !== "open"
-            ? "Only open beads can be started."
-            : !item.readyByBd
-              ? "Start is unavailable until bd ready confirms this task and its dependencies."
-              : "Choose a provider and requested model, attach SSOT/context, and start this bead.";
+        const startEligibility = deriveStartAiEligibility(item, {
+          writeAvailable,
+          writeUnavailableReason,
+          readinessKnown
+        });
         const initialDisplay = isDefaultVisibleStatus(normalizedStatus) ? "" : "display:none;";
         const taskActionContext = `${item.id}: ${item.title}`;
         const actionHtml = derivedMerge
           ? `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="${escapeHtml(writeAvailable ? "Check agent worktrees, auto-merge their PRs, then sync Beads." : writeUnavailableReason)}" aria-label="${escapeHtml(`Merge PRs for ${taskActionContext}`)}"${writeAvailable ? "" : " disabled"}>Merge PRs</button>`
-          : `<button class="assignStartBead" type="button" data-assign-start-id="${escapeHtml(item.id)}" data-assign-start-workspace="${escapeHtml(workspacePath)}" data-assign-start-title="${escapeHtml(item.title)}" data-assign-start-agent="${escapeHtml(item.agent.trim())}" data-assign-start-provider="${escapeHtml(hasExplicitProvider(item) ? item.provider : "")}" data-assign-start-model="${escapeHtml(item.model.trim())}" data-assign-start-ssot="${escapeHtml(ssotLabel)}" data-assign-start-worktree="${escapeHtml(isCodingSessionProvider(item) ? item.worktree.trim() : "")}" title="${escapeHtml(assignTitle)}" aria-label="${escapeHtml(`Start AI for ${taskActionContext}`)}"${assignDisabled}>Start AI</button>`;
+          : renderStartAiAction("graph", item, workspacePath, startEligibility);
         const graphBadges = [
           executionStateLabel === "" || graphWorkFocus !== "none"
             ? ""
@@ -716,7 +743,7 @@ function renderBeadsDependencyGraph(
       : "No dependency path yet";
   const criticalPathHtml = `<div class="graphPathStrip${graph.criticalPathIds.length > 0 ? "" : " emptyCriticalPath"}${pathUnavailable ? " cycleGraphPath" : ""}"><span>Longest Chain</span><strong class="graphPathValue" title="${escapeHtml(pathText)}">${escapeHtml(pathText)}</strong></div>`;
   const graphLegendHtml =
-    '<div class="graphLegend"><span class="runningLegend">Now (recorded)</span><span class="nextReadyLegend">Next ready</span><span class="flowLegend">Visible flow</span><span class="dependencyLegend">Dependency</span><span class="criticalLegend">Longest chain</span><span class="cycleLegend">Cycle</span><span class="parentLegend">Parent</span><span class="riskLegend">Merge/worktree risk</span></div>';
+    '<div class="graphLegend"><span class="runningLegend">Now (recorded)</span><span class="nextReadyLegend">Next ready</span><span class="flowLegend">Visible flow</span><span class="dependencyLegend">Dependency</span><span class="criticalLegend">Longest chain</span><span class="cycleLegend">Cycle</span><span class="parentLegend">Parent (selected)</span><span class="riskLegend">Merge/worktree risk</span></div>';
   const graphIssuesHtml = `<div class="graphIssueStack">${dependencyWarningHtml}${mergeRiskHtml}</div>`;
 
   return `<div class="graphPane" data-workspace-path="${escapeHtml(workspacePath)}"><div class="graphHeader"><div><div class="workspaceName">Execution Map</div><div class="graphGestureHint">A new viewport focuses Now/Next; saved views keep their position · Point anywhere and wheel to zoom there · Drag to pan · Option/Alt+drag a box to zoom · Double-click to fit all</div></div><div class="graphHeaderActions"><div class="workspaceSummary">${graphWorkSummary}<span class="summaryPill dependencySummary">${graph.edges.length} deps</span>${criticalSummary}${cycleSummary}${dependencyWarningSummary}${mergeRiskSummary}</div><div class="graphControls" role="group" aria-label="Graph zoom controls"><button type="button" data-graph-action="out" title="Zoom out" aria-label="Zoom out">−</button><span class="graphZoomValue" aria-live="polite">100%</span><button type="button" data-graph-action="in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" data-graph-action="focus" title="Center recorded in-progress and ready-next tasks"${runningCount + nextReadyCount === 0 ? " disabled" : ""}>Focus</button><button type="button" data-graph-action="fit">Fit all</button></div></div></div>${graphIssuesHtml}<div class="graphDetailsHost"></div><div class="graphMapFrame"><div class="graphMapHeader"><div class="graphMapHeaderMain">${criticalPathHtml}${graphLegendHtml}</div><svg class="graphMiniMap" role="img" aria-label="Graph overview. The outlined rectangle is the current viewport."></svg></div><div class="graphScroller" tabindex="0" aria-label="Dependency graph. Point anywhere and wheel to zoom around that location. Drag to pan, Option or Alt drag a box to zoom, use arrow keys to pan, press F to focus Now and Next, and press zero to fit all."><div class="graphCanvas" data-graph-width="${graphWidth}" data-graph-height="${graphHeight}" style="width:${graphWidth}px;height:${graphHeight}px"><div class="graphContent" style="width:${graphWidth}px;height:${graphHeight}px;--graph-node-width:${GRAPH_NODE_WIDTH}px">${edgeHtml}<svg class="dependencyOverlay" aria-hidden="true"></svg>${levelGuideHtml}<div class="graphNodes">${boundaryNodeHtml}${nodeHtml}</div></div></div><div class="graphZoomSelection" hidden></div></div></div></div>`;
@@ -770,6 +797,7 @@ export function renderBeadsWebviewHtml(
             : agentWriteCapability?.supported === false
               ? `AI actions are disabled because Beads cannot be updated safely: ${agentWriteCapability.reason}`
               : "AI actions are unavailable because Beads write capability is unconfirmed.";
+        const readinessKnown = group.readinessKnown;
         const workspaceWriteAvailable =
           result.bdExecutableStatus.available && workspaceWriteCapability?.supported === true;
         const workspaceWriteUnavailableReason = workspaceWriteAvailable
@@ -818,6 +846,8 @@ export function renderBeadsWebviewHtml(
             const status = normalizeBeadStatus(item.status);
             return (
               item.readyByBd &&
+              readinessKnown &&
+              normalizeBeadType(item.type) !== "epic" &&
               !item.parallelizableSuppressed &&
               !item.synthetic &&
               status === "open"
@@ -1013,7 +1043,8 @@ export function renderBeadsWebviewHtml(
           group.workspacePath,
           agentAliases,
           writeAvailable,
-          writeUnavailableReason
+          writeUnavailableReason,
+          readinessKnown
         );
         const agentWorkQueueHtml = renderAgentWorkQueue(
           flatItems.map((entry) => entry.item),
@@ -1021,6 +1052,7 @@ export function renderBeadsWebviewHtml(
           agentAliases,
           writeAvailable,
           writeUnavailableReason,
+          readinessKnown,
           writeCapabilityWarning
         );
         const createAction = renderWorkspaceCreateAction(
@@ -1313,7 +1345,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .agentWorkCardTop{justify-content:space-between;}
 .agentWorkCardTitle{font-size:11px;font-weight:750;line-height:1.35;overflow-wrap:anywhere;}
 .agentWorkReason{color:var(--vscode-descriptionForeground);font-size:10px;line-height:1.35;overflow-wrap:anywhere;}
-.agentWorkCardActions{justify-content:flex-end;margin-top:2px;}
+.agentWorkCardActions{align-items:flex-start;justify-content:flex-end;margin-top:2px;}
 .agentWorkLaneEmpty{padding:10px 8px;color:var(--vscode-descriptionForeground);font-size:10px;text-align:center;}
 .parallelBatchResult{display:grid;gap:9px;margin:0 0 10px;padding:11px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);}
 .parallelBatchHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
@@ -1455,11 +1487,15 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .graphRelation.hasHiddenRelation .graphRelationValue{color:var(--vscode-editorWarning-foreground,#f59e0b);}
 .graphRelation.hasMissingRelation .graphRelationValue{color:var(--vscode-errorForeground,#ef4444);font-weight:650;}
 .graphParentRelation{border-left:2px dashed var(--vscode-textLink-foreground,#3b82f6);padding-left:5px;}
-.graphNodeActions{position:relative;z-index:3;display:flex;justify-content:flex-end;gap:6px;margin-top:8px;}
+.graphNodeActions{position:relative;z-index:3;display:flex;align-items:flex-start;justify-content:flex-end;gap:6px;flex-wrap:wrap;margin-top:8px;}
 .graphDetailsBead{height:24px;padding:0 8px;background:transparent;color:var(--vscode-foreground);border-color:var(--vscode-panel-border);}
 .assignStartBead,.mergeParallelPrs{height:24px;padding:0 8px;font-weight:650;}
 .mergeParallelPrs{border-color:rgba(249,115,22,.55);background:rgba(249,115,22,.16);color:var(--vscode-charts-orange,#f97316);}
-.assignStartBead:disabled,.mergeParallelPrs:disabled{opacity:.45;cursor:default;}
+.assignStartBead:disabled,.assignStartBead[aria-disabled="true"],.mergeParallelPrs:disabled{opacity:.45;cursor:default;}
+.startAiAction{display:grid;justify-items:end;gap:3px;min-width:0;max-width:190px;}
+.startAiReason{color:var(--vscode-descriptionForeground);font-size:10px;line-height:1.3;text-align:right;overflow-wrap:anywhere;}
+.agentWorkCardActions .startAiAction{flex:1 1 150px;max-width:100%;}
+.graphNodeActions .startAiAction{flex:1 1 145px;}
 .planDraftHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:10px;padding:12px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));}
 .planDraftHeader p{margin:4px 0 0;color:var(--vscode-descriptionForeground);}
 .planDraftHeader label{display:grid;gap:4px;min-width:min(320px,45%);font-size:11px;font-weight:700;}

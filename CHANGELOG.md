@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-09-08
+
+### Fixed
+
+- Keep dependency edges prominent in Graph, reveal parent links only around the selected task, and
+  prefer short card-avoiding routes before using shared outer corridors.
+- Explain every disabled Start AI action, distinguish unknown readiness from confirmed not-ready
+  work, and support Beads CLIs whose `bd ready` command does not accept `--limit`.
+- Update the packaging dependencies `fast-uri` to 3.1.6 and `qs` to 6.16.0.
+
 ## [0.6.3] - 2026-08-26
 
 ### Added

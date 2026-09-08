@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "Local-first agent project management plugins from ToppyMicroServices.",
-    "version": "0.1.1"
+    "version": "0.1.2"
   },
   "plugins": [
     {
       "name": "beads-agent-project-manager",
       "description": "Plan dependency-linked work, coordinate ready tasks, and track verified progress with Beads.",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "source": "./agent-plugin"
     }
   ]

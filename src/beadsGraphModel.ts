@@ -356,6 +356,87 @@ export function buildObstacleAvoidingGraphPath(
   return `M${point(sourceX)} ${point(sourceY)} H${point(sourceExitX)} V${point(corridorY)} H${point(targetEntryX)} V${point(targetY)} H${point(targetX)}`;
 }
 
+function graphSegmentIntersectsRect(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  rect: GraphConnectionRect,
+  clearance: number
+) {
+  const left = rect.left - clearance;
+  const right = rect.right + clearance;
+  const top = rect.top - clearance;
+  const bottom = rect.bottom + clearance;
+  if (start.y === end.y) {
+    const segmentLeft = Math.min(start.x, end.x);
+    const segmentRight = Math.max(start.x, end.x);
+    return start.y > top && start.y < bottom && segmentRight > left && segmentLeft < right;
+  }
+  if (start.x === end.x) {
+    const segmentTop = Math.min(start.y, end.y);
+    const segmentBottom = Math.max(start.y, end.y);
+    return start.x > left && start.x < right && segmentBottom > top && segmentTop < bottom;
+  }
+  return true;
+}
+
+/**
+ * Prefer a short orthogonal path in the gap between dependency levels when it
+ * does not cross another card. Long, backward, or obstructed edges retain the
+ * outer-corridor route.
+ */
+export function buildRoutedGraphPath(
+  from: GraphConnectionRect,
+  to: GraphConnectionRect,
+  canvasHeight: number,
+  routeIndex: number,
+  obstacles: readonly GraphConnectionRect[]
+) {
+  const source = {
+    x: from.right,
+    y: from.top + (from.bottom - from.top) / 2
+  };
+  const target = {
+    x: to.left,
+    y: to.top + (to.bottom - to.top) / 2
+  };
+  const minimumGap = 24;
+  const clearance = 8;
+  const point = (value: number) => value.toFixed(1);
+  const isClear = (segments: Array<[{ x: number; y: number }, { x: number; y: number }]>) =>
+    segments.every(([start, end]) =>
+      obstacles.every((obstacle) => !graphSegmentIntersectsRect(start, end, obstacle, clearance))
+    );
+
+  if (target.x - source.x >= minimumGap) {
+    if (Math.abs(source.y - target.y) < 0.5 && isClear([[source, target]])) {
+      return `M${point(source.x)} ${point(source.y)} H${point(target.x)}`;
+    }
+
+    const minimumX = source.x + minimumGap / 2;
+    const maximumX = target.x - minimumGap / 2;
+    const fractions = [0.5, 0.35, 0.65, 0.2, 0.8];
+    const rotation = Math.abs(routeIndex) % fractions.length;
+    const candidates = [...fractions.slice(rotation), ...fractions.slice(0, rotation)].map(
+      (fraction) => minimumX + (maximumX - minimumX) * fraction
+    );
+    for (const corridorX of candidates) {
+      const firstBend = { x: corridorX, y: source.y };
+      const secondBend = { x: corridorX, y: target.y };
+      if (
+        isClear([
+          [source, firstBend],
+          [firstBend, secondBend],
+          [secondBend, target]
+        ])
+      ) {
+        return `M${point(source.x)} ${point(source.y)} H${point(corridorX)} V${point(target.y)} H${point(target.x)}`;
+      }
+    }
+  }
+
+  return buildObstacleAvoidingGraphPath(from, to, canvasHeight, routeIndex);
+}
+
 export function computeCenteredBoundaryY(graphHeight: number, boundaryHeight: number) {
   return Math.max(0, (graphHeight - Math.max(1, boundaryHeight)) / 2);
 }

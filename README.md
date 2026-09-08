@@ -1,7 +1,7 @@
 # Beads Git Graph
 
 [![MIT License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](./LICENSE)
-[![Version 0.6.3](https://img.shields.io/badge/version-0.6.3-0366d6?style=flat-square)](./CHANGELOG.md)
+[![Version 0.6.4](https://img.shields.io/badge/version-0.6.4-0366d6?style=flat-square)](./CHANGELOG.md)
 
 A local-first project manager for coordinating dependency-linked work across different AI providers
 and requested models, with Git graph and Beads issue tools in one VS Code extension.
@@ -24,8 +24,8 @@ before approving an import or starting work.
 - Lets you refresh, create, close, and sync Beads items inside VS Code
 - Shows optional parallel, AI provider/model, audit artifact, SSOT/context, worktree, branch, PR, check, and sync-risk hints on Beads items
 - Shows a Beads execution map that focuses a new viewport on recorded in-progress and `bd ready`
-  work while preserving a saved viewport, with Critical Path, dependency arrows, dashed parent-child
-  lines, merge/worktree risk, Start AI, Start Parallel, and merge actions
+  work while preserving a saved viewport, with dependency arrows, Critical Path highlighting,
+  parent lines for the selected task, merge/worktree risk, Start AI, Start Parallel, and merge actions
 - Zooms the execution map around the location under the pointer, pans with normal drag, box-zooms
   with Option/Alt-drag, and preserves the transform when switching views, resizing, or refreshing
 - Refreshes task data in place without moving the visible area while preserving the selected view,
@@ -76,8 +76,9 @@ Open **Manage** in the Beads view to see the Agent Work Queue. It derives each l
 
 The Manage view does not claim live agent monitoring. “Recorded in progress” reflects Beads status,
 and unavailable evidence remains unconfirmed. In Manage, **Start AI** is enabled only when
-`bd ready` confirms readiness. Use **Details**, **Start AI**, and **Merge PRs** to continue through
-the existing workflow.
+`bd ready` confirms readiness and Beads can be updated safely. A disabled action shows the exact
+reason beside it. Provider and model selection happens after **Start AI** is selected; a recorded
+provider label does not by itself enable or disable the action.
 
 ## Plan Agent Work
 

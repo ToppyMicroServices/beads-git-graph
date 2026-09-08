@@ -39,6 +39,12 @@ export const PLAN_CREATE_CAPABILITY_PROBE_ARGS = [
 
 export const PLAN_UPDATE_CAPABILITY_PROBE_ARGS = ["update", "--help"] as const;
 export const PLAN_DEPENDENCY_CAPABILITY_PROBE_ARGS = ["dep", "add", "--help"] as const;
+export const AGENT_SCHEMA_CAPABILITY_PROBE_ARGS = [
+  "create",
+  "__beads_git_graph_agent_capability_probe__",
+  "--dry-run",
+  "--json"
+] as const;
 export const AGENT_UPDATE_CAPABILITY_PROBE_ARGS = ["update", "--help"] as const;
 
 function getObservedOutput(result: BeadsCapabilityCommandResult) {
@@ -197,7 +203,7 @@ export async function probeBeadsAgentWriteCapability(
 
   let dryRunProbe: BeadsCapabilityCommandResult;
   try {
-    dryRunProbe = await run(PLAN_CREATE_CAPABILITY_PROBE_ARGS);
+    dryRunProbe = await run(AGENT_SCHEMA_CAPABILITY_PROBE_ARGS);
   } catch {
     return {
       supported: false,

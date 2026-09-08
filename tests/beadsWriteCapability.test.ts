@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AGENT_SCHEMA_CAPABILITY_PROBE_ARGS,
   AGENT_UPDATE_CAPABILITY_PROBE_ARGS,
   type BeadsCapabilityCommandResult,
   PLAN_CREATE_CAPABILITY_PROBE_ARGS,
@@ -150,9 +151,11 @@ describe("Beads agent write capability", () => {
       reason: "Compatible dry-run and agent update commands were observed."
     });
     expect(calls).toEqual([
-      [...PLAN_CREATE_CAPABILITY_PROBE_ARGS],
+      [...AGENT_SCHEMA_CAPABILITY_PROBE_ARGS],
       [...AGENT_UPDATE_CAPABILITY_PROBE_ARGS]
     ]);
+    expect(AGENT_SCHEMA_CAPABILITY_PROBE_ARGS).not.toContain("--acceptance");
+    expect(AGENT_SCHEMA_CAPABILITY_PROBE_ARGS).not.toContain("--metadata");
   });
 
   it("blocks agent work when the dry-run observes schema skew", async () => {

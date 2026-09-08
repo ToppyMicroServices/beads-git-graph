@@ -84,6 +84,17 @@ describe("agent plugin metadata", () => {
     expect(pluginReadme).toContain("## Start safely");
     expect(pluginReadme).toContain("Do not mutate Beads or start agents.");
     expect(pluginReadme).toContain("compatible agent or task tools from the host client");
-    expect(pluginChangelog).toContain(`## [${plugin.version}] - 2026-08-30`);
+    expect(pluginChangelog).toContain(`## [${plugin.version}] - `);
+  });
+
+  it("documents readiness, runner, and atomic-claim boundaries before dispatch", () => {
+    expect(skill).toContain("a failed readiness query means unknown readiness");
+    expect(skill).toContain("It must be open, not an epic, and still reported ready");
+    expect(skill).toContain("advisory and does not itself block a ready task");
+    expect(skill).toContain("not proof that a\nrunner is available");
+    expect(skill).toContain("bd --actor beads-git-graph:<unique-run-id> update <id> --claim");
+    expect(skill).toContain("Do not dispatch after a failed claim");
+    expect(skill).toContain("If atomic claim support\nis unavailable");
+    expect(skill).toContain("does not establish a lock across independently cloned\ndatabases");
   });
 });

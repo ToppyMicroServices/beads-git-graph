@@ -6,7 +6,8 @@ import {
   buildAgentWorkQueue,
   compareGraphWorkFocusOrder,
   deriveAgentWorkItem,
-  deriveGraphWorkFocus
+  deriveGraphWorkFocus,
+  deriveStartAiEligibility
 } from "../src/beadsProjectState";
 
 function makeBead(overrides: Partial<BeadItem> = {}): BeadItem {
@@ -45,6 +46,145 @@ function makeBead(overrides: Partial<BeadItem> = {}): BeadItem {
     ...overrides
   };
 }
+
+const startAiContext = {
+  writeAvailable: true,
+  writeUnavailableReason: "",
+  readinessKnown: true
+};
+
+describe("deriveStartAiEligibility", () => {
+  it("rejects derived work before type, status, readiness, and write checks", () => {
+    expect(
+      deriveStartAiEligibility(
+        makeBead({
+          synthetic: true,
+          syntheticKind: "parallel-pr-merge",
+          type: "epic",
+          status: "in_progress",
+          readyByBd: false
+        }),
+        { ...startAiContext, writeAvailable: false, readinessKnown: false }
+      )
+    ).toEqual({
+      code: "derived-item",
+      enabled: false,
+      reason: "Derived work cannot be started directly."
+    });
+  });
+
+  it("rejects epics before status, readiness, and write checks", () => {
+    expect(
+      deriveStartAiEligibility(makeBead({ type: "EPIC", status: "in progress" }), {
+        ...startAiContext,
+        writeAvailable: false,
+        readinessKnown: false
+      })
+    ).toEqual({
+      code: "epic",
+      enabled: false,
+      reason: "Epics cannot be started directly."
+    });
+  });
+
+  it("distinguishes already-running work from other non-open states", () => {
+    expect(deriveStartAiEligibility(makeBead({ status: "in progress" }), startAiContext)).toEqual({
+      code: "already-running",
+      enabled: false,
+      reason: "This task is already in progress."
+    });
+    expect(deriveStartAiEligibility(makeBead({ status: "blocked" }), startAiContext)).toEqual({
+      code: "not-open",
+      enabled: false,
+      reason: "Only open tasks can be started."
+    });
+  });
+
+  it("reports unknown readiness before bead readiness or write availability", () => {
+    expect(
+      deriveStartAiEligibility(makeBead({ readyByBd: true }), {
+        writeAvailable: false,
+        writeUnavailableReason: "Write access is unavailable.",
+        readinessKnown: false
+      })
+    ).toEqual({
+      code: "readiness-unknown",
+      enabled: false,
+      reason: "Task readiness is unknown because bd ready could not be checked."
+    });
+  });
+
+  it("reports an unready task before write availability", () => {
+    expect(
+      deriveStartAiEligibility(makeBead({ readyByBd: false }), {
+        writeAvailable: false,
+        writeUnavailableReason: "Write access is unavailable.",
+        readinessKnown: true
+      })
+    ).toEqual({
+      code: "not-ready",
+      enabled: false,
+      reason:
+        "bd ready does not currently report this task as ready. Check blockers or deferred state."
+    });
+  });
+
+  it("normalizes a safe write-unavailable reason", () => {
+    expect(
+      deriveStartAiEligibility(makeBead({ readyByBd: true }), {
+        writeAvailable: false,
+        writeUnavailableReason: "  Beads write capability is\n temporarily unavailable.  ",
+        readinessKnown: true
+      })
+    ).toEqual({
+      code: "write-unavailable",
+      enabled: false,
+      reason: "Beads write capability is temporarily unavailable."
+    });
+  });
+
+  it.each([
+    "",
+    '{"error":"schema mismatch","remote_migrate_gate":{"current_version":49}}',
+    '["raw","diagnostic"]',
+    `Capability failure: ${JSON.stringify({ hint: "do not expose this diagnostic" })}`,
+    "diagnostic ".repeat(30)
+  ])("replaces unsafe or unsuitable write details with a short reason", (reason) => {
+    const eligibility = deriveStartAiEligibility(makeBead({ readyByBd: true }), {
+      writeAvailable: false,
+      writeUnavailableReason: reason,
+      readinessKnown: true
+    });
+
+    expect(eligibility).toEqual({
+      code: "write-unavailable",
+      enabled: false,
+      reason: "Task changes are currently unavailable."
+    });
+    expect(eligibility.reason).not.toContain("remote_migrate_gate");
+    expect(eligibility.reason).not.toContain("do not expose");
+  });
+
+  it("enables a ready task without gating on provider, model, or session metadata", () => {
+    const eligibility = deriveStartAiEligibility(
+      makeBead({
+        readyByBd: true,
+        provider: "ollama",
+        model: "small-local-model",
+        agent: "",
+        worktree: "",
+        providerStatus: "unavailable"
+      }),
+      startAiContext
+    );
+
+    expect(eligibility).toEqual({
+      code: "ready",
+      enabled: true,
+      reason: "Ready. Provider and model are selected next."
+    });
+  });
+});
 
 describe("deriveAgentWorkItem", () => {
   it("puts closed work in done before considering risk metadata", () => {

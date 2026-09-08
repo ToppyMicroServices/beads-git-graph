@@ -8,7 +8,7 @@ import {
   resolveAgentProviderId
 } from "../src/agentProvider";
 import {
-  buildObstacleAvoidingGraphPath,
+  buildRoutedGraphPath,
   computeCenteredBoundaryY,
   computeGraphBoundaryState,
   computePackedGraphLayout,
@@ -816,7 +816,7 @@ function findSectionRows(button: HTMLElement) {
 
 function openGraphBeadDetails(
   button: HTMLButtonElement,
-  options: { saveState?: boolean; scrollIntoView?: boolean } = {}
+  options: { saveState?: boolean; scrollIntoView?: boolean; renderOverlay?: boolean } = {}
 ) {
   const issueId = button.dataset.graphDetailsId || "";
   const workspacePath = button.dataset.graphDetailsWorkspace || "";
@@ -875,6 +875,9 @@ function openGraphBeadDetails(
   if (options.scrollIntoView !== false && graphPane === null) {
     details.scrollIntoView({ block: "nearest" });
   }
+  if (graphPane !== null && options.renderOverlay !== false) {
+    renderDependencyGraphOverlays();
+  }
 }
 
 function findIssueRow(issue: SelectedIssueState) {
@@ -885,7 +888,7 @@ function findIssueRow(issue: SelectedIssueState) {
 
 function restoreSelectedIssue(
   issue: SelectedIssueState | null,
-  options: { saveState?: boolean; scrollIntoView?: boolean } = {}
+  options: { saveState?: boolean; scrollIntoView?: boolean; renderOverlay?: boolean } = {}
 ) {
   if (issue === null) {
     return;
@@ -1429,7 +1432,11 @@ function applyBeadsRenderUpdate(
       updateCollapseButton(row);
     }
     refreshRowVisibility({ refreshGraph: false, renderHierarchy: false });
-    restoreSelectedIssue(selectedIssue, { saveState: false, scrollIntoView: false });
+    restoreSelectedIssue(selectedIssue, {
+      saveState: false,
+      scrollIntoView: false,
+      renderOverlay: false
+    });
     updateViewModeControls(activeViewMode, false);
 
     if (activeViewMode === "graph") {
@@ -1465,7 +1472,12 @@ function closeContextMenu(restoreFocus: boolean = false) {
 function postAssignStartBead(button: HTMLButtonElement) {
   const issueId = button.dataset.assignStartId || "";
   const workspacePath = button.dataset.assignStartWorkspace || "";
-  if (button.disabled || issueId === "" || workspacePath === "") {
+  if (
+    button.disabled ||
+    button.getAttribute("aria-disabled") === "true" ||
+    issueId === "" ||
+    workspacePath === ""
+  ) {
     return;
   }
   const matchingButtons = Array.from(
@@ -1841,7 +1853,7 @@ function setRowDetailsExpanded(row: BeadRow, expanded: boolean) {
     ?.setAttribute("aria-expanded", expanded ? "true" : "false");
 }
 
-function clearSelectedRow() {
+function clearSelectedRow(options: { renderOverlay?: boolean } = {}) {
   if (selectedRow !== null) {
     setRowDetailsExpanded(selectedRow, false);
   }
@@ -1850,6 +1862,9 @@ function clearSelectedRow() {
   removeExpandedDetails();
   removeGraphSelectedDetails();
   saveInteractionState();
+  if (activeViewMode === "graph" && options.renderOverlay !== false) {
+    renderDependencyGraphOverlays();
+  }
 }
 
 function expandDetailsRow(row: BeadRow, item: BeadRowItem) {
@@ -1983,7 +1998,7 @@ function refreshRowVisibility(options: { refreshGraph?: boolean; renderHierarchy
     selectedRow !== null &&
     !activeFilters.has((selectedRow.dataset.status || "other") as StatusFilter)
   ) {
-    clearSelectedRow();
+    clearSelectedRow({ renderOverlay: false });
   } else if (
     selectedRow !== null &&
     activeViewMode === "table" &&
@@ -2065,7 +2080,7 @@ function applyViewMode(mode: ViewMode) {
           button.dataset.graphDetailsId === selectedIssue.issueId
       );
       if (detailsButton !== undefined) {
-        openGraphBeadDetails(detailsButton);
+        openGraphBeadDetails(detailsButton, { renderOverlay: false });
       }
     }
   }
@@ -2145,7 +2160,7 @@ function toggleEpicSubprojects(row: BeadRow) {
     selectedRow !== null &&
     (selectedRow === row || isCollapsedByEpic(getRowVisibilityState(selectedRow), collapsedEpicIds))
   ) {
-    clearSelectedRow();
+    clearSelectedRow({ renderOverlay: false });
   }
 
   applyFilters();
@@ -2843,7 +2858,12 @@ function rebuildGraphMiniMapGeometry(pane: HTMLElement) {
   const fragment = document.createDocumentFragment();
   const edgeGroup = document.createElementNS(namespace, "g");
   edgeGroup.setAttribute("class", "graphMiniMapEdges");
-  for (const edge of Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge"))) {
+  const getEdgePaintLayer = (edge: HTMLElement) =>
+    edge.dataset.cycle === "1" ? 2 : edge.dataset.critical === "1" ? 1 : 0;
+  const miniMapEdges = Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge")).sort(
+    (left, right) => getEdgePaintLayer(left) - getEdgePaintLayer(right)
+  );
+  for (const edge of miniMapEdges) {
     if (edge.hidden) {
       continue;
     }
@@ -3597,55 +3617,94 @@ function renderDependencyGraphOverlays() {
         .filter((node) => node.style.display !== "none")
         .map((node) => [node.dataset.graphId || "", node])
     );
+    const nodeRectsById = new Map(
+      Array.from(nodesById, ([id, node]) => {
+        const rect = getGraphNodeRect(node);
+        return [
+          id,
+          {
+            left: rect.x,
+            top: rect.y,
+            right: rect.x + rect.width,
+            bottom: rect.y + rect.height
+          }
+        ] as const;
+      })
+    );
     const markerId = `dependencyArrow-${paneIndex}`;
     const boundaryMarkerId = `boundaryDependencyArrow-${paneIndex}`;
     const criticalMarkerId = `criticalDependencyArrow-${paneIndex}`;
     const cycleMarkerId = `cycleDependencyArrow-${paneIndex}`;
     const markerDefs = `<defs><marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="dependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${boundaryMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="boundaryDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${criticalMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="criticalDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker><marker id="${cycleMarkerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="cycleDependencyArrowHead" d="M0 0 L10 5 L0 10 Z" /></marker></defs>`;
-    const getConnectionPath = (fromNode: HTMLElement, toNode: HTMLElement, routeIndex: number) => {
-      const fromRect = getGraphNodeRect(fromNode);
-      const toRect = getGraphNodeRect(toNode);
-      return buildObstacleAvoidingGraphPath(
-        {
-          left: fromRect.x,
-          top: fromRect.y,
-          right: fromRect.x + fromRect.width,
-          bottom: fromRect.y + fromRect.height
-        },
-        {
-          left: toRect.x,
-          top: toRect.y,
-          right: toRect.x + toRect.width,
-          bottom: toRect.y + toRect.height
-        },
-        height,
-        routeIndex
-      );
+    const getConnectionPath = (fromId: string, toId: string, routeIndex: number) => {
+      const fromRect = nodeRectsById.get(fromId);
+      const toRect = nodeRectsById.get(toId);
+      if (fromRect === undefined || toRect === undefined) {
+        return null;
+      }
+      const obstacles = Array.from(nodeRectsById)
+        .filter(([id]) => id !== fromId && id !== toId)
+        .map(([, rect]) => rect);
+      return buildRoutedGraphPath(fromRect, toRect, height, routeIndex, obstacles);
     };
+    const selectedIssue = getSelectedIssue();
+    const selectedGraphId =
+      selectedIssue?.workspacePath === getGraphWorkspaceKey(pane) &&
+      nodesById.has(selectedIssue.issueId)
+        ? selectedIssue.issueId
+        : "";
+    const parentEdges = Array.from(nodesById, ([childId, childNode]) => ({
+      childId,
+      parentId: childNode.dataset.parentId || ""
+    }))
+      .filter(
+        ({ childId, parentId }) =>
+          parentId !== "" &&
+          nodesById.has(parentId) &&
+          (childId === selectedGraphId || parentId === selectedGraphId)
+      )
+      .sort(
+        (left, right) =>
+          left.parentId.localeCompare(right.parentId) || left.childId.localeCompare(right.childId)
+      );
     let parentPaths = "";
-    let routeIndex = 0;
-    for (const childNode of nodesById.values()) {
-      const parentId = childNode.dataset.parentId || "";
-      const parentNode = nodesById.get(parentId);
-      if (parentNode === undefined) {
+    for (const [parentRouteIndex, { childId, parentId }] of parentEdges.entries()) {
+      const d = getConnectionPath(parentId, childId, parentRouteIndex);
+      if (d === null) {
         continue;
       }
-      parentPaths += `<path class="graphParentPath" d="${getConnectionPath(parentNode, childNode, routeIndex)}" />`;
-      routeIndex += 1;
+      parentPaths += `<path class="graphParentPath" data-from-id="${escapeHtml(parentId)}" data-to-id="${escapeHtml(childId)}" d="${d}" />`;
     }
-    let paths = "";
-    for (const edge of Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge"))) {
-      if (edge.hidden) {
+    let ordinaryPaths = "";
+    let emphasizedPaths = "";
+    const visibleDependencyEdges = Array.from(pane.querySelectorAll<HTMLElement>(".graphEdge"))
+      .filter((edge) => !edge.hidden)
+      .sort((left, right) => {
+        const fromDifference = (left.dataset.fromId || "").localeCompare(
+          right.dataset.fromId || ""
+        );
+        return (
+          fromDifference ||
+          (left.dataset.toId || "").localeCompare(right.dataset.toId || "") ||
+          (left.dataset.graphBoundary || "").localeCompare(right.dataset.graphBoundary || "")
+        );
+      });
+    const dependencyRouteIndexes = new Map<string, number>();
+    for (const edge of visibleDependencyEdges) {
+      const fromId = edge.dataset.fromId || "";
+      const toId = edge.dataset.toId || "";
+      const fromLevel = nodesById.get(fromId)?.dataset.graphLevel || "";
+      const toLevel = nodesById.get(toId)?.dataset.graphLevel || "";
+      const routeGroup = `${edge.dataset.graphBoundary || "dependency"}:${fromLevel}:${toLevel}`;
+      let dependencyRouteIndex = dependencyRouteIndexes.get(routeGroup);
+      if (dependencyRouteIndex === undefined) {
+        dependencyRouteIndex = dependencyRouteIndexes.size;
+        dependencyRouteIndexes.set(routeGroup, dependencyRouteIndex);
+      }
+      const d = getConnectionPath(fromId, toId, dependencyRouteIndex);
+      if (d === null) {
         continue;
       }
-      const fromNode = nodesById.get(edge.dataset.fromId || "");
-      const toNode = nodesById.get(edge.dataset.toId || "");
-      if (fromNode === undefined || toNode === undefined) {
-        continue;
-      }
-
-      const d = getConnectionPath(fromNode, toNode, routeIndex);
-      routeIndex += 1;
       const boundaryClass = edge.dataset.graphBoundary ? " boundaryDependencyPath" : "";
       const criticalClass = edge.dataset.critical === "1" ? " criticalDependencyPath" : "";
       const cycleClass = edge.dataset.cycle === "1" ? " cycleDependencyPath" : "";
@@ -3657,9 +3716,14 @@ function renderDependencyGraphOverlays() {
             : edge.dataset.graphBoundary
               ? boundaryMarkerId
               : markerId;
-      paths += `<path class="dependencyPath${boundaryClass}${criticalClass}${cycleClass}" data-from-id="${edge.dataset.fromId || ""}" data-to-id="${edge.dataset.toId || ""}" marker-end="url(#${arrowId})" d="${d}" />`;
+      const path = `<path class="dependencyPath${boundaryClass}${criticalClass}${cycleClass}" data-from-id="${escapeHtml(fromId)}" data-to-id="${escapeHtml(toId)}" marker-end="url(#${arrowId})" d="${d}" />`;
+      if (edge.dataset.critical === "1" || edge.dataset.cycle === "1") {
+        emphasizedPaths += path;
+      } else {
+        ordinaryPaths += path;
+      }
     }
-    overlay.innerHTML = markerDefs + parentPaths + paths;
+    overlay.innerHTML = markerDefs + parentPaths + ordinaryPaths + emphasizedPaths;
     rebuildGraphMiniMapGeometry(pane);
   }
 }
@@ -4263,9 +4327,11 @@ for (const row of getVisibleBeadRows()) {
   updateCollapseButton(row);
 }
 renderFilterChips();
-restoreSelectedIssue(normalizeSelectedIssue(initialWebviewState?.selectedIssue));
-applySort();
-applyFilters();
+restoreSelectedIssue(normalizeSelectedIssue(initialWebviewState?.selectedIssue), {
+  renderOverlay: false
+});
+sortRowsAndUpdateIcons();
+refreshRowVisibility({ refreshGraph: false, renderHierarchy: false });
 applyViewMode(activeViewMode);
 const restoredWindowScrollY = initialWebviewState?.windowScrollY;
 if (

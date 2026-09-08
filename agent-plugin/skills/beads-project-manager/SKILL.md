@@ -55,8 +55,22 @@ or rewiring tasks unless the user already explicitly requested those writes.
 ## Dispatch ready work
 
 Use `bd ready --json` as the readiness authority when it is supported. Do not dispatch an open task
-merely because it looks unblocked in a manually reconstructed graph. Claim a selected task
-atomically with `bd update <id> --claim` when supported.
+merely because it looks unblocked in a manually reconstructed graph. Use `--limit` only when help
+confirms support; a failed readiness query means unknown readiness, not an empty ready queue.
+Re-read the selected task before dispatch. It must be open, not an epic, and still reported ready.
+A missing dependency edge between siblings is advisory and does not itself block a ready task.
+
+Explain each start blocker: task type or status, readiness unknown, not ready, unavailable writes,
+or missing host execution tools. Provider/model labels are requested metadata, not proof that a
+runner is available. Select or confirm the provider and model before dispatch.
+
+When supported, claim the selected task atomically with
+`bd --actor beads-git-graph:<unique-run-id> update <id> --claim` before starting a worker or applying
+an edit. Confirm both options in command help. Use a new actor for each run because repeated claims
+by the same actor can be idempotent. Do not dispatch after a failed claim. If atomic claim support
+is unavailable, report that limitation and return a reviewable allocation plan. A claim protects
+contenders using the same database; it does not establish a lock across independently cloned
+databases. Never change an already-running task back to open just to retry a start.
 
 Start other agents only when the host client exposes compatible agent or task tools. Otherwise,
 produce the assignments and handoff prompts for review, and do not claim that workers are running.
