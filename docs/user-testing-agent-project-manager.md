@@ -49,6 +49,24 @@ pnpm test
 pnpm run compile
 ```
 
+### Browser interaction smoke
+
+After building, run `pnpm run test:browser` in an environment with Playwright and Chromium available.
+If Playwright is installed outside this repository, set `PLAYWRIGHT_MODULE` to its `index.mjs`;
+set `CHROMIUM_EXECUTABLE_PATH` when using an existing Chromium executable. The smoke does not
+download a browser, invoke a provider, edit workspace files, or access a Beads database.
+
+It checks dependency and selected-parent lines, shortcut isolation, pointer cancellation and Escape,
+wheel anchoring, selection/focus preservation on refresh, and Start action messages. Interruption
+events are injected into a real browser; they are not a hardware touch-device certification.
+Each run prints an evidence directory containing `report.json` and Graph/Table screenshots.
+
+To check packaged JavaScript, extract the VSIX and set `BEADS_WEBVIEW_SCRIPT` to its
+`extension/out/beadsWebview.min.js` before running the same command. HTML is rendered from the
+current checkout, so use the source revision matching that VSIX. This fixture-based check does not
+replace activation testing in an installed Extension Host. This optional smoke is separate from
+the default Vitest suite and does not install extra extension dependencies.
+
 ### AUTO-01 — Plan dependencies and Critical Path — Current
 
 - **Given:** Tasks `A -> B -> C` and `A -> D`.
