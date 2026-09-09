@@ -1371,6 +1371,60 @@ function restoreRenderViewportAnchor(anchor: RenderViewportAnchor) {
   }
 }
 
+let restoringRenderFocus = false;
+
+function captureRenderFocus() {
+  const element = document.activeElement;
+  const issue = getSelectedIssue();
+  const details =
+    element instanceof Element ? element.closest(".graphSelectedDetails, .inlineDetailsRow") : null;
+  const actionClass = ["graphSelectedDetailsClose", "commitLink", "openAgentArtifact"].find(
+    (name) => element?.classList.contains(name)
+  );
+  const commit = element?.getAttribute("data-commit");
+  const artifact = element?.getAttribute("data-artifact-uri");
+  return () => {
+    if (
+      !(element instanceof HTMLElement) ||
+      element === document.body ||
+      (document.activeElement !== document.body && document.activeElement !== element)
+    ) {
+      return;
+    }
+    let target: HTMLElement | null = element.isConnected ? element : null;
+    const selected = getSelectedIssue();
+    if (
+      target === null &&
+      details !== null &&
+      actionClass !== undefined &&
+      issue !== null &&
+      selected?.issueId === issue.issueId &&
+      selected.workspacePath === issue.workspacePath
+    ) {
+      const root = document.querySelector(
+        details.classList.contains("graphSelectedDetails")
+          ? ".graphSelectedDetails"
+          : ".inlineDetailsRow"
+      );
+      target =
+        Array.from(root?.querySelectorAll<HTMLButtonElement>("button") ?? []).find(
+          (button) =>
+            button.classList.contains(actionClass) &&
+            button.getAttribute("data-commit") === commit &&
+            button.getAttribute("data-artifact-uri") === artifact
+        ) ?? null;
+    }
+    if (target !== null && target.offsetParent !== null) {
+      restoringRenderFocus = true;
+      try {
+        target.focus({ preventScroll: true });
+      } finally {
+        restoringRenderFocus = false;
+      }
+    }
+  };
+}
+
 function applyBeadsRenderUpdate(
   message: Extract<BeadsHostMessage, { command: "beadsRenderUpdate" }>
 ) {
@@ -1395,6 +1449,7 @@ function applyBeadsRenderUpdate(
 
   lastRenderGeneration = message.generation;
   const viewportAnchor = captureRenderViewportAnchor();
+  const restoreFocus = captureRenderFocus();
   const selectedIssue = getSelectedIssue();
   const nextWorkspaceRenderHtml = nextWorkspaceViews.innerHTML;
   const workspaceChanged = nextWorkspaceRenderHtml !== lastWorkspaceRenderHtml;
@@ -1407,8 +1462,7 @@ function applyBeadsRenderUpdate(
     removeGraphSelectedDetails();
     selectedRow = null;
     expandedDetailsRow = null;
-    graphSelection = null;
-    graphPanGesture = null;
+    cancelGraphGesture();
     reconcileRenderRegion(beadsWorkspaceViews, nextWorkspaceViews);
   }
   reconcileRenderRegion(beadsWarnings, nextWarnings);
@@ -1450,6 +1504,7 @@ function applyBeadsRenderUpdate(
     renderCurrentPlanPreview();
   }
   restoreRenderViewportAnchor(viewportAnchor);
+  restoreFocus();
   saveInteractionState();
 }
 
@@ -3422,7 +3477,11 @@ function beginGraphSelection(pane: HTMLElement, event: PointerEvent) {
 }
 
 function updateGraphSelection(pane: HTMLElement, event: PointerEvent) {
-  if (graphSelection === null || graphSelection.pane !== pane) {
+  if (
+    graphSelection === null ||
+    graphSelection.pane !== pane ||
+    graphSelection.pointerId !== event.pointerId
+  ) {
     return;
   }
 
@@ -3438,7 +3497,11 @@ function updateGraphSelection(pane: HTMLElement, event: PointerEvent) {
 }
 
 function finishGraphSelection(pane: HTMLElement, event: PointerEvent) {
-  if (graphSelection === null || graphSelection.pane !== pane) {
+  if (
+    graphSelection === null ||
+    graphSelection.pane !== pane ||
+    graphSelection.pointerId !== event.pointerId
+  ) {
     return;
   }
 
@@ -3484,7 +3547,11 @@ function beginGraphPan(pane: HTMLElement, event: PointerEvent) {
 }
 
 function updateGraphPan(pane: HTMLElement, event: PointerEvent) {
-  if (graphPanGesture === null || graphPanGesture.pane !== pane) {
+  if (
+    graphPanGesture === null ||
+    graphPanGesture.pane !== pane ||
+    graphPanGesture.pointerId !== event.pointerId
+  ) {
     return false;
   }
   event.preventDefault();
@@ -3503,7 +3570,11 @@ function updateGraphPan(pane: HTMLElement, event: PointerEvent) {
 }
 
 function finishGraphPan(pane: HTMLElement, event: PointerEvent) {
-  if (graphPanGesture === null || graphPanGesture.pane !== pane) {
+  if (
+    graphPanGesture === null ||
+    graphPanGesture.pane !== pane ||
+    graphPanGesture.pointerId !== event.pointerId
+  ) {
     return false;
   }
   event.preventDefault();
@@ -3518,7 +3589,30 @@ function finishGraphPan(pane: HTMLElement, event: PointerEvent) {
   return true;
 }
 
+function cancelGraphGesture(pane?: HTMLElement, pointerId?: number) {
+  const gesture = graphSelection ?? graphPanGesture;
+  if (
+    gesture === null ||
+    (pane !== undefined && gesture.pane !== pane) ||
+    (pointerId !== undefined && gesture.pointerId !== pointerId)
+  ) {
+    return;
+  }
+  graphSelection = null;
+  graphPanGesture = null;
+  clearGraphSelectionBox(gesture.pane);
+  const scroller = getGraphScroller(gesture.pane);
+  scroller?.classList.remove("isPanning");
+  if (scroller?.hasPointerCapture(gesture.pointerId)) {
+    scroller.releasePointerCapture(gesture.pointerId);
+  }
+  saveGraphTransforms();
+}
+
 function handleGraphPointerDown(pane: HTMLElement, event: PointerEvent) {
+  if (graphSelection !== null || graphPanGesture !== null) {
+    return;
+  }
   rememberGraphZoomAnchor(pane, event.clientX, event.clientY);
   const gesture = getGraphPointerGesture(
     event.button,
@@ -3560,6 +3654,19 @@ function panGraphByKeyboard(pane: HTMLElement, deltaX: number, deltaY: number) {
 }
 
 function handleGraphKeydown(pane: HTMLElement, event: KeyboardEvent) {
+  if (
+    event.defaultPrevented ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    event.isComposing ||
+    (event.target instanceof Element &&
+      event.target.closest(
+        "input,textarea,select,[contenteditable]:not([contenteditable='false'])"
+      ))
+  ) {
+    return;
+  }
   if (event.key === "+" || event.key === "=") {
     event.preventDefault();
     setGraphZoom(pane, getGraphTransform(pane).zoom * 1.2);
@@ -3897,6 +4004,7 @@ document.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    cancelGraphGesture();
     setFilterMenuOpen(false, false, true);
     closeContextMenu(true);
   }
@@ -3968,6 +4076,7 @@ closeBeadAction.addEventListener("click", () => {
 
   vscode.postMessage({ command: "closeBead", issueId, workspacePath, title: item.title || "" });
 });
+window.addEventListener("blur", () => cancelGraphGesture());
 window.addEventListener("resize", () => {
   if (graphResizeFrame !== null) {
     window.cancelAnimationFrame(graphResizeFrame);
@@ -4007,9 +4116,17 @@ function bindGraphPanes() {
       scroller.addEventListener("pointerdown", (event) => handleGraphPointerDown(pane, event));
       scroller.addEventListener("pointermove", (event) => handleGraphPointerMove(pane, event));
       scroller.addEventListener("pointerup", (event) => handleGraphPointerEnd(pane, event));
-      scroller.addEventListener("pointercancel", (event) => handleGraphPointerEnd(pane, event));
+      scroller.addEventListener("pointercancel", (event) =>
+        cancelGraphGesture(pane, event.pointerId)
+      );
+      scroller.addEventListener("lostpointercapture", (event) =>
+        cancelGraphGesture(pane, event.pointerId)
+      );
       scroller.addEventListener("keydown", (event) => handleGraphKeydown(pane, event));
       scroller.addEventListener("focusin", (event) => {
+        if (restoringRenderFocus) {
+          return;
+        }
         const node =
           event.target instanceof Element
             ? event.target.closest<HTMLElement>(".graphNode[data-graph-id]")

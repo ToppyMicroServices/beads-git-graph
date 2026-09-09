@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-09-09
+
+### Fixed
+
+- Keep Command/Ctrl shortcuts and text input separate from Graph navigation.
+- Cancel Graph selection cleanly on Escape, pointer cancellation, lost capture, window blur, and
+  data refresh instead of applying an unwanted zoom. Ignore unrelated pointers during a drag.
+- Preserve keyboard focus on task-detail actions after a live update without moving the viewport.
+- Update the packaging-only `js-yaml` dependency to 4.3.2 for GHSA-2883-xcg3-v3hh.
+
+### Added
+
+- Add a repeatable browser smoke for Graph and Table using synthetic data, with screenshots and
+  a machine-readable report. The same checks can run against the webview bundle extracted from a VSIX.
+
 ## [0.6.4] - 2026-09-08
 
 ### Fixed

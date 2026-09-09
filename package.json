@@ -1,7 +1,7 @@
 {
   "name": "beads-git-graph",
   "displayName": "Beads Git Graph",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "Git graph and Beads issue tools for VS Code.",
   "categories": [
     "Other",
@@ -62,6 +62,7 @@
     "worktree-sync:guard": "node scripts/worktree-sync-guard.mjs --all",
     "audit": "pnpm audit --audit-level high",
     "test": "vitest run",
+    "test:browser": "node scripts/ui-browser-smoke.mjs",
     "test:watch": "vitest"
   },
   "devDependencies": {
@@ -489,7 +490,7 @@
     "overrides": {
       "brace-expansion": "5.0.9",
       "fast-uri": "3.1.6",
-      "js-yaml": "4.3.1",
+      "js-yaml": "4.3.2",
       "nanoid": "3.3.18",
       "postcss": "8.5.25",
       "qs": "6.16.0"
