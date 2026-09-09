@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Documentation
+
+- Replace the long README with a visual quick start and Graph/Manage screenshots; move detailed
+  setup and execution boundaries to the user guide.
+
 ## [0.6.5] - 2026-09-09
 
 ### Fixed
