@@ -109,13 +109,7 @@ function render(revision = 0) {
     }
   );
 }
-const html = render()
-  .replace(/<meta[^>]*http-equiv="Content-Security-Policy"[^>]*>/, "")
-  .replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, "")
-  .replace(
-    "</head>",
-    `<style>:root{--vscode-font-family:Arial;--vscode-font-size:13px;--vscode-foreground:#ddd;--vscode-descriptionForeground:#aaa;--vscode-editor-background:#181818;--vscode-button-background:#16769b;--vscode-button-foreground:#fff;--vscode-focusBorder:#66c8ff;--vscode-panel-border:#555;--vscode-editorWidget-background:#242424;}body{margin:0;}</style></head>`
-  );
+const html = render();
 const script = await readFile(
   process.env.BEADS_WEBVIEW_SCRIPT || "out/beadsWebview.min.js",
   "utf8"
@@ -128,7 +122,21 @@ async function reset(mode = "graph") {
   await page?.close();
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.setContent(html);
+  const fixtureHtml = await page.evaluate((source) => {
+    // Adapt our generated fixture in an inert DOM, before any scripts can execute.
+    const doc = new DOMParser().parseFromString(source, "text/html");
+    for (const script of doc.querySelectorAll("script")) script.remove();
+    for (const meta of doc.querySelectorAll("meta[http-equiv]")) {
+      if (meta.getAttribute("http-equiv").toLowerCase() === "content-security-policy")
+        meta.remove();
+    }
+    const style = doc.createElement("style");
+    style.textContent =
+      ":root{--vscode-font-family:Arial;--vscode-font-size:13px;--vscode-foreground:#ddd;--vscode-descriptionForeground:#aaa;--vscode-editor-background:#181818;--vscode-button-background:#16769b;--vscode-button-foreground:#fff;--vscode-focusBorder:#66c8ff;--vscode-panel-border:#555;--vscode-editorWidget-background:#242424;}body{margin:0;}";
+    doc.head.append(style);
+    return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+  }, html);
+  await page.setContent(fixtureHtml);
   await page.evaluate((viewMode) => {
     let state = { viewMode };
     window.messages = [];
