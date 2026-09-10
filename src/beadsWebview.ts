@@ -1589,9 +1589,9 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
   .parallelBatchItem{grid-template-columns:1fr auto;}
   .parallelBatchMessage{grid-column:1/-1;}
   .graphPane{height:clamp(320px,calc(100vh - 118px),820px);padding:8px;}
-  .graphHeader{position:relative;padding:8px;margin:-8px -8px 0;}
+  .graphHeader{position:relative;flex:0 0 auto;padding:8px;margin:-8px -8px 0;}
   .graphHeaderActions{justify-content:flex-start;}
-  .graphIssueStack{top:104px;right:8px;bottom:auto;left:8px;width:auto;max-height:28%;padding:0;}
+  .graphIssueStack{position:relative;flex:0 0 auto;top:auto;right:auto;bottom:auto;left:auto;width:auto;max-height:28%;margin-top:8px;padding:0;}
   .graphDetailsHost{inset:auto 0 0;width:auto;height:min(62%,520px);}
   .graphDetailsHost .graphSelectedDetails{max-height:100%;border-right:0;border-bottom:0;border-left:0;border-radius:10px 10px 0 0;box-shadow:0 -8px 24px rgba(0,0,0,.28);}
   .graphMapFrame{margin:8px 0 0;}

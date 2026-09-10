@@ -5,7 +5,11 @@ import * as path from "node:path";
 import { expect, it } from "vitest";
 
 import { requestAgentProviderResponse } from "../src/agentProviderClient";
-import { applyAgentWorkspaceEdit, generateVerifiedAgentEdit } from "../src/agentWorkspaceEdit";
+import {
+  applyAgentWorkspaceEdit,
+  generateVerifiedAgentEdit,
+  readAgentWorkspaceTarget
+} from "../src/agentWorkspaceEdit";
 
 const model = process.env.BEADS_AGENT_LIVE_OLLAMA_MODEL?.trim();
 const liveIt = model ? it : it.skip;
@@ -35,6 +39,7 @@ liveIt(
           "{name}!`.",
         outputPath: "src/greeting.js"
       };
+      const targetSnapshot = await readAgentWorkspaceTarget(workspace, task.outputPath);
       const result = await generateVerifiedAgentEdit({
         task,
         provider: "ollama",
@@ -50,7 +55,12 @@ liveIt(
       if (result.status !== "verified") {
         return;
       }
-      const applied = await applyAgentWorkspaceEdit(workspace, task.outputPath, result.content);
+      const applied = await applyAgentWorkspaceEdit(
+        workspace,
+        task.outputPath,
+        result.content,
+        targetSnapshot
+      );
       const content = await fs.promises.readFile(applied.absolutePath, "utf8");
       expect(content).toMatch(/export (?:default )?function greeting\(name\)/);
       expect(content).toContain("Hello, $" + "{name}!");
@@ -63,6 +73,10 @@ liveIt(
           "The file starts with '# Greeting module', contains '@param {string} name', and contains '@returns {string}'.",
         outputPath: "docs/greeting.md"
       };
+      const downstreamSnapshot = await readAgentWorkspaceTarget(
+        workspace,
+        downstreamTask.outputPath
+      );
       const downstream = await generateVerifiedAgentEdit({
         task: downstreamTask,
         provider: "ollama",
@@ -80,7 +94,8 @@ liveIt(
       const downstreamApplied = await applyAgentWorkspaceEdit(
         workspace,
         downstreamTask.outputPath,
-        downstream.content
+        downstream.content,
+        downstreamSnapshot
       );
       const testContent = await fs.promises.readFile(downstreamApplied.absolutePath, "utf8");
       expect(testContent.startsWith("# Greeting module\n")).toBe(true);

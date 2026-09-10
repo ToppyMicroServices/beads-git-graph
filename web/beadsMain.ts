@@ -1580,6 +1580,7 @@ function openContextMenu(
   focusMenu: boolean = false,
   trigger: HTMLElement | null = null
 ) {
+  setFilterMenuOpen(false);
   if (contextMenuTrigger instanceof HTMLButtonElement) {
     contextMenuTrigger.setAttribute("aria-expanded", "false");
   }
@@ -1693,10 +1694,45 @@ function setFilterMenuOpen(
   }
 }
 
+function handleMenuKeydown(menu: HTMLElement, event: KeyboardEvent, close: () => void) {
+  if (
+    event.defaultPrevented ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.isComposing
+  ) {
+    return;
+  }
+  if (event.key === "Tab") {
+    // Restore the trigger before the browser moves focus to the next ordinary control.
+    close();
+    return;
+  }
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+    return;
+  }
+  const buttons = Array.from(menu.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+  if (buttons.length === 0) {
+    return;
+  }
+  event.preventDefault();
+  const current = buttons.findIndex((button) => button === document.activeElement);
+  const index =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? buttons.length - 1
+        : event.key === "ArrowDown"
+          ? (current + 1) % buttons.length
+          : (current < 0 ? buttons.length - 1 : current - 1 + buttons.length) % buttons.length;
+  buttons[index]?.focus();
+}
+
 function renderFilterChips() {
   const presetValue = getPresetValue();
   preset.value = presetValue;
-  clearFilters.style.display = presetValue === "" ? "" : "none";
+  clearFilters.style.display = presetValue === "" ? "inline-flex" : "none";
   if (presetValue !== "") {
     chips.innerHTML = "";
     renderFilterMenu();
@@ -1718,10 +1754,16 @@ function renderFilterChips() {
       if (!status) {
         return;
       }
+      const restoreFocus = document.activeElement === button;
+      const index = Array.from(chips.querySelectorAll("button")).indexOf(button);
       activeFilters.delete(status);
       preset.value = "";
       renderFilterChips();
       applyFilters();
+      if (restoreFocus) {
+        const remaining = Array.from(chips.querySelectorAll<HTMLButtonElement>("button"));
+        (remaining[Math.min(index, remaining.length - 1)] ?? addFilter).focus();
+      }
       saveInteractionState();
     });
   }
@@ -3963,7 +4005,11 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
   renderParallelExecutionResult(message);
 });
 clearFilters.addEventListener("click", () => {
+  const restoreFocus = document.activeElement === clearFilters;
   applyPreset("default");
+  if (restoreFocus) {
+    preset.focus();
+  }
 });
 resetEmptyFilters.addEventListener("click", () => {
   applyPreset("default");
@@ -3976,6 +4022,12 @@ document.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof Element)) {
     return;
+  }
+  if (!target.closest(".menu")) {
+    setFilterMenuOpen(false);
+  }
+  if (!target.closest(".contextMenu")) {
+    closeContextMenu();
   }
   const artifactButton = target.closest(".openAgentArtifact") as HTMLButtonElement | null;
   if (artifactButton !== null) {
@@ -3995,12 +4047,12 @@ document.addEventListener("click", (event) => {
     postAssignStartBead(assignStartButton);
     return;
   }
-  if (!target.closest(".menu")) {
-    setFilterMenuOpen(false);
-  }
-  if (!target.closest(".contextMenu")) {
-    closeContextMenu();
-  }
+});
+filterMenu.addEventListener("keydown", (event) => {
+  handleMenuKeydown(filterMenu, event, () => setFilterMenuOpen(false, false, true));
+});
+rowContextMenu.addEventListener("keydown", (event) => {
+  handleMenuKeydown(rowContextMenu, event, () => closeContextMenu(true));
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
@@ -4016,8 +4068,22 @@ document.addEventListener("contextmenu", (event) => {
     return;
   }
 
-  const row = target.closest(".beadRow") as BeadRow | null;
   const section = target.closest("section[data-workspace-path]") as BeadSection | null;
+  const card = target.closest<HTMLElement>(".graphNode, .agentWorkCard");
+  const issueId = card?.dataset.graphId || card?.dataset.workItemId;
+  const row =
+    (target.closest(".beadRow") as BeadRow | null) ??
+    (issueId && section
+      ? findIssueRow({
+          workspacePath: section.dataset.workspacePath || "",
+          issueId
+        })
+      : null) ??
+    null;
+  const trigger =
+    card?.querySelector<HTMLButtonElement>(".graphDetailsBead") ??
+    row?.querySelector<HTMLButtonElement>(".rowActionsButton") ??
+    null;
   if (row === null && section === null) {
     closeContextMenu();
     return;
@@ -4028,7 +4094,9 @@ document.addEventListener("contextmenu", (event) => {
     row,
     row?.dataset.workspacePath || section?.dataset.workspacePath || "",
     event.clientX,
-    event.clientY
+    event.clientY,
+    true,
+    trigger
   );
 });
 function postCreateBead(workspacePath: string, trigger?: HTMLButtonElement) {

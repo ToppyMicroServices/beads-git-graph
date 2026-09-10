@@ -33,7 +33,10 @@ import { buildAgentWorkPrompt } from "./agentWorkPrompt";
 import {
   type AgentTaskExecutionSpec,
   type AgentUpstreamArtifact,
+  type AgentWorkspaceTargetSnapshot,
+  type AppliedAgentWorkspaceEdit,
   applyAgentWorkspaceEdit,
+  assertAgentTargetHasNoUnsavedChanges,
   findConflictingAgentOutputPathIssueIds,
   generateVerifiedAgentEdit,
   MAX_AGENT_EDIT_BYTES,
@@ -172,6 +175,7 @@ type PreparedAgentExecution =
       dependencyIds: readonly string[];
       outputPath: string;
       content: string;
+      targetSnapshot: AgentWorkspaceTargetSnapshot;
       verificationReason: string;
       verificationEvidence: readonly string[];
       attempts: number;
@@ -252,6 +256,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     ];
 
     this.disposables.push(
+      vscode.workspace.onDidGrantWorkspaceTrust(() => {
+        void this.refresh();
+      }),
       vscode.workspace.onDidChangeWorkspaceFolders((event) => {
         for (const folder of event.removed) {
           const workspacePath = folder.uri.fsPath;
@@ -1458,6 +1465,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           await this.queryAgentTaskExecutionSpec(values.issueId, values.workspacePath)
         );
         const target = await readAgentWorkspaceTarget(values.workspacePath, task.outputPath);
+        assertAgentTargetHasNoUnsavedChanges(
+          target.absolutePath,
+          vscode.workspace.textDocuments.filter((document) => document.uri.scheme === "file")
+        );
         const workspaceContext = await selectProviderWorkspaceContext({
           provider: directProvider,
           outputPath: task.outputPath,
@@ -1515,6 +1526,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           dependencyIds: [...dependencyIds],
           outputPath: task.outputPath,
           content: result.content,
+          targetSnapshot: target,
           verificationReason: result.verdict.reason,
           verificationEvidence: result.verdict.evidence,
           attempts: result.attempts
@@ -1577,11 +1589,25 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
             );
           }
           const agent = `${values.provider}:${values.model}`;
-          const applied = await applyAgentWorkspaceEdit(
-            values.workspacePath,
-            prepared.outputPath,
-            prepared.content
-          );
+          let applied: AppliedAgentWorkspaceEdit;
+          try {
+            applied = await applyAgentWorkspaceEdit(
+              values.workspacePath,
+              prepared.outputPath,
+              prepared.content,
+              prepared.targetSnapshot,
+              () =>
+                assertAgentTargetHasNoUnsavedChanges(
+                  prepared.targetSnapshot.absolutePath,
+                  vscode.workspace.textDocuments.filter(
+                    (document) => document.uri.scheme === "file"
+                  )
+                )
+            );
+          } catch (error) {
+            await this.openAgentResponseArtifact(prepared.artifact);
+            throw error;
+          }
           let beadUpdated = false;
           try {
             const metadata = [
@@ -1628,15 +1654,23 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
               values.workspacePath
             );
           } catch (error) {
+            let rollbackProblem: string | undefined;
             if (!beadUpdated) {
-              await applied.rollback();
+              try {
+                await applied.rollback();
+              } catch (rollbackError) {
+                rollbackProblem =
+                  rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+              }
             }
             await this.openAgentResponseArtifact(prepared.artifact);
             const message = error instanceof Error ? error.message : "unknown Beads error";
             throw new Error(
               beadUpdated
                 ? `Applied ${prepared.outputPath} and updated local Beads, but its flush failed. The audit artifact was opened. ${message}`
-                : `The Beads update failed, so ${prepared.outputPath} was rolled back. The audit artifact was opened. ${message}`
+                : rollbackProblem !== undefined
+                  ? `The Beads update failed, and ${prepared.outputPath} could not be rolled back. The audit artifact was opened for manual recovery. ${rollbackProblem} ${message}`
+                  : `The Beads update failed, so ${prepared.outputPath} was rolled back. The audit artifact was opened. ${message}`
             );
           }
           await this.openAgentWorkspaceFile(applied.absolutePath);

@@ -21,9 +21,9 @@ jobs:
           !startsWith(github.ref_name, 'agent-plugin-'))
       }}
     runs-on: ubuntu-latest
-    env:
-      OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
-      VS_MARKETPLACE_TOKEN: ${{ secrets.VS_MARKETPLACE_TOKEN }}
+    concurrency:
+      group: publish-extension-${{ github.event.release.tag_name || github.ref_name }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,23 +34,38 @@ jobs:
         with:
           node-version: 22
 
-      - run: corepack enable && pnpm install --frozen-lockfile
-
-      - name: Package VSIX
-        id: package_extension
+      - name: Check release metadata and credentials
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+          OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
+          VS_MARKETPLACE_TOKEN: ${{ secrets.VS_MARKETPLACE_TOKEN }}
         run: |
-          pnpm run package
-          VSIX_PATH="$(find . -maxdepth 1 -name '*.vsix' -print -quit)"
-          if [ -z "$VSIX_PATH" ]; then
-            echo "No VSIX was generated." >&2
-            exit 1
-          fi
+          VSIX_PATH="$(node scripts/check-extension-release.mjs)"
           echo "vsix_path=$VSIX_PATH" >> "$GITHUB_OUTPUT"
 
+      - run: corepack enable && pnpm install --frozen-lockfile
+
+      - name: Check release source
+        run: |
+          pnpm run format
+          pnpm run lint
+          pnpm run typecheck
+          pnpm test
+          pnpm run audit
+
+      - name: Package VSIX
+        run: |
+          pnpm run package
+          test -s "${{ steps.release.outputs.vsix_path }}"
+
       - name: Publish to Open VSX
-        if: env.OPEN_VSX_TOKEN != ''
-        run: pnpm exec ovsx -p "$OPEN_VSX_TOKEN" publish -i "${{ steps.package_extension.outputs.vsix_path }}" --skip-duplicate
+        env:
+          OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
+        run: pnpm exec ovsx -p "$OPEN_VSX_TOKEN" publish -i "${{ steps.release.outputs.vsix_path }}" --skip-duplicate
 
       - name: Publish to VS Marketplace
-        if: env.VS_MARKETPLACE_TOKEN != ''
-        run: pnpm exec vsce publish --packagePath "${{ steps.package_extension.outputs.vsix_path }}" --skip-duplicate -p "$VS_MARKETPLACE_TOKEN"
+        env:
+          VS_MARKETPLACE_TOKEN: ${{ secrets.VS_MARKETPLACE_TOKEN }}
+        run: pnpm exec vsce publish --packagePath "${{ steps.release.outputs.vsix_path }}" --skip-duplicate -p "$VS_MARKETPLACE_TOKEN"

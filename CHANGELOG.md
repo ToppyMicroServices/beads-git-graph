@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-09-11
+
+### Fixed
+
+- Keep task actions available when opening the context menu from Graph or Manage, and preserve
+  keyboard focus while navigating menus or removing filters.
+- Recover from invalid or unresponsive Beads executable settings instead of leaving the view
+  loading indefinitely. Refresh disabled actions when workspace trust is granted.
+- Recheck the declared output file after generation and human review, reject unsaved editor changes,
+  preserve competing new files, and stop rollback when it would replace newer content.
+  These checks do not provide a cross-window task lock.
+
+### Release quality
+
+- Check the release tag, package identity, documentation, and both registry credentials before
+  publication. Run the source quality gates on the selected tag and publish its exact VSIX filename.
+- Add regression tests for executable probes, trust changes, file conflicts, and keyboard/context-menu
+  interactions, including narrow-view browser checks.
+
 ### Documentation
 
 - Replace the long README with a visual quick start and Graph/Manage screenshots; move detailed

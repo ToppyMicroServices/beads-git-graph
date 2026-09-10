@@ -1,7 +1,7 @@
 # Beads Git Graph
 
 [![MIT License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](./LICENSE)
-[![Version 0.6.5](https://img.shields.io/badge/version-0.6.5-0366d6?style=flat-square)](./CHANGELOG.md)
+[![Version 0.6.6](https://img.shields.io/badge/version-0.6.6-0366d6?style=flat-square)](./CHANGELOG.md)
 
 A local project workspace for coordinating tasks across AI providers in VS Code.
 Plan work, follow dependencies, and review results alongside your Git history.

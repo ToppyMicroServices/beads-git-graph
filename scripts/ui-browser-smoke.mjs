@@ -353,6 +353,167 @@ try {
       1
     );
   });
+  await test("Filter menu supports arrow navigation and leaves no stale popup", async () => {
+    await page.locator("#preset").selectOption("open");
+    await page.locator("#addFilter").click();
+    const buttons = page.locator("#filterMenu button");
+    assert.ok((await buttons.count()) > 1);
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await buttons.nth(1).evaluate((node) => node === document.activeElement), true);
+    await page.keyboard.press("Home");
+    assert.equal(await buttons.first().evaluate((node) => node === document.activeElement), true);
+    await page.keyboard.press("End");
+    assert.equal(await buttons.last().evaluate((node) => node === document.activeElement), true);
+    await page.keyboard.press("Tab");
+    assert.equal(await page.locator("#filterMenu").isVisible(), false);
+  });
+  await test("Removing a custom filter keeps keyboard focus usable", async () => {
+    await page.locator("#preset").selectOption("open");
+    await page.locator("#addFilter").click();
+    await page.locator('#filterMenu [data-add-filter="closed"]').click();
+    const remove = page.locator('[data-remove-filter="closed"]');
+    await remove.focus();
+    await page.keyboard.press("Enter");
+    assert.equal(
+      await page.locator("#addFilter").evaluate((node) => node === document.activeElement),
+      true
+    );
+  });
+  await test("A Graph task context menu addresses that task", async () => {
+    await page
+      .locator('.graphNode[data-graph-id="task-1"] .graphNodeTitle')
+      .click({ button: "right" });
+    assert.equal(await page.locator("#closeBeadAction").isEnabled(), true);
+    await page.locator("#closeBeadAction").click();
+    const messages = await page.evaluate(() =>
+      window.messages.filter((message) => message.command === "closeBead")
+    );
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].issueId, "task-1");
+    assert.equal(messages[0].workspacePath, workspacePath);
+  });
+  await test("Graph details dismiss an open filter menu", async () => {
+    await page.locator("#addFilter").click();
+    assert.equal(await page.locator("#filterMenu").isVisible(), true);
+    await page.locator('[data-graph-details-id="task-1"]').first().click();
+    assert.equal(await page.locator("#filterMenu").isVisible(), false);
+    assert.equal(await page.locator(".graphSelectedDetails").count(), 1);
+  });
+  await test("Clearing custom filters returns focus to the preset", async () => {
+    await page.locator("#preset").selectOption("open");
+    await page.locator("#addFilter").click();
+    await page.locator('#filterMenu [data-add-filter="closed"]').click();
+    await page.locator("#clearFilters").focus();
+    await page.keyboard.press("Enter");
+    assert.equal(
+      await page.locator("#preset").evaluate((node) => node === document.activeElement),
+      true
+    );
+    assert.equal(await page.locator("#preset").inputValue(), "default");
+  });
+  await test(
+    "Table action menu supports keyboard navigation and dismissal",
+    async () => {
+      await page.locator("#addFilter").click();
+      const trigger = page.locator('.beadRow[data-id="task-1"] .rowActionsButton');
+      await trigger.click();
+      assert.equal(await page.locator("#filterMenu").isVisible(), false);
+      assert.equal(
+        await page.locator("#createBeadAction").evaluate((node) => node === document.activeElement),
+        true
+      );
+      await page.keyboard.press("ArrowDown");
+      assert.equal(
+        await page.locator("#closeBeadAction").evaluate((node) => node === document.activeElement),
+        true
+      );
+      await page.keyboard.press("ArrowDown");
+      assert.equal(
+        await page.locator("#createBeadAction").evaluate((node) => node === document.activeElement),
+        true
+      );
+      await page.keyboard.press("Escape");
+      assert.equal(await trigger.evaluate((node) => node === document.activeElement), true);
+      assert.equal(await trigger.getAttribute("aria-expanded"), "false");
+      await trigger.click();
+      await page.keyboard.press("Tab");
+      assert.equal(await page.locator("#rowContextMenu").isVisible(), false);
+      assert.equal(await trigger.getAttribute("aria-expanded"), "false");
+    },
+    "table"
+  );
+  await test(
+    "A Manage task context menu addresses that task",
+    async () => {
+      await page
+        .locator('.agentWorkCard[data-work-item-id="task-1"] .agentWorkCardTitle')
+        .click({ button: "right" });
+      await page.keyboard.press("Escape");
+      assert.equal(
+        await page
+          .locator('.agentWorkCard[data-work-item-id="task-1"] .graphDetailsBead')
+          .evaluate((node) => node === document.activeElement),
+        true
+      );
+      await page
+        .locator('.agentWorkCard[data-work-item-id="task-1"] .agentWorkCardTitle')
+        .click({ button: "right" });
+      assert.equal(await page.locator("#closeBeadAction").isEnabled(), true);
+      await page.locator("#closeBeadAction").click();
+      const messages = await page.evaluate(() =>
+        window.messages.filter((message) => message.command === "closeBead")
+      );
+      assert.equal(messages.length, 1);
+      assert.equal(messages[0].issueId, "task-1");
+      assert.equal(messages[0].workspacePath, workspacePath);
+    },
+    "control"
+  );
+  for (const mode of ["graph", "table", "control", "plan"]) {
+    await test(
+      `${mode} keeps toolbar controls reachable in a narrow sidebar`,
+      async () => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await settle();
+        const bounds = await page.evaluate(() => ({
+          width: document.documentElement.clientWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+          controls: Array.from(document.querySelectorAll(".toolbar button, .toolbar select"))
+            .filter((node) => node.getClientRects().length > 0)
+            .map((node) => ({
+              id: node.id,
+              left: node.getBoundingClientRect().left,
+              right: node.getBoundingClientRect().right
+            }))
+        }));
+        assert.ok(
+          bounds.scrollWidth <= bounds.width + 1,
+          `page width ${bounds.scrollWidth} exceeds ${bounds.width}`
+        );
+        for (const control of bounds.controls) {
+          assert.ok(
+            control.left >= 0 && control.right <= bounds.width + 1,
+            `${control.id} is outside the sidebar`
+          );
+        }
+        if (mode === "graph") {
+          const obscured = await page.locator(".graphControls button").evaluateAll((buttons) =>
+            buttons
+              .filter((button) => {
+                const rect = button.getBoundingClientRect();
+                return !button.contains(
+                  document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+                );
+              })
+              .map((button) => button.dataset.graphAction)
+          );
+          assert.deepEqual(obscured, [], "Graph controls are covered by another element");
+        }
+        await page.screenshot({ path: join(output, `${mode}-narrow.png`), fullPage: true });
+      },
+      mode
+    );
+  }
   await reset();
   await page.screenshot({ path: join(output, "graph.png"), fullPage: true });
   await reset("table");
