@@ -96,8 +96,9 @@ access-disclaimer responses are rejected before verification. A separate verifie
 selected provider/model checks the candidate against the task acceptance criteria and must return
 structured evidence; one corrected generation is allowed. The exact normalized candidate is then
 opened for human review. It is written only after **Apply Reviewed Edit** is selected. The task
-remains `in_progress`, with `provider_status=edit_applied`, `acceptance_status=agent_passed`, and
-`review_status=human_approved`; applying the edit is not the same as closing the task.
+remains `in_progress`, with `provider_status=edit_applied`, `content_check_status=model_passed`,
+`acceptance_status=pending_external_validation`, and `review_status=human_approved`; applying the
+edit is not the same as closing the task or completing external validation.
 
 The edit host never executes model-generated shell commands. It can replace only the declared
 relative target. Workspace escape, symlinks, `.git`, `.beads`, `.vscode`, `.codex`, `.agents`,
@@ -120,8 +121,17 @@ generation and two verification calls, so cloud providers may charge for up to f
 Before contacting a provider, the extension runs a non-mutating Beads capability check and reloads
 the current task, dependencies, acceptance criteria, and declared target from `bd show`. Readiness
 and dependencies are rechecked after generation and before the serialized workspace/Beads
-mutation. If Beads update fails, a newly applied file is rolled back; the local audit artifact is
-preserved for review.
+mutation. Existing targets are compared with the content read before generation, again immediately
+before applying the candidate. New targets use exclusive creation. A detected file change or unsaved
+target document in the current VS Code window stops the edit and opens the saved candidate for
+review. Generate a new candidate after resolving the conflict.
+
+If Beads update fails, rollback checks that the applied content is still unchanged and that the
+current window has no unsaved target changes. If that check fails, the newer work is left in place
+and the audit artifact is opened for manual recovery. These checks do not provide an atomic
+cross-process claim: another window can start the same task, unsaved changes in another window are
+not visible, and an external writer can race the final check and replacement. Avoid concurrent runs
+that share a target; use separate worktrees for independent sessions.
 
 Use **Beads Git Graph: Manage AI Provider Credentials** to store or delete Hugging Face, OpenAI, and
 Anthropic credentials in VS Code SecretStorage. `HF_TOKEN`, `OPENAI_API_KEY`, and

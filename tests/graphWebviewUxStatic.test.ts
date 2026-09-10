@@ -226,4 +226,31 @@ describe("Graph webview UX contracts", () => {
     expect(filterMenuSource).toContain("addFilter.focus()");
     expect(beadsMain).toContain("setFilterMenuOpen(false, false, true)");
   });
+
+  it("supports menu keyboard navigation and restores focus after removing filters", () => {
+    const menuSource = sourceBetween("function handleMenuKeydown", "function renderFilterChips");
+    const chipsSource = sourceBetween("function renderFilterChips", "function applyPreset");
+    expect(menuSource).toContain('["ArrowDown", "ArrowUp", "Home", "End"]');
+    expect(menuSource).toContain('event.key === "Tab"');
+    expect(menuSource).toContain('"button:not(:disabled)"');
+    expect(chipsSource).toContain(
+      'clearFilters.style.display = presetValue === "" ? "inline-flex" : "none"'
+    );
+    expect(chipsSource).toContain("document.activeElement === button");
+    expect(chipsSource).toContain("?? addFilter).focus()");
+    expect(beadsMain).toContain("handleMenuKeydown(filterMenu, event");
+    expect(beadsMain).toContain("handleMenuKeydown(rowContextMenu, event");
+  });
+
+  it("resolves Graph and Manage context actions within the task workspace", () => {
+    const contextSource = sourceBetween(
+      'document.addEventListener("contextmenu"',
+      "function postCreateBead"
+    );
+    expect(contextSource).toContain('".graphNode, .agentWorkCard"');
+    expect(contextSource).toContain("card?.dataset.graphId || card?.dataset.workItemId");
+    expect(contextSource).toContain("findIssueRow({");
+    expect(contextSource).toContain('workspacePath: section.dataset.workspacePath || ""');
+    expect(contextSource).toContain('card?.querySelector<HTMLButtonElement>(".graphDetailsBead")');
+  });
 });

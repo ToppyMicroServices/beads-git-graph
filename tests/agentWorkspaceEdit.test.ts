@@ -29,6 +29,7 @@ async function temporaryWorkspace() {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -297,7 +298,8 @@ describe("autonomous workspace edit contract", () => {
     const applied = await applyAgentWorkspaceEdit(
       workspace,
       "outputs/report.md",
-      "# Report\n\n1. First\n2. Second\n3. Third\n"
+      "# Report\n\n1. First\n2. Second\n3. Third\n",
+      await readAgentWorkspaceTarget(workspace, "outputs/report.md")
     );
     expect(await fs.promises.readFile(filename, "utf8")).toContain("Third");
 
@@ -310,7 +312,8 @@ describe("autonomous workspace edit contract", () => {
     const applied = await applyAgentWorkspaceEdit(
       workspace,
       "new/nested/report.md",
-      "verified content\n"
+      "verified content\n",
+      await readAgentWorkspaceTarget(workspace, "new/nested/report.md")
     );
 
     await applied.rollback();

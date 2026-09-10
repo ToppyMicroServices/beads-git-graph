@@ -46,9 +46,13 @@ Required checks:
   - minimal `permissions`
   - no broad secret exposure in job env
 - Package the extension once and publish the same VSIX to both registries when possible.
+- Publish only from a stable `vMAJOR.MINOR.PATCH` tag matching `package.json`, the README badge,
+  and a dated changelog entry. Manual reruns must select the release tag, not `main`.
+- Require credentials for both registries; missing credentials must fail the job, not skip publication.
+- Run the source quality gates again on the selected tag. Keep publishing credentials scoped to
+  their individual steps.
 - This extension currently ships as Universal package content only; do not add platform `target` values unless native runtime dependencies are introduced.
 - If native dependencies are added later, switch to explicit platform targets and include `darwin-arm64` for Apple Silicon.
-- When using `HaaLeo/publish-vscode-extension` with pnpm, set `dependencies: false`.
 
 ## 5) Beads Value Proof
 

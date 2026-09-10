@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -54,6 +54,11 @@ export interface AppliedAgentWorkspaceEdit {
   absolutePath: string;
   relativePath: string;
   rollback: () => Promise<void>;
+}
+
+export interface AgentWorkspaceTargetSnapshot {
+  absolutePath: string;
+  contentHash: string | null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -444,6 +449,10 @@ export async function resolveSafeAgentWorkspacePath(workspacePath: string, outpu
   return { workspaceReal, absolutePath, relativePath: normalized };
 }
 
+function contentHash(content: Buffer) {
+  return createHash("sha256").update(content).digest("hex");
+}
+
 export async function readAgentWorkspaceTarget(workspacePath: string, outputPath: string) {
   const resolved = await resolveSafeAgentWorkspacePath(workspacePath, outputPath);
   try {
@@ -451,25 +460,82 @@ export async function readAgentWorkspaceTarget(workspacePath: string, outputPath
     if (stat.size > MAX_AGENT_EDIT_BYTES) {
       throw new Error("The declared output file exceeds the 256 KiB workspace edit limit.");
     }
+    const bytes = await fs.promises.readFile(resolved.absolutePath);
+    if (bytes.byteLength > MAX_AGENT_EDIT_BYTES) {
+      throw new Error("The declared output file exceeds the 256 KiB workspace edit limit.");
+    }
     return {
       ...resolved,
-      content: await fs.promises.readFile(resolved.absolutePath, "utf8")
+      content: bytes.toString("utf8"),
+      contentHash: contentHash(bytes)
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { ...resolved, content: null };
+      return { ...resolved, content: null, contentHash: null };
     }
     throw error;
   }
 }
 
-async function atomicWrite(filename: string, content: Buffer, mode: number) {
+export function assertAgentTargetHasNoUnsavedChanges(
+  absolutePath: string,
+  documents: readonly { fileName: string; isDirty: boolean }[]
+) {
+  let canonicalTarget = path.resolve(absolutePath);
+  try {
+    canonicalTarget = fs.realpathSync.native(canonicalTarget);
+  } catch {
+    // A newly declared target may not exist yet.
+  }
+  const hasUnsavedChanges = documents.some((document) => {
+    if (!document.isDirty) return false;
+    if (path.resolve(document.fileName) === absolutePath) return true;
+    try {
+      return fs.realpathSync.native(document.fileName) === canonicalTarget;
+    } catch {
+      return false;
+    }
+  });
+  if (hasUnsavedChanges) {
+    throw new Error(
+      "The declared output file has unsaved editor changes. Resolve them before applying or rolling back the proposed edit."
+    );
+  }
+}
+
+async function assertUnchangedTarget(
+  workspacePath: string,
+  outputPath: string,
+  expected: AgentWorkspaceTargetSnapshot
+) {
+  const current = await readAgentWorkspaceTarget(workspacePath, outputPath);
+  if (
+    current.absolutePath !== expected.absolutePath ||
+    current.contentHash !== expected.contentHash
+  ) {
+    throw new Error(
+      "The declared output file changed since it was read. The newer file was preserved; regenerate the candidate or review the saved artifact before continuing."
+    );
+  }
+  return current;
+}
+
+async function atomicWrite(
+  filename: string,
+  content: Buffer,
+  mode: number,
+  beforePublish: () => Promise<void>,
+  createOnly: boolean
+) {
   const directory = path.dirname(filename);
   await fs.promises.mkdir(directory, { recursive: true });
   const temporary = path.join(directory, `.beads-agent-${randomUUID()}.tmp`);
   try {
     await fs.promises.writeFile(temporary, content, { flag: "wx", mode });
-    await fs.promises.rename(temporary, filename);
+    await beforePublish();
+    // Hard-link publication exposes the complete new file without replacing a racing writer.
+    if (createOnly) await fs.promises.link(temporary, filename);
+    else await fs.promises.rename(temporary, filename);
   } finally {
     await fs.promises.rm(temporary, { force: true });
   }
@@ -508,13 +574,16 @@ async function removeCreatedDirectories(directories: readonly string[]) {
 export async function applyAgentWorkspaceEdit(
   workspacePath: string,
   outputPath: string,
-  content: string
+  content: string,
+  expected: AgentWorkspaceTargetSnapshot,
+  assertWritable: () => void = () => {}
 ): Promise<AppliedAgentWorkspaceEdit> {
   const qualityProblem = candidateQualityProblem(content);
   if (qualityProblem !== null) {
     throw new Error(qualityProblem);
   }
-  const before = await readAgentWorkspaceTarget(workspacePath, outputPath);
+  assertWritable();
+  const before = await assertUnchangedTarget(workspacePath, outputPath, expected);
   let previous: Buffer | null = null;
   let previousMode = 0o600;
   const createdDirectories = await missingParentDirectories(
@@ -524,18 +593,32 @@ export async function applyAgentWorkspaceEdit(
   if (before.content !== null) {
     const stat = await fs.promises.stat(before.absolutePath);
     previous = await fs.promises.readFile(before.absolutePath);
+    if (contentHash(previous) !== expected.contentHash) {
+      throw new Error(
+        "The declared output file changed while preparing the edit backup. The newer file was preserved; generate a new candidate before applying."
+      );
+    }
     previousMode = stat.mode & 0o777;
   }
   try {
-    await fs.promises.mkdir(path.dirname(before.absolutePath), { recursive: true });
-    const checkedAgain = await resolveSafeAgentWorkspacePath(workspacePath, outputPath);
-    if (checkedAgain.absolutePath !== before.absolutePath) {
-      throw new Error("The declared output path changed while preparing the workspace edit.");
-    }
-    await atomicWrite(before.absolutePath, Buffer.from(content, "utf8"), previousMode);
+    await atomicWrite(
+      before.absolutePath,
+      Buffer.from(content, "utf8"),
+      previousMode,
+      async () => {
+        await assertUnchangedTarget(workspacePath, outputPath, expected);
+        assertWritable();
+      },
+      previous === null
+    );
   } catch (error) {
     if (previous === null) {
       await removeCreatedDirectories(createdDirectories);
+    }
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error(
+        "The declared output file was created by another writer. That file was preserved; generate a new candidate before applying."
+      );
     }
     throw error;
   }
@@ -543,12 +626,26 @@ export async function applyAgentWorkspaceEdit(
     absolutePath: before.absolutePath,
     relativePath: before.relativePath,
     rollback: async () => {
+      const assertAppliedContentUnchanged = async () => {
+        await assertUnchangedTarget(workspacePath, outputPath, {
+          absolutePath: before.absolutePath,
+          contentHash: contentHash(Buffer.from(content, "utf8"))
+        });
+        assertWritable();
+      };
       if (previous === null) {
+        await assertAppliedContentUnchanged();
         await fs.promises.rm(before.absolutePath, { force: true });
         await removeCreatedDirectories(createdDirectories);
         return;
       }
-      await atomicWrite(before.absolutePath, previous, previousMode);
+      await atomicWrite(
+        before.absolutePath,
+        previous,
+        previousMode,
+        assertAppliedContentUnchanged,
+        false
+      );
     }
   };
 }

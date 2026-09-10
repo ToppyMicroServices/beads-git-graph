@@ -46,4 +46,16 @@ describe("release metadata", () => {
       'node ./scripts/check-agent-plugin-release.mjs --tag "$AGENT_PLUGIN_TAG"'
     );
   });
+
+  it("gates publication and chooses the matching VSIX without silently skipping registries", () => {
+    expect(publishWorkflow).toContain("node scripts/check-extension-release.mjs");
+    // eslint-disable-next-line no-template-curly-in-string
+    expect(publishWorkflow).toContain("RELEASE_REF_TYPE: ${{ github.ref_type }}");
+    expect(publishWorkflow).toContain("pnpm run audit");
+    expect(publishWorkflow).toContain("pnpm run typecheck");
+    expect(publishWorkflow).toContain("steps.release.outputs.vsix_path");
+    expect(publishWorkflow).not.toContain("find . -maxdepth");
+    expect(publishWorkflow).not.toContain("if: env.OPEN_VSX_TOKEN");
+    expect(publishWorkflow).not.toContain("if: env.VS_MARKETPLACE_TOKEN");
+  });
 });

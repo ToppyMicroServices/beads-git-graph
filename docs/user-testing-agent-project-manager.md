@@ -57,9 +57,13 @@ set `CHROMIUM_EXECUTABLE_PATH` when using an existing Chromium executable. The s
 download a browser, invoke a provider, edit workspace files, or access a Beads database.
 
 It checks dependency and selected-parent lines, shortcut isolation, pointer cancellation and Escape,
-wheel anchoring, selection/focus preservation on refresh, and Start action messages. Interruption
-events are injected into a real browser; they are not a hardware touch-device certification.
-Each run prints an evidence directory containing `report.json` and Graph/Table screenshots.
+wheel anchoring, selection/focus preservation on refresh, and Start action messages. It also checks
+filter and task-menu keyboard navigation, filter removal/reset focus, Graph/Manage context actions,
+and toolbar reachability without page overflow at a 390px sidebar width in all four views. Narrow
+Graph checks also detect overlapping elements that cover zoom controls.
+Interruption events are injected into a real browser; they are not a hardware touch-device
+certification. Each run prints an evidence directory containing `report.json`, Graph/Table
+screenshots, and narrow-sidebar screenshots for all four views.
 
 To check packaged JavaScript, extract the VSIX and set `BEADS_WEBVIEW_SCRIPT` to its
 `extension/out/beadsWebview.min.js` before running the same command. HTML is rendered from the
