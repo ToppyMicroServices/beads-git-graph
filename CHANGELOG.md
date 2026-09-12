@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+<!-- daily-generated:start -->
+
+### Daily Snapshot
+
+- [`de59a71`](https://github.com/ToppyMicroServices/beads-git-graph/commit/de59a71b278976785e573b4e51ac7595f558f4f3) build(deps-dev): bump oxfmt from 0.66.0 to 0.67.0 (#301)
+- [`63f0d90`](https://github.com/ToppyMicroServices/beads-git-graph/commit/63f0d90d23c24c1d97c2cfb1ec8f430f2f908b27) build(deps-dev): bump oxlint from 1.81.0 to 1.82.0 (#300)
+
+<!-- daily-generated:end -->
+
 ## [0.6.6] - 2026-09-11
 
 ### Fixed
@@ -538,7 +547,7 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.6...HEAD
 [0.6.3]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.0...v0.6.2
 [0.6.0]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260710...v0.6.0
