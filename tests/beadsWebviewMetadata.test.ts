@@ -166,7 +166,10 @@ describe("beads webview presentation metadata", () => {
       ".graphScroller{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;"
     );
     expect(beadsWebview).not.toContain("scrollbar-gutter:stable");
-    expect(beadsWebview).not.toContain("overscroll-behavior:contain");
+    const graphViewportRules =
+      beadsWebview.match(/\.graph(?:Scroller|Canvas)\b[^{]*\{[^}]*\}/g) ?? [];
+    expect(graphViewportRules.length).toBeGreaterThan(0);
+    expect(graphViewportRules.join("\n")).not.toContain("overscroll-behavior:contain");
     expect(beadsWebview).toContain(
       ".graphCanvas{position:relative;min-width:100%;min-height:100%;overflow:hidden;"
     );

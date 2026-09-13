@@ -4,6 +4,11 @@ export function isEmailLikeIdentity(value: string) {
   return EMAIL_LIKE_PATTERN.test(value.trim());
 }
 
+export function getObservedModelLabel(value: string) {
+  const model = value.trim();
+  return isEmailLikeIdentity(model) ? "Model identity hidden" : model || "Model unspecified";
+}
+
 export function buildAgentAliasMap(values: Iterable<string>) {
   const uniqueSensitiveValues = [...new Set(Array.from(values, (value) => value.trim()))]
     .filter((value) => value !== "" && isEmailLikeIdentity(value))

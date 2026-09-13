@@ -26,6 +26,12 @@ Starting parallel agents requires compatible agent or task tools from the host c
 tools are unavailable, the plugin produces a reviewable allocation plan instead of claiming that
 workers were started.
 
+For subagent work, the plugin shows the parent-to-leaf plan and dependency waves in chat, followed
+by updates when the host reports a meaningful execution change. Reports separate requested
+provider/model, known worker identity, recorded Beads status, observed phase, and pending review.
+They are not live telemetry in the VSIX GUI: the plugin has no Extension Host progress API.
+Supported Beads metadata may be recorded with the task's write authorization and viewed on refresh.
+
 The skill instructs the agent to read repository instructions first, feature-detect the installed
 Beads command surface, and use read-only queries before proposing mutations. It also instructs the
 agent never to automatically run `bd migrate`, `bd bootstrap`, or `--ignore-schema-skew`. Agent

@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -55,6 +55,20 @@ describe("agent plugin metadata", () => {
     expect(skill).toMatch(/^---\nname: beads-project-manager\ndescription: .+\n---\n/);
     expect(agent).toMatch(/^---\nname: Beads Project Manager\ndescription: .+\n---\n/);
     expect(agent).toContain("`beads-project-manager` skill");
+  });
+
+  it("ships skill references inside the isolated plugin payload", () => {
+    const links = Array.from(skill.matchAll(/\[[^\]]+\]\((references\/[^)]+)\)/g));
+    expect(links.length).toBeGreaterThan(0);
+    for (const [, reference] of links) {
+      const path = realpathSync(resolve(pluginRoot, "skills", "beads-project-manager", reference));
+      const withinPlugin = relative(realpathSync(pluginRoot), path);
+      expect(isAbsolute(withinPlugin)).toBe(false);
+      expect(withinPlugin).not.toBe("..");
+      expect(withinPlugin.startsWith(`..${sep}`)).toBe(false);
+      expect(statSync(path).isFile()).toBe(true);
+      expect(readFileSync(path, "utf8").trim().length).toBeGreaterThan(0);
+    }
   });
 
   it("keeps dangerous Beads recovery actions operator-gated", () => {

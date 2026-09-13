@@ -69,7 +69,14 @@ const defaults = {
 };
 const items = [
   { id: "project", title: "Release a small project", type: "epic", readyByBd: false },
-  { id: "task-1", title: "Implement the feature", parentId: "project" },
+  {
+    id: "task-1",
+    title: "Implement the feature",
+    parentId: "project",
+    agent: "worker",
+    provider: "openai",
+    model: "small-model"
+  },
   {
     id: "task-2",
     title: "Review the feature",
@@ -80,12 +87,27 @@ const items = [
   {
     id: "task-3",
     title: "Ship the feature",
+    status: "in_progress",
     parentId: "project",
     dependencyIds: ["task-2"],
     readyByBd: false
   }
 ].map((item) => ({ ...defaults, ...item }));
-function render(revision = 0) {
+const emptySnapshot = { sessionId: "session-1", revision: 0, entries: [] };
+function executionRun(index = 1, phase = "queued") {
+  return {
+    runId: `session-1:${index}`,
+    workspacePath,
+    issueId: "task-1",
+    title: "Implement the feature",
+    provider: "openai",
+    model: "small-model",
+    phase,
+    startedAt: "2026-09-13T00:00:00Z",
+    updatedAt: "2026-09-13T00:00:01Z"
+  };
+}
+function render(revision = 0, executionSnapshot = emptySnapshot) {
   const capability = { supported: true, state: "supported", reason: "Fixture supports writes" };
   return renderBeadsWebviewHtml(
     { cspSource: "https://fixture.invalid", asWebviewUri: (uri) => uri },
@@ -102,6 +124,7 @@ function render(revision = 0) {
       emptyWorkspaces: [],
       unavailableWorkspaces: [],
       errors: [],
+      executionSnapshot,
       warnings: [],
       bdExecutableStatus: { available: true, message: "" },
       agentWriteCapabilities: [{ workspace: "UI smoke", workspacePath, capability }],
@@ -109,7 +132,6 @@ function render(revision = 0) {
     }
   );
 }
-const html = render();
 const script = await readFile(
   process.env.BEADS_WEBVIEW_SCRIPT || "out/beadsWebview.min.js",
   "utf8"
@@ -118,24 +140,27 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_EXE
 const results = [];
 const errors = [];
 let page;
-async function reset(mode = "graph") {
+async function reset(mode = "graph", executionSnapshot = emptySnapshot) {
   await page?.close();
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.on("pageerror", (error) => errors.push(error.message));
-  const fixtureHtml = await page.evaluate((source) => {
-    // Adapt our generated fixture in an inert DOM, before any scripts can execute.
-    const doc = new DOMParser().parseFromString(source, "text/html");
-    for (const script of doc.querySelectorAll("script")) script.remove();
-    for (const meta of doc.querySelectorAll("meta[http-equiv]")) {
-      if (meta.getAttribute("http-equiv").toLowerCase() === "content-security-policy")
-        meta.remove();
-    }
-    const style = doc.createElement("style");
-    style.textContent =
-      ":root{--vscode-font-family:Arial;--vscode-font-size:13px;--vscode-foreground:#ddd;--vscode-descriptionForeground:#aaa;--vscode-editor-background:#181818;--vscode-button-background:#16769b;--vscode-button-foreground:#fff;--vscode-focusBorder:#66c8ff;--vscode-panel-border:#555;--vscode-editorWidget-background:#242424;}body{margin:0;}";
-    doc.head.append(style);
-    return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
-  }, html);
+  const fixtureHtml = await page.evaluate(
+    (source) => {
+      // Adapt our generated fixture in an inert DOM, before any scripts can execute.
+      const doc = new DOMParser().parseFromString(source, "text/html");
+      for (const script of doc.querySelectorAll("script")) script.remove();
+      for (const meta of doc.querySelectorAll("meta[http-equiv]")) {
+        if (meta.getAttribute("http-equiv").toLowerCase() === "content-security-policy")
+          meta.remove();
+      }
+      const style = doc.createElement("style");
+      style.textContent =
+        ":root{--vscode-font-family:Arial;--vscode-font-size:13px;--vscode-foreground:#ddd;--vscode-descriptionForeground:#aaa;--vscode-editor-background:#181818;--vscode-button-background:#16769b;--vscode-button-foreground:#fff;--vscode-focusBorder:#66c8ff;--vscode-panel-border:#555;--vscode-editorWidget-background:#242424;}body{margin:0;}";
+      doc.head.append(style);
+      return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+    },
+    render(0, executionSnapshot)
+  );
   await page.setContent(fixtureHtml);
   await page.evaluate((viewMode) => {
     let state = { viewMode };
@@ -163,15 +188,15 @@ async function transform() {
     y: node.style.getPropertyValue("--graph-pan-y")
   }));
 }
-async function refresh() {
+async function refresh(executionSnapshot = emptySnapshot, generation = 1) {
   await page.evaluate(
-    (nextHtml) =>
+    ({ nextHtml, generation }) =>
       window.dispatchEvent(
         new MessageEvent("message", {
-          data: { command: "beadsRenderUpdate", generation: 1, html: nextHtml }
+          data: { command: "beadsRenderUpdate", generation, html: nextHtml }
         })
       ),
-    render(1)
+    { nextHtml: render(generation, executionSnapshot), generation }
   );
   await settle();
 }
@@ -187,7 +212,297 @@ async function test(name, run, mode = "graph") {
     await page?.screenshot({ path: join(output, `failure-${results.length}.png`) });
   }
 }
+async function executionSnapshot(snapshot) {
+  await page.evaluate(
+    (snapshot) =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { command: "agentExecutionSnapshot", snapshot }
+        })
+      ),
+    snapshot
+  );
+  await settle();
+}
 try {
+  await test(
+    "Manage maps explicit plan parents and dependencies without inferring live activity",
+    async () => {
+      const leaf = page.locator('.agentPlanRow[data-plan-issue-id="task-2"]');
+      assert.equal(await leaf.getAttribute("data-plan-parent-id"), "project");
+      assert.equal(await leaf.getAttribute("data-plan-depth"), "1");
+      assert.match(
+        await leaf.locator(".agentPlanRelations").innerText(),
+        /Parent: project · Depends on: task-1/
+      );
+      assert.match(
+        await page
+          .locator('.agentPlanRow[data-plan-issue-id="task-1"] .agentPlanAssignment')
+          .innerText(),
+        /Requested: OpenAI API \/ small-model · Owner: worker/
+      );
+      assert.match(
+        await page
+          .locator('.agentPlanRow[data-plan-issue-id="task-3"] .agentPlanStatus')
+          .innerText(),
+        /Recorded: In Progress/
+      );
+      assert.equal(await page.locator(".agentExecutionRow").count(), 0);
+      assert.equal(await page.locator(".agentExecutionEmpty").isVisible(), true);
+      assert.equal(
+        await page.evaluate(
+          () =>
+            window.messages.filter((message) => message.command === "getAgentExecutionSnapshot")
+              .length
+        ),
+        1
+      );
+      await leaf.locator(".graphDetailsBead").click();
+      assert.equal(
+        await page
+          .locator(".agentWorkDetailsHost .graphSelectedDetails")
+          .getAttribute("data-issue-id"),
+        "task-2"
+      );
+    },
+    "control"
+  );
+  await test(
+    "Execution stages update run rows in place and preserve focus and scroll",
+    async () => {
+      const entries = Array.from({ length: 12 }, (_, index) => executionRun(index + 1));
+      await executionSnapshot({ sessionId: "session-1", revision: 1, entries });
+      await page.locator(".agentExecutionDetails").nth(3).focus();
+      await page.locator(".agentExecutionList").evaluate((list) => {
+        list.scrollTop = 180;
+      });
+      const before = await page.evaluate(() => {
+        window.executionFocused = document.activeElement;
+        window.executionRow = document.querySelector(".agentExecutionRow");
+        const list = document.querySelector(".agentExecutionList");
+        return { scrollTop: list.scrollTop, height: list.clientHeight, windowY: window.scrollY };
+      });
+      const phases = [
+        "preparing",
+        "generating",
+        "checking",
+        "awaiting-review",
+        "applying",
+        "edit-applied"
+      ];
+      for (const [index, phase] of phases.entries()) {
+        await executionSnapshot({
+          sessionId: "session-1",
+          revision: index + 2,
+          entries: entries.map((entry) => ({ ...entry, phase }))
+        });
+        assert.equal(await page.locator(".agentExecutionRow").count(), 12);
+        assert.equal(
+          await page.locator(".agentExecutionRow").first().getAttribute("data-execution-phase"),
+          phase
+        );
+        assert.deepEqual(
+          await page.evaluate(() => {
+            const list = document.querySelector(".agentExecutionList");
+            return {
+              sameFocus: window.executionFocused === document.activeElement,
+              sameRow: window.executionRow === document.querySelector(".agentExecutionRow"),
+              scrollTop: list.scrollTop,
+              height: list.clientHeight,
+              windowY: window.scrollY
+            };
+          }),
+          { sameFocus: true, sameRow: true, ...before }
+        );
+      }
+      assert.equal(await page.locator('.agentExecutionRow[data-execution-active="1"]').count(), 0);
+      assert.match(
+        await page.locator(".agentExecutionPhase").first().innerText(),
+        /acceptance pending/
+      );
+    },
+    "control"
+  );
+  await test(
+    "Stale snapshots and ordinary refresh cannot regress current execution",
+    async () => {
+      const entries = [executionRun(1, "generating")];
+      await executionSnapshot({ sessionId: "session-1", revision: 5, entries });
+      const button = page.locator(".agentExecutionDetails");
+      await button.focus();
+      await executionSnapshot({
+        sessionId: "session-1",
+        revision: 4,
+        entries: [executionRun(1, "queued")]
+      });
+      await executionSnapshot({
+        sessionId: "session-1",
+        revision: 6,
+        entries: [executionRun(1), executionRun(1)]
+      });
+      await refresh({
+        sessionId: "session-1",
+        revision: 3,
+        entries: [executionRun(1, "preparing")]
+      });
+      assert.equal(
+        await page.locator(".agentExecutionRow").getAttribute("data-execution-phase"),
+        "generating"
+      );
+      assert.equal(await button.evaluate((node) => node === document.activeElement), true);
+      await refresh(
+        { sessionId: "session-1", revision: 6, entries: [executionRun(1, "checking")] },
+        2
+      );
+      assert.equal(
+        await page.locator(".agentExecutionRow").getAttribute("data-execution-phase"),
+        "checking"
+      );
+    },
+    "control"
+  );
+  await test(
+    "A host restart clears old activity and rejects a delayed previous session",
+    async () => {
+      const oldSnapshot = {
+        sessionId: "session-1",
+        revision: 8,
+        entries: [executionRun(1, "generating")]
+      };
+      await executionSnapshot(oldSnapshot);
+      await executionSnapshot({ sessionId: "session-2", revision: 0, entries: [] });
+      await executionSnapshot({ ...oldSnapshot, revision: 9 });
+      assert.equal(await page.locator(".agentExecutionRow").count(), 0);
+      assert.equal(await page.locator(".agentExecutionEmpty").isVisible(), true);
+    },
+    "control"
+  );
+
+  await test(
+    "Unchanged, stale, and invalid snapshots do not mutate execution DOM",
+    async () => {
+      const snapshot = {
+        sessionId: "session-1",
+        revision: 5,
+        entries: [executionRun(1, "generating")]
+      };
+      await executionSnapshot(snapshot);
+      await page.evaluate(() => {
+        window.executionMutationCount = 0;
+        window.executionObserver = new MutationObserver((records) => {
+          window.executionMutationCount += records.length;
+        });
+        window.executionObserver.observe(document.querySelector(".agentExecutionPanel"), {
+          attributes: true,
+          childList: true,
+          characterData: true,
+          subtree: true
+        });
+      });
+      await executionSnapshot(snapshot);
+      await executionSnapshot({ ...snapshot, revision: 4 });
+      await executionSnapshot({
+        ...snapshot,
+        revision: 6,
+        entries: [executionRun(1), executionRun(1)]
+      });
+      await refresh(snapshot);
+      assert.equal(await page.evaluate(() => window.executionMutationCount), 0);
+      await executionSnapshot({ ...snapshot, revision: 6, entries: [executionRun(1, "checking")] });
+      assert.ok(await page.evaluate(() => window.executionMutationCount > 0));
+    },
+    "control"
+  );
+  await test(
+    "Execution timestamps update and email-like model identities stay masked",
+    async () => {
+      const entry = { ...executionRun(1, "generating"), model: "person@example.com" };
+      await executionSnapshot({ sessionId: "session-1", revision: 1, entries: [entry] });
+      assert.match(await page.locator(".agentExecutionMeta").innerText(), /Model identity hidden/);
+      assert.doesNotMatch(
+        await page.locator(".agentExecutionPanel").innerText(),
+        /person@example.com/
+      );
+      assert.equal(
+        await page.locator(".agentExecutionTime").getAttribute("datetime"),
+        entry.updatedAt
+      );
+      await executionSnapshot({
+        sessionId: "session-1",
+        revision: 2,
+        entries: [{ ...entry, updatedAt: "2026-09-13T00:00:02Z" }]
+      });
+      assert.equal(
+        await page.locator(".agentExecutionTime").innerText(),
+        "Observed 2026-09-13T00:00:02Z"
+      );
+      assert.equal(await page.locator(".agentExecutionRow").count(), 1);
+    },
+    "control"
+  );
+  await test(
+    "Initial host snapshot restores observations without treating review as accepted",
+    async () => {
+      await reset("control", {
+        sessionId: "session-1",
+        revision: 2,
+        entries: [executionRun(1, "awaiting-review")]
+      });
+      assert.equal(await page.locator(".agentExecutionRow").count(), 1);
+      assert.equal(await page.locator(".agentExecutionPhase").innerText(), "Human review");
+      await executionSnapshot({
+        sessionId: "session-1",
+        revision: 3,
+        entries: [executionRun(1, "response-ready")]
+      });
+      assert.equal(
+        await page.locator(".agentExecutionPhase").innerText(),
+        "Response ready · not accepted"
+      );
+    },
+    "control"
+  );
+  await test(
+    "Manage plan scrolling and Details focus survive an ordinary refresh",
+    async () => {
+      const list = page.locator(".agentPlanList");
+      const button = page.locator('.agentPlanRow[data-plan-issue-id="task-3"] .graphDetailsBead');
+      await button.focus();
+      await list.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+      });
+      const scrollTop = await list.evaluate((node) => node.scrollTop);
+      await refresh();
+      assert.equal(await list.evaluate((node) => node.scrollTop), scrollTop);
+      assert.equal(await button.evaluate((node) => node === document.activeElement), true);
+    },
+    "control"
+  );
+  await test(
+    "Execution and plan controls remain reachable at 390px",
+    async () => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await executionSnapshot({
+        sessionId: "session-1",
+        revision: 1,
+        entries: [executionRun(1, "awaiting-review")]
+      });
+      for (const selector of [".agentPlanList", ".agentExecutionList"]) {
+        const list = page.locator(selector);
+        await list.focus();
+        const box = await list.boundingBox();
+        assert.ok(box.x >= 0 && box.x + box.width <= 391);
+        assert.ok(box.height <= 262);
+        const button = list.locator("button").first();
+        await button.scrollIntoViewIfNeeded();
+        const rect = await button.boundingBox();
+        assert.ok(rect.x >= 0 && rect.x + rect.width <= 391);
+      }
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 391));
+      await page.screenshot({ path: join(output, "execution-narrow.png"), fullPage: true });
+    },
+    "control"
+  );
   await test("Dependency paths and scoped Parent links remain visible", async () => {
     const paths = page.locator(".dependencyOverlay .dependencyPath");
     const count = await paths.count();
@@ -514,6 +829,16 @@ try {
       mode
     );
   }
+  await reset("control");
+  await executionSnapshot({
+    sessionId: "session-1",
+    revision: 2,
+    entries: [
+      executionRun(1, "generating"),
+      { ...executionRun(2, "awaiting-review"), issueId: "task-2", title: "Review the feature" }
+    ]
+  });
+  await page.screenshot({ path: join(output, "manage-execution.png"), fullPage: true });
   await reset();
   await page.screenshot({ path: join(output, "graph.png"), fullPage: true });
   await reset("table");

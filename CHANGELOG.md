@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Show parent-to-leaf plans, recorded dependencies, and requested assignments in Manage.
+- Show session-only execution stages from the Extension Host without polling providers or
+  reloading the view. Keep Copilot handoff, model checks, human review, and task acceptance separate.
+- Add matching chat-based plan and execution reporting to Agent Plugin 0.1.3. The plugin does not
+  stream live events into the VSIX GUI.
+- Test stale updates, host restarts, phase transitions, and narrow-view interaction.
+
 ## [0.6.6] - 2026-09-11
 
 ### Fixed

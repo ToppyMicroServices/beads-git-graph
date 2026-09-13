@@ -709,6 +709,25 @@ provider, artifact, and approval-path checks.
 - **Evidence:** Provider/confirmation screenshots, captured request metadata with secrets and full
   paths excluded, artifact reference, preview screenshots, and an empty Beads mutation log.
 
+## Session execution visibility — synthetic browser and host tests
+
+- **Setup:** Load a parent with dependency-linked leaves and mixed requested models. Send synthetic
+  host snapshots using `scripts/ui-browser-smoke.mjs`; no provider call or Beads write is required.
+- **Steps:** Open Manage, inspect the plan, then advance two runs through generation, model checking,
+  human review, and applied or cancelled results. Keep a Details button focused during updates.
+  Send a duplicate snapshot, an older revision, an ordinary task-data refresh, and a new host session.
+  Repeat at 390 CSS px width.
+- **Expected:** Parent grouping and dependencies remain separate. Unassigned tasks do not acquire a
+  guessed provider/model. Only host observations appear in Recent execution. Unchanged snapshots
+  cause no DOM mutations; changed rows retain focus and scroll. Restart clears old observations.
+  Copilot handoff is not monitored, model output is not acceptance, and raw errors stay out of rows.
+- **Cancellation:** With one task still awaiting review, cancel the batch. Queued tasks become
+  cancelled immediately; the running task remains observed until its own operation settles.
+- **Evidence boundary:** The browser uses the actual renderer and compiled webview with synthetic
+  events. Host tests use mocked provider and Beads boundaries. These checks do not prove a live
+  provider run or external Copilot worker monitoring. The separate Agent Plugin reports meaningful
+  host events in chat and has no live GUI transport.
+
 ## Remaining roadmap-only user acceptance
 
 These tests describe intended behavior and must not be used as evidence that the feature exists.

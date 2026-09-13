@@ -1,4 +1,5 @@
 import * as cp from "node:child_process";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -8,6 +9,7 @@ import { AgentArtifactStore, type AgentResponseArtifact } from "./agentArtifactS
 import { buildAgentBeadUpdateArgs } from "./agentBeadUpdate";
 import { AgentCredentialStore } from "./agentCredentialStore";
 import { runBoundedAllSettled, WorkspaceSerialQueue } from "./agentExecutionCoordinator";
+import { type AgentExecutionPhase, AgentExecutionTracker } from "./agentExecutionTrace";
 import {
   buildAgentModelOptions,
   DEFAULT_AGENT_MODEL,
@@ -201,6 +203,19 @@ interface PullRequestMergeCheck {
   reasons: string[];
 }
 
+interface AgentStartValues {
+  workspacePath: string;
+  issueId: string;
+  title: string | undefined;
+  provider: AgentProviderId;
+  model: string;
+  ssot: string;
+  worktree: string;
+  signal?: AbortSignal;
+  writeCapabilityAlreadyChecked?: boolean;
+  executionRunId?: string;
+}
+
 export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   public static readonly viewType = "beads-git-graph.beadsView";
   private static readonly refreshDebounceMs = 250;
@@ -221,6 +236,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private readonly credentialStore: AgentCredentialStore;
   private readonly artifactStore: AgentArtifactStore;
   private readonly agentExecutionQueue = new WorkspaceSerialQueue<string>();
+  private readonly executionTracker = new AgentExecutionTracker(randomUUID());
   private readonly inFlightActions = new Set<string>();
 
   constructor(
@@ -400,6 +416,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       );
     }
     await Promise.all(updates);
+    this.postHostMessage({
+      command: "agentExecutionSnapshot",
+      snapshot: this.executionTracker.snapshot()
+    });
   }
 
   private getRenderSignature(result: BeadLoadResult) {
@@ -590,7 +610,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   private getHtml(webview: vscode.Webview, result: BeadLoadResult) {
-    return renderBeadsWebviewHtml(webview, this.extensionUri, result);
+    return renderBeadsWebviewHtml(webview, this.extensionUri, {
+      ...result,
+      executionSnapshot: this.executionTracker.snapshot()
+    });
   }
 
   private postClientActionSettled(
@@ -632,6 +655,16 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   public async handleMessage(message: unknown, sourceWebview?: vscode.Webview) {
     if (!isBeadsRequestMessage(message)) {
+      return;
+    }
+    if (message.command === "getAgentExecutionSnapshot") {
+      this.postHostMessage(
+        {
+          command: "agentExecutionSnapshot",
+          snapshot: this.executionTracker.snapshot()
+        },
+        sourceWebview
+      );
       return;
     }
     if (message.command === "refresh") {
@@ -1421,17 +1454,48 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     );
   }
 
-  private async assignAndStartBead(values: {
-    workspacePath: string;
-    issueId: string;
-    title: string | undefined;
-    provider: AgentProviderId;
-    model: string;
-    ssot: string;
-    worktree: string;
-    signal?: AbortSignal;
-    writeCapabilityAlreadyChecked?: boolean;
-  }) {
+  private postExecutionPhase(runId: string, phase: AgentExecutionPhase) {
+    this.executionTracker.update(runId, phase);
+    this.postHostMessage({
+      command: "agentExecutionSnapshot",
+      snapshot: this.executionTracker.snapshot()
+    });
+  }
+
+  private async assignAndStartBead(values: AgentStartValues) {
+    const runId =
+      values.executionRunId ??
+      this.executionTracker.start({ ...values, title: values.title ?? values.issueId });
+    const phase = (value: AgentExecutionPhase) => this.postExecutionPhase(runId, value);
+    phase("preparing");
+    try {
+      const result = await this.executeAssignedBead(values, phase);
+      phase(
+        result.status === "not-ready"
+          ? "not-ready"
+          : result.result === "edit-applied"
+            ? "edit-applied"
+            : result.result === "session-opened"
+              ? "session-opened"
+              : result.result === "prompt-prepared"
+                ? "prompt-prepared"
+                : ["response-opened", "response-stored"].includes(result.result)
+                  ? "response-ready"
+                  : "failed"
+      );
+      return result;
+    } catch (error) {
+      phase(
+        error instanceof AgentProviderError && error.code === "cancelled" ? "cancelled" : "failed"
+      );
+      throw error;
+    }
+  }
+
+  private async executeAssignedBead(
+    values: AgentStartValues,
+    phase: (value: AgentExecutionPhase) => void
+  ) {
     let preparedForFinalization: PreparedAgentExecution | undefined;
     return runReadinessGuardedStart<PreparedAgentExecution, AssignAgentOpenResult>({
       issueId: values.issueId,
@@ -1485,16 +1549,18 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           dependencyIds,
           currentContent: workspaceContext.currentContent,
           upstreamArtifacts: workspaceContext.upstreamArtifacts,
-          request: (prompt, phase) =>
-            this.requestTextProviderPrompt(
+          request: (prompt, requestPhase) => {
+            phase(requestPhase === "verification" ? "checking" : "generating");
+            return this.requestTextProviderPrompt(
               {
                 provider: directProvider,
                 model: values.model
               },
               prompt,
               values.signal,
-              phase === "verification"
-            )
+              requestPhase === "verification"
+            );
+          }
         });
         const capture = await this.artifactStore.writeOrOpenFallback({
           issueId: values.issueId,
@@ -1557,6 +1623,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         }),
       mutateAndLaunch: async (prepared, dependencyIds) => {
         if (prepared.kind === "workspace-edit") {
+          phase("awaiting-review");
           const approved = await this.confirmAgentWorkspaceEditReview(
             values.issueId,
             prepared.outputPath,
@@ -1591,6 +1658,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           const agent = `${values.provider}:${values.model}`;
           let applied: AppliedAgentWorkspaceEdit;
           try {
+            phase("applying");
             applied = await applyAgentWorkspaceEdit(
               values.workspacePath,
               prepared.outputPath,
@@ -1709,6 +1777,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           values.workspacePath
         );
 
+        phase("opening-session");
         return this.openAssignAgentSession({
           ...values,
           provider: "copilot",
@@ -1917,103 +1986,160 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         candidate.provider === "copilot"
     );
     const controller = new AbortController();
+    const executionRuns = new Map(
+      uniqueCandidates.map((candidate) => [
+        candidate.issueId,
+        this.executionTracker.start({
+          ...candidate,
+          workspacePath,
+          title: candidate.title ?? candidate.issueId
+        })
+      ])
+    );
+    this.postHostMessage({
+      command: "agentExecutionSnapshot",
+      snapshot: this.executionTracker.snapshot()
+    });
     let completed = 0;
     const total = uniqueCandidates.length;
-    const completedOutcomes = await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: `Running ${total} ready AI task${total === 1 ? "" : "s"}`,
-        cancellable: true
-      },
-      async (progress, token) => {
-        const cancellation = token.onCancellationRequested(() => {
-          controller.abort("Parallel AI work cancelled by user.");
-        });
-        const reportCompletion = (issueId: string) => {
-          completed += 1;
-          progress.report({ message: `${completed}/${total}: ${issueId}` });
-        };
-        try {
-          const directPromise = runBoundedAllSettled(
-            directCandidates,
-            async (candidate, _index, signal) =>
-              this.runParallelExecutionCandidate(workspacePath, candidate, signal),
-            {
-              limit: directConcurrency,
-              signal: controller.signal,
-              onProgress: ({ item }) => {
-                reportCompletion(item.issueId);
+    const completedOutcomes = await vscode.window
+      .withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Running ${total} ready AI task${total === 1 ? "" : "s"}`,
+          cancellable: true
+        },
+        async (progress, token) => {
+          const cancellation = token.onCancellationRequested(() => {
+            controller.abort("Parallel AI work cancelled by user.");
+            this.executionTracker.cancelQueued(executionRuns.values());
+            this.postHostMessage({
+              command: "agentExecutionSnapshot",
+              snapshot: this.executionTracker.snapshot()
+            });
+          });
+          const reportCompletion = (issueId: string) => {
+            completed += 1;
+            progress.report({ message: `${completed}/${total}: ${issueId}` });
+          };
+          try {
+            const directPromise = runBoundedAllSettled(
+              directCandidates,
+              async (candidate, _index, signal) =>
+                this.runParallelExecutionCandidate(
+                  workspacePath,
+                  candidate,
+                  signal,
+                  executionRuns.get(candidate.issueId)
+                ),
+              {
+                limit: directConcurrency,
+                signal: controller.signal,
+                onProgress: ({ item }) => {
+                  reportCompletion(item.issueId);
+                }
               }
-            }
-          ).then((results) =>
-            results.map((result, index): ParallelExecutionOutcome => {
-              const candidate = directCandidates[index];
-              if (result.status === "fulfilled") {
-                return result.value;
-              }
-              if (result.status === "cancelled") {
+            ).then((results) =>
+              results.map((result, index): ParallelExecutionOutcome => {
+                const candidate = directCandidates[index];
+                if (result.status === "fulfilled") {
+                  return result.value;
+                }
+                if (result.status === "cancelled") {
+                  return {
+                    ...candidate,
+                    status: "cancelled",
+                    message: "Cancelled before the provider request started."
+                  };
+                }
                 return {
                   ...candidate,
-                  status: "cancelled",
-                  message: "Cancelled before the provider request started."
-                };
-              }
-              return {
-                ...candidate,
-                status:
-                  result.reason instanceof AgentProviderError && result.reason.code === "cancelled"
-                    ? "cancelled"
-                    : "failed",
-                message: this.formatParallelExecutionError(result.reason)
-              };
-            })
-          );
-
-          const copilotPromise = (async () => {
-            const results: ParallelExecutionOutcome[] = [];
-            for (const candidate of copilotCandidates) {
-              if (controller.signal.aborted) {
-                results.push({
-                  ...candidate,
-                  status: "cancelled",
-                  message: "Cancelled before the Copilot session was prepared."
-                });
-                reportCompletion(candidate.issueId);
-                continue;
-              }
-              try {
-                results.push(
-                  await this.runParallelExecutionCandidate(
-                    workspacePath,
-                    candidate,
-                    controller.signal
-                  )
-                );
-              } catch (error) {
-                results.push({
-                  ...candidate,
                   status:
-                    error instanceof AgentProviderError && error.code === "cancelled"
+                    result.reason instanceof AgentProviderError &&
+                    result.reason.code === "cancelled"
                       ? "cancelled"
                       : "failed",
-                  message: this.formatParallelExecutionError(error)
-                });
-              }
-              reportCompletion(candidate.issueId);
-            }
-            return results;
-          })();
+                  message: this.formatParallelExecutionError(result.reason)
+                };
+              })
+            );
 
-          const [directOutcomes, copilotOutcomes] = await Promise.all([
-            directPromise,
-            copilotPromise
-          ]);
-          return [...directOutcomes, ...copilotOutcomes];
-        } finally {
-          cancellation.dispose();
+            const copilotPromise = (async () => {
+              const results: ParallelExecutionOutcome[] = [];
+              for (const candidate of copilotCandidates) {
+                if (controller.signal.aborted) {
+                  results.push({
+                    ...candidate,
+                    status: "cancelled",
+                    message: "Cancelled before the Copilot session was prepared."
+                  });
+                  reportCompletion(candidate.issueId);
+                  continue;
+                }
+                try {
+                  results.push(
+                    await this.runParallelExecutionCandidate(
+                      workspacePath,
+                      candidate,
+                      controller.signal,
+                      executionRuns.get(candidate.issueId)
+                    )
+                  );
+                } catch (error) {
+                  results.push({
+                    ...candidate,
+                    status:
+                      error instanceof AgentProviderError && error.code === "cancelled"
+                        ? "cancelled"
+                        : "failed",
+                    message: this.formatParallelExecutionError(error)
+                  });
+                }
+                reportCompletion(candidate.issueId);
+              }
+              return results;
+            })();
+
+            const [directOutcomes, copilotOutcomes] = await Promise.all([
+              directPromise,
+              copilotPromise
+            ]);
+            return [...directOutcomes, ...copilotOutcomes];
+          } finally {
+            cancellation.dispose();
+          }
         }
-      }
-    );
+      )
+      .then(
+        (results) => {
+          for (const result of results) {
+            const runId = executionRuns.get(result.issueId);
+            if (runId)
+              this.executionTracker.update(
+                runId,
+                result.status === "session-started"
+                  ? "session-opened"
+                  : result.status === "skipped"
+                    ? "not-ready"
+                    : result.status
+              );
+          }
+          this.postHostMessage({
+            command: "agentExecutionSnapshot",
+            snapshot: this.executionTracker.snapshot()
+          });
+          return results;
+        },
+        (error: unknown) => {
+          for (const runId of executionRuns.values())
+            this.executionTracker.update(runId, controller.signal.aborted ? "cancelled" : "failed");
+          this.postHostMessage({
+            command: "agentExecutionSnapshot",
+            snapshot: this.executionTracker.snapshot()
+          });
+          throw error;
+        }
+      );
 
     outcomes.push(...completedOutcomes);
     await this.refresh();
@@ -2041,7 +2167,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       ssot: string;
       worktree: string;
     },
-    signal: AbortSignal | undefined
+    signal: AbortSignal | undefined,
+    executionRunId?: string
   ): Promise<ParallelExecutionOutcome> {
     if (signal?.aborted) {
       throw new AgentProviderError("cancelled", "The AI task was cancelled.");
@@ -2050,6 +2177,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       workspacePath,
       ...candidate,
       signal,
+      executionRunId,
       writeCapabilityAlreadyChecked: true
     });
     if (startResult.status === "not-ready") {
