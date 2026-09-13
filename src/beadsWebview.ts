@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 
 import { normalizeAgentArtifactReference } from "./agentArtifactReference";
 import { anonymizeAgentIdentity, buildAgentAliasMap } from "./agentDisplay";
+import type { AgentExecutionSnapshot } from "./agentExecutionTrace";
+import { renderAgentExecutionPanel, renderAgentPlan } from "./agentExecutionView";
 import { getAgentProviderDefinition, resolveAgentProviderId } from "./agentProvider";
 import {
   type BeadHierarchyItem,
@@ -441,7 +443,8 @@ function renderAgentWorkQueue(
   writeAvailable: boolean,
   writeUnavailableReason: string,
   readinessKnown: boolean,
-  diagnosticHtml: string
+  diagnosticHtml: string,
+  executionSnapshot?: AgentExecutionSnapshot
 ) {
   const queue = buildAgentWorkQueue(items);
   const overview = AGENT_WORK_LANES.map(
@@ -464,7 +467,7 @@ function renderAgentWorkQueue(
     return `<div class="agentWorkLane" data-work-lane="${lane}"><div class="agentWorkLaneHeader"><span>${AGENT_WORK_LANE_LABELS[lane]}</span><span class="agentWorkLaneCount">${queue.counts[lane]}</span></div><div class="agentWorkLaneCards">${cards}<div class="agentWorkLaneEmpty"${queue.counts[lane] === 0 ? "" : " hidden"}>No matching work</div></div></div>`;
   }).join("");
 
-  return `<div class="agentWorkQueue" data-workspace-path="${escapeHtml(workspacePath)}">${diagnosticHtml}<div class="agentWorkQueueHeader"><div><div class="agentWorkQueueTitle">Agent Work Queue</div><div class="agentWorkQueueHint">Derived from Beads status and recorded Git/PR metadata. “Recorded in progress” is not live-agent monitoring.</div></div><div class="agentWorkOverview">${overview}</div></div><div class="agentWorkDetailsHost"></div><div class="agentWorkLanes">${lanes}</div></div>`;
+  return `<div class="agentWorkQueue" data-workspace-path="${escapeHtml(workspacePath)}">${diagnosticHtml}<div class="agentWorkQueueHeader"><div><div class="agentWorkQueueTitle">Agent Work Queue</div><div class="agentWorkQueueHint">Derived from Beads status and recorded Git/PR metadata. “Recorded in progress” is not live-agent monitoring.</div></div><div class="agentWorkOverview">${overview}</div></div>${renderAgentPlan(items, workspacePath, agentAliases)}${renderAgentExecutionPanel(workspacePath, executionSnapshot)}<div class="agentWorkDetailsHost"></div><div class="agentWorkLanes">${lanes}</div></div>`;
 }
 
 function renderBeadsDependencyGraph(
@@ -1053,7 +1056,8 @@ export function renderBeadsWebviewHtml(
           writeAvailable,
           writeUnavailableReason,
           readinessKnown,
-          writeCapabilityWarning
+          writeCapabilityWarning,
+          result.executionSnapshot
         );
         const createAction = renderWorkspaceCreateAction(
           group.workspacePath,
@@ -1321,6 +1325,24 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .detailsGrid div:nth-child(2n){min-width:0;overflow-wrap:anywhere;}
 .detailsDescription{margin-top:8px;padding-top:8px;border-top:1px solid var(--vscode-panel-border);white-space:pre-wrap;line-height:1.45;}
 .agentWorkQueue{border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);overflow:hidden;}
+.agentPlanPanel,.agentExecutionPanel{min-width:0;padding:10px 12px;border-bottom:1px solid var(--vscode-panel-border);}
+.agentExecutionSectionHeader{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.agentExecutionSectionHeader h3{font-size:12px;margin:0;}
+.agentExecutionSectionHeader>span,.agentExecutionHint{font-size:11px;color:var(--vscode-descriptionForeground);}
+.agentExecutionHint{margin:5px 0 8px;line-height:1.4;}
+.agentPlanList,.agentExecutionList{list-style:none;margin:0;padding:0;overflow:auto;overscroll-behavior:contain;overflow-anchor:none;border:1px solid var(--vscode-panel-border);border-radius:5px;}
+.agentPlanList{max-height:260px;}
+.agentExecutionList{height:200px;}
+.agentPlanRow,.agentExecutionRow{padding:8px;min-width:0;border-bottom:1px solid var(--vscode-panel-border);overflow-wrap:anywhere;}
+.agentPlanRow{padding-left:calc(8px + var(--plan-depth,0)*12px);}
+.agentExecutionHeading{display:flex;gap:8px;justify-content:space-between;align-items:flex-start;}
+.agentExecutionHeading>span{min-width:0;flex:1;font-weight:600;}
+.agentExecutionHeading>button{flex:none;font-size:11px;padding:2px 6px;}
+.agentPlanRelations,.agentPlanAssignment,.agentPlanStatus,.agentExecutionMeta{display:block;font-size:11px;color:var(--vscode-descriptionForeground);margin-top:3px;}
+.agentExecutionPhase{display:inline-block;margin-top:5px;font-size:11px;}
+.agentExecutionTime{display:block;margin-top:3px;font-size:10px;color:var(--vscode-descriptionForeground);}
+.agentExecutionRow[data-execution-active="1"] .agentExecutionPhase{color:var(--vscode-textLink-foreground);}
+.agentExecutionEmpty{padding:12px;color:var(--vscode-descriptionForeground);font-size:11px;}
 .agentWorkQueueHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-sideBar-background,var(--vscode-editor-background));}
 .agentWorkQueueTitle{font-size:12px;font-weight:800;}
 .agentWorkQueueHint{margin-top:2px;color:var(--vscode-descriptionForeground);font-size:10px;line-height:1.35;}
@@ -1657,6 +1679,7 @@ code{font-family:var(--vscode-editor-font-family);}
 <div class="toolbarStatsRow"><div id="filterEmptyState" class="filterEmptyState" role="status" hidden><span>No tasks match the current status filters.</span><button id="resetEmptyFilters" type="button">Reset filters</button></div><div class="stats" id="stats" role="status" aria-live="polite"></div></div>
 <div id="rowContextMenu" class="contextMenu" role="menu"><button id="createBeadAction" type="button" role="menuitem">Create</button><button id="closeBeadAction" type="button" role="menuitem">Close</button></div>
 <section id="parallelBatchResult" class="parallelBatchResult" aria-label="Latest AI task batch" aria-live="polite" hidden></section>
+<div id="agentExecutionState" data-snapshot="${encodeJsonData(result.executionSnapshot ?? null)}" hidden></div>
 <div id="beadsWorkspaceViews">${bodyHtml}</div>
 ${planDraftHtml}
 <div id="beadsWarnings">${warningHtml}</div>

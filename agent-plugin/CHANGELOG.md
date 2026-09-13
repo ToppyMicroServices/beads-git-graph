@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.3] - 2026-09-13
+
+### Added
+
+- Show parent-to-leaf subagent plans, dependency waves, and requested provider/model in chat.
+- Report meaningful host execution events with worker identity when available, keeping recorded
+  Beads status separate from observed progress and accepted work.
+- Clarify that plugin chat reports do not stream into the VSIX GUI, and avoid polling loops or
+  storing sensitive execution content in shared task metadata.
+
 ## [0.1.2] - 2026-09-08
 
 ### Fixed

@@ -23,8 +23,22 @@ Open **Manage** in the Beads view to see the Agent Work Queue. It derives each l
 - **Queue**: open work, with confirmed readiness distinguished from readiness not yet confirmed by `bd ready`
 - **Done**: Beads reports the task as closed
 
-The Manage view does not claim live agent monitoring. “Recorded in progress” reflects Beads status,
-and unavailable evidence remains unconfirmed. In Manage, **Start AI** is enabled only when
+**Subagent plan** shows loaded parent-to-leaf tasks, their recorded dependencies, and requested
+owner/provider/model. A parent link does not imply a dependency. Unassigned work stays unassigned;
+this view does not allocate workers or start a plan automatically.
+
+**Recent execution** shows stages observed by this Extension Host: queued, preparing, generating,
+model checking, human review, applying, and the final observed result. Updates change the relevant
+rows without reloading the view. The list keeps up to 100 recent runs across workspaces for the
+current host session and clears on restart. It does not poll providers or add model requests.
+Copilot handoff is marked **Session opened · not monitored**; copied prompts are not started work.
+An applied edit still needs external acceptance. Failures show a short phase label; inspect the
+VS Code notification for details.
+
+“Recorded in progress” in the lanes remains Beads status, not a live worker heartbeat. External
+agents, including the separate Agent Plugin, are not monitored by this panel. The plugin reports
+host-observed events in chat; supported Beads metadata appears here as recorded state on refresh.
+In Manage, **Start AI** is enabled only when
 `bd ready` confirms readiness and Beads can be updated safely. A disabled action shows the exact
 reason beside it. Provider and model selection happens after **Start AI** is selected; a recorded
 provider label does not by itself enable or disable the action.

@@ -63,6 +63,32 @@ This self-hosted marketplace is public when these files are present on the repos
 branch. Inclusion in a marketplace that VS Code configures by default is a separate review and
 submission process.
 
+## Subagent plans and execution reports
+
+The plugin reports plans and progress in chat. A plan shows the parent and its leaf tasks, real
+dependencies, ready tasks, later parallel waves, and the requested provider/model. Parent-child
+grouping is not itself a dependency. Current readiness still comes from the local `bd` CLI.
+
+After dispatch, updates identify the affected task and host worker when available, the observed
+phase, and any blocker or next decision. A queued request is not evidence that a worker started;
+recorded `in_progress` is not a heartbeat. Response completion is separate from artifact checks,
+required human review, and acceptance. The agent uses meaningful host events or a bounded host
+wait, without a polling loop or repeated unchanged reports.
+
+The plugin does not call the VSIX Extension Host API and cannot stream live progress into the GUI.
+When the installed Beads version supports the fields and task writes are authorized, it can record
+concise handoff metadata that the GUI may show on refresh. That remains recorded state, not a live
+execution feed. Worker identifiers are included only if returned by the host; secrets, full
+prompts, and raw provider responses do not belong in shared task metadata.
+
+For example:
+
+```text
+Show the parent-to-leaf plan and dependency waves for these tasks. After I approve execution,
+report meaningful host events with requested provider/model, worker identity if available, and
+observed progress. Keep recorded Beads status and human acceptance separate.
+```
+
 ## Safety boundary
 
 The plugin does not bundle Beads, install software, initialize a project, or expose an MCP server.

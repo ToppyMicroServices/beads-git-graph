@@ -1,3 +1,4 @@
+import { type AgentExecutionSnapshot } from "./agentExecutionTrace";
 import { type BeadItem } from "./beadsData";
 import { type BeadsSyncCapability } from "./beadsSync";
 import { type BeadsWriteCapability } from "./beadsWriteCapability";
@@ -23,6 +24,7 @@ export interface BeadWarning {
 }
 
 export interface BeadLoadResult {
+  executionSnapshot?: AgentExecutionSnapshot;
   groups: BeadGroup[];
   emptyWorkspaces: EmptyBeadWorkspace[];
   unavailableWorkspaces: EmptyBeadWorkspace[];

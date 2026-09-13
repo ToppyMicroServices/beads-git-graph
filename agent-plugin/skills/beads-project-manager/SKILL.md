@@ -49,6 +49,11 @@ Before writing to Beads, show:
 3. the tasks ready at the start and the later parallel waves;
 4. the exact `bd` mutations or a supported `bd create --graph` input.
 
+For subagent plans or automatic-execution progress, read
+[execution reporting](references/execution-reporting.md). Show the parent-to-leaf plan before
+dispatch, then report meaningful host events in chat. The plugin cannot stream live progress into
+the VSIX GUI.
+
 Use `bd create --dry-run` when the installed version supports it. Ask for approval before creating
 or rewiring tasks unless the user already explicitly requested those writes.
 

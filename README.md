@@ -12,12 +12,12 @@ _Graph view with sample tasks. **Now** marks recorded work in progress; **Next**
 
 ## Find your way around
 
-| View       | Use it to                                                               |
-| ---------- | ----------------------------------------------------------------------- |
-| **Graph**  | Follow dependencies, see Now/Next, and inspect the longest chain.       |
-| **Table**  | Filter, sort, and inspect task details.                                 |
-| **Manage** | Find blocked work, review recorded PRs, and start ready tasks.          |
-| **Plan**   | Turn a goal into editable tasks and preview dependencies before import. |
+| View       | Use it to                                                                     |
+| ---------- | ----------------------------------------------------------------------------- |
+| **Graph**  | Follow dependencies, see Now/Next, and inspect the longest chain.             |
+| **Table**  | Filter, sort, and inspect task details.                                       |
+| **Manage** | Inspect subagent plans, follow local execution stages, and start ready tasks. |
+| **Plan**   | Turn a goal into editable tasks and preview dependencies before import.       |
 
 ![Manage view grouping sample tasks into Needs attention, Review, Recorded in progress, Queue, and Done](./docs/assets/manage-overview.png)
 

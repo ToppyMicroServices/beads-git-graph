@@ -26,6 +26,7 @@ import {
 } from "../src/beadsProtocol";
 import type { BeadsWriteCapability } from "../src/beadsWriteCapability";
 import { renderPlanDraftPreview } from "../src/planPreview";
+import { createAgentExecutionPanelController } from "./agentExecutionPanel";
 import {
   DEFAULT_ACTIVE_STATUSES,
   getDetailsReadinessLabel,
@@ -160,6 +161,7 @@ interface BeadRowItem {
 
 const vscode = acquireVsCodeApi();
 const DOMPurify = createDOMPurify(window);
+const agentExecutionPanel = createAgentExecutionPanelController(document);
 const STATUS_LABELS: Record<StatusFilter, string> = {
   open: "Open",
   in_progress: "In Progress",
@@ -972,7 +974,10 @@ const STABLE_RENDER_CLASSES = new Set([
   "graphContent",
   "dependencyOverlay",
   "graphNodes",
-  "agentWorkQueue"
+  "agentWorkQueue",
+  "agentPlanPanel",
+  "agentPlanList",
+  "agentExecutionPanel"
 ]);
 
 const CLIENT_OWNED_STYLE_CLASSES = [
@@ -1012,6 +1017,8 @@ function getStableRenderKey(node: Node) {
     .closest<HTMLElement>(".agentWorkQueue")
     ?.getAttribute("data-workspace-path");
   const workItemId = node.getAttribute("data-work-item-id");
+  const planIssueId = node.getAttribute("data-plan-issue-id");
+  if (planIssueId !== null) return `agent-plan:${workQueueWorkspace ?? ""}:${planIssueId}`;
   if (node.classList.contains("agentWorkCard") && workItemId !== null) {
     return `agent-work:${workQueueWorkspace ?? ""}:${workItemId}`;
   }
@@ -1111,6 +1118,7 @@ function reconcileRenderNode(currentNode: Node, nextNode: Node) {
   }
   reconcileRenderAttributes(currentNode, nextNode);
   if (
+    currentNode.classList.contains("agentExecutionPanel") ||
     currentNode.classList.contains("dependencyOverlay") ||
     currentNode.classList.contains("hierarchyOverlay") ||
     currentNode.classList.contains("graphZoomValue")
@@ -1480,6 +1488,7 @@ function applyBeadsRenderUpdate(
   const planWorkspaceOptionsChanged = updatePlanWorkspaceOptions(nextPlanWorkspace);
 
   bindDynamicContent();
+  agentExecutionPanel.readSnapshot(parsed);
   if (workspaceChanged) {
     sortRowsAndUpdateIcons();
     for (const row of getVisibleBeadRows()) {
@@ -3956,6 +3965,10 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
     return;
   }
   const message = event.data;
+  if (message.command === "agentExecutionSnapshot") {
+    agentExecutionPanel.update(message.snapshot);
+    return;
+  }
   if (message.command === "beadsRenderUpdate") {
     applyBeadsRenderUpdate(message);
     return;
@@ -4519,6 +4532,10 @@ sortRowsAndUpdateIcons();
 refreshRowVisibility({ refreshGraph: false, renderHierarchy: false });
 applyViewMode(activeViewMode);
 const restoredWindowScrollY = initialWebviewState?.windowScrollY;
+vscode.postMessage({ command: "getAgentExecutionSnapshot" });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) vscode.postMessage({ command: "getAgentExecutionSnapshot" });
+});
 if (
   typeof restoredWindowScrollY === "number" &&
   Number.isFinite(restoredWindowScrollY) &&

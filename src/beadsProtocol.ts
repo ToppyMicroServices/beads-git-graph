@@ -1,7 +1,9 @@
+import { type AgentExecutionSnapshot, isAgentExecutionSnapshot } from "./agentExecutionTrace";
 import { normalizeAgentModelName } from "./agentModelSelection";
 import { type AgentProviderId, normalizeAgentProviderId } from "./agentProvider";
 
 export type BeadsRequestMessage = (
+  | { command: "getAgentExecutionSnapshot" }
   | { command: "refresh" }
   | { command: "openGitGraph" }
   | { command: "syncAllBeads" }
@@ -74,6 +76,7 @@ export interface ParallelExecutionOutcome extends BeadsExecutionTarget {
 }
 
 export type BeadsHostMessage =
+  | { command: "agentExecutionSnapshot"; snapshot: AgentExecutionSnapshot }
   | {
       command: "actionSettled";
       clientActionId: string;
@@ -195,6 +198,7 @@ export function isBeadsRequestMessage(message: unknown): message is BeadsRequest
     return false;
   }
   switch (record.command) {
+    case "getAgentExecutionSnapshot":
     case "refresh":
     case "openGitGraph":
     case "syncAllBeads":
@@ -274,6 +278,9 @@ export function isBeadsHostMessage(message: unknown): message is BeadsHostMessag
     return false;
   }
   const record = message as Record<string, unknown>;
+  if (record.command === "agentExecutionSnapshot") {
+    return isAgentExecutionSnapshot(record.snapshot);
+  }
   if (record.command === "actionSettled") {
     return isBoundedOneLine(record.clientActionId, 100);
   }
