@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-13
+
 ### Added
 
 - Show parent-to-leaf plans, recorded dependencies, and requested assignments in Manage.
