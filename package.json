@@ -77,7 +77,7 @@
     "oxfmt": "^0.67.0",
     "oxlint": "^1.82.0",
     "typescript": "^6.0.3",
-    "vite": "^8.2.2",
+    "vite": "^8.3.0",
     "vitest": "^4.1.11"
   },
   "contributes": {
