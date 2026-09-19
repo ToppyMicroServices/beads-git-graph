@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+<!-- daily-generated:start -->
+
+### Daily Snapshot
+
+- [`1682489`](https://github.com/ToppyMicroServices/beads-git-graph/commit/1682489095e17c28620905a942813e65641fbd99) build(deps-dev): bump oxlint from 1.82.0 to 1.83.0 (#316)
+- [`0e4bdcd`](https://github.com/ToppyMicroServices/beads-git-graph/commit/0e4bdcd4e1cca36ceff1b9b38d70c7501074f033) build(deps-dev): bump oxfmt from 0.67.0 to 0.68.0 (#315)
+- [`9caf1e3`](https://github.com/ToppyMicroServices/beads-git-graph/commit/9caf1e30d5f60c684480feaa2a7bbc813e2ecd13) build(deps): bump github/codeql-action/analyze from 4.37.9 to 4.38.0 (#311)
+- [`579e0dd`](https://github.com/ToppyMicroServices/beads-git-graph/commit/579e0dd42ceba147058144c8df746d5430b9dca9) build(deps): bump github/codeql-action/upload-sarif (#310)
+- [`55aea7d`](https://github.com/ToppyMicroServices/beads-git-graph/commit/55aea7d34fb1dd47c4824132ec5eac71174013fb) build(deps): bump google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml (#313)
+- [`9356364`](https://github.com/ToppyMicroServices/beads-git-graph/commit/935636487bd524a6ab35d94445314df0e1497b37) build(deps): bump google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml (#314)
+- [`4f9d417`](https://github.com/ToppyMicroServices/beads-git-graph/commit/4f9d4179f6cd85731f88be9c05eab91cb3d20ef7) build(deps-dev): bump fast-check from 4.9.0 to 4.10.0 (#312)
+- [`1bbe718`](https://github.com/ToppyMicroServices/beads-git-graph/commit/1bbe7184a6db61919a83ef7600529efcefb32314) build(deps): bump github/codeql-action/init from 4.37.9 to 4.38.0 (#309)
+- [`d72b396`](https://github.com/ToppyMicroServices/beads-git-graph/commit/d72b396ff7e09e826ada99b79ca1fcd154a956be) build(deps-dev): bump ovsx from 1.1.1 to 1.2.0 (#307)
+- [`1b98dcd`](https://github.com/ToppyMicroServices/beads-git-graph/commit/1b98dcd43e58eefa4456ff40378744a7b1a1f1e1) build(deps-dev): bump vite from 8.2.2 to 8.3.0 (#305)
+
+<!-- daily-generated:end -->
+
 ## [0.7.0] - 2026-09-13
 
 ### Added
@@ -549,7 +566,7 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.7.0...HEAD
 [0.6.3]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.0...v0.6.2
 [0.6.0]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260710...v0.6.0
