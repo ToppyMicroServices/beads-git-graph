@@ -50,7 +50,7 @@ Open **Manage** in the Tasks view to see the Agent Work Queue. It derives each l
 - **Queue**: open work, with readiness confirmed by the active task store distinguished from readiness not yet confirmed
 - **Done**: the task is recorded as closed
 
-**Subagent plan** shows loaded parent-to-leaf tasks, their recorded dependencies, and requested
+**Execution plan** shows loaded parent-to-leaf tasks, their recorded dependencies, and requested
 owner/provider/model. A parent link does not imply a dependency. Unassigned work stays unassigned;
 this view does not allocate workers or start a plan automatically.
 
@@ -112,6 +112,7 @@ operations, and does not claim rollback.
 The Tasks view surfaces optional execution hints from task fields, metadata, or labels:
 
 - `parallelizable: true` or label `parallel-ok`
+- `dispatch_policy: "automatic" | "preferred" | "pinned"` or label `dispatch:<policy>`
 - `provider: "ollama"` or label `provider:ollama`
 - `model: "gpt-5-codex"` or label `model:gpt-5-codex`
 - `ssot: "AGENTS.md, docs/decision.md"` or label `ssot:AGENTS.md`
@@ -120,6 +121,13 @@ The Tasks view surfaces optional execution hints from task fields, metadata, or 
 - `pr: 123`, `check_status: "success"`, or labels such as `pr:#123`, `checks:success`
 - `sync_risk: "stale"` or label `sync-risk:stale`
 - `output_path: "outputs/task-a.md"` (a relative `artifact` value is also accepted before the first run)
+
+Dispatch is **automatic** by default, so tasks do not require an agent assignment. An explicit agent,
+provider, or model is treated as a preferred target unless `dispatch_policy` says otherwise.
+`preferred` records a target that may be selected when available; `pinned` records a required target.
+The Manage view keeps these requested targets separate from provider/model execution observed by the
+current Extension Host session. These hints describe and visualize dispatch intent; they do not
+silently select a provider or bypass the explicit **Start AI** provider/model prompt.
 
 When you use **Start AI**, the extension asks for a provider and a provider-scoped model before
 changing anything. Direct-provider editing requires observable acceptance criteria and exactly one

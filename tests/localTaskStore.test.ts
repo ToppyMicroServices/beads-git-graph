@@ -45,6 +45,32 @@ afterEach(async () => {
 });
 
 describe("local tasks without a Beads installation", () => {
+  it("preserves dispatch intent in local task metadata after reopening", async () => {
+    const directory = await workspace();
+    const store = new LocalTaskStore(directory);
+    const id = await create(store, "Dispatch example");
+    expect((await store.list())[0].dispatchPolicy).toBeUndefined();
+    await store.execute([
+      "update",
+      id,
+      "--set-metadata",
+      "dispatch_policy=pinned",
+      "--set-metadata",
+      "provider=openai"
+    ]);
+    const reopened = new LocalTaskStore(directory);
+    expect((await reopened.list())[0]).toMatchObject({
+      dispatchPolicy: "pinned",
+      provider: "openai",
+      providerExplicit: true
+    });
+    await reopened.execute(["update", id, "--set-metadata", "dispatch_policy=automatic"]);
+    expect((await new LocalTaskStore(directory).list())[0]).toMatchObject({
+      dispatchPolicy: "automatic",
+      provider: "openai"
+    });
+  });
+
   it("reads an empty workspace without creating files and rejects unsupported commands", async () => {
     const directory = await workspace();
     const store = new LocalTaskStore(directory);

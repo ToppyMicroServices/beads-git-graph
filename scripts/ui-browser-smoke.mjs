@@ -87,6 +87,9 @@ const items = [
   {
     id: "task-3",
     title: "Ship the feature",
+    dispatchPolicy: "pinned",
+    provider: "ollama",
+    model: "local-model",
     status: "in_progress",
     parentId: "project",
     dependencyIds: ["task-2"],
@@ -363,6 +366,22 @@ try {
   await test(
     "Manage maps explicit plan parents and dependencies without inferring live activity",
     async () => {
+      assert.equal(
+        await page.locator(".agentDispatchSummary").innerText(),
+        "2 automatic · 1 preferred · 1 pinned"
+      );
+      assert.equal(
+        await page
+          .locator('.agentPlanRow[data-plan-issue-id="task-3"]')
+          .getAttribute("data-dispatch-policy"),
+        "pinned"
+      );
+      assert.match(
+        await page
+          .locator('.agentPlanRow[data-plan-issue-id="task-2"] .agentPlanAssignment')
+          .innerText(),
+        /^Dispatch: Automatic$/
+      );
       const leaf = page.locator('.agentPlanRow[data-plan-issue-id="task-2"]');
       assert.equal(await leaf.getAttribute("data-plan-parent-id"), "project");
       assert.equal(await leaf.getAttribute("data-plan-depth"), "1");
@@ -374,7 +393,7 @@ try {
         await page
           .locator('.agentPlanRow[data-plan-issue-id="task-1"] .agentPlanAssignment')
           .innerText(),
-        /Requested: OpenAI API \/ small-model · Owner: worker/
+        /Dispatch: Preferred · Requested: OpenAI API \/ small-model · Owner: worker/
       );
       assert.match(
         await page
