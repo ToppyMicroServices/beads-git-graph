@@ -232,7 +232,7 @@ describe("Graph webview UX contracts", () => {
     const chipsSource = sourceBetween("function renderFilterChips", "function applyPreset");
     expect(menuSource).toContain('["ArrowDown", "ArrowUp", "Home", "End"]');
     expect(menuSource).toContain('event.key === "Tab"');
-    expect(menuSource).toContain('"button:not(:disabled)"');
+    expect(menuSource).toContain('"button:not(:disabled):not([hidden])"');
     expect(chipsSource).toContain(
       'clearFilters.style.display = presetValue === "" ? "inline-flex" : "none"'
     );

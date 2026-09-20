@@ -21,6 +21,7 @@ export interface BeadItem {
   createdAt: string;
   parentId: string;
   dependencyIds: string[];
+  /** Legacy field name: readiness confirmed by the active task store (Beads or local). */
   readyByBd: boolean;
   parallelizable: boolean;
   parallelizableSource: "explicit" | "ready" | "";

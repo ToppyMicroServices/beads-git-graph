@@ -44,6 +44,83 @@ describe("agent work prompt", () => {
     expect(prompt).not.toContain("coding-model");
   });
 
+  it("uses the original native task store as read-only handoff context", () => {
+    const prompt = buildAgentWorkPrompt({
+      issueId: "task-implement",
+      title: "Implement the approved decision",
+      model: "coding-model",
+      ssot: "AGENTS.md, docs/decision.md",
+      workspacePath: "/tmp/project",
+      worktree: "/tmp/project-implement",
+      taskStorePath: "/tmp/project/.taskgraph/tasks.json",
+      dependencyIds: ["task-research"],
+      executionMode: "coding-session"
+    });
+
+    expect(prompt).toContain('Start work on task ID "task-implement"');
+    expect(prompt).toContain(
+      'Task store in the original workspace: "/tmp/project/.taskgraph/tasks.json".'
+    );
+    expect(prompt).toContain('Upstream task handoff IDs: "task-research".');
+    expect(prompt).toContain(
+      "Inspect each upstream task in the original workspace task store before changing code."
+    );
+    expect(prompt).toContain(
+      'Inspect the current task in the original workspace task store using ID "task-implement".'
+    );
+    expect(prompt).toContain(
+      "Use the original workspace task store only as read-only context; do not copy it into the worktree or modify it."
+    );
+    expect(prompt).not.toContain("Beads");
+    expect(prompt).not.toContain("bd ");
+  });
+
+  it("omits the native task store path when local paths are disabled", () => {
+    const prompt = buildAgentWorkPrompt({
+      issueId: "task-1",
+      title: "Research the decision",
+      model: "coding-model",
+      ssot: "AGENTS.md",
+      workspacePath: "/Users/example/private-project",
+      worktree: "/Users/example/private-project-task",
+      taskStorePath: "/Users/example/private-project/.taskgraph/tasks.json",
+      dependencyIds: [],
+      includeLocalPaths: false
+    });
+
+    expect(prompt).toContain("Task store: .taskgraph/tasks.json in the original workspace.");
+    expect(prompt).not.toContain("/Users/example");
+    expect(prompt).not.toContain("private-project-task");
+  });
+
+  it("never includes native task store paths in text responses", () => {
+    const prompt = buildAgentWorkPrompt({
+      issueId: "task-1",
+      title: "Research the decision",
+      provider: "openai",
+      model: "research-model",
+      ssot: "AGENTS.md, docs/decision.md",
+      workspacePath: "/Users/example/private-project",
+      worktree: "/Users/example/private-project-task",
+      taskStorePath: "/Users/example/private-project/.taskgraph/tasks.json",
+      dependencyIds: ["task-upstream"],
+      includeLocalPaths: true,
+      executionMode: "text-response"
+    });
+
+    expect(prompt).toContain('Produce a reviewable text response for task ID "task-1"');
+    expect(prompt).toContain(
+      'Upstream task handoff IDs (contents are not attached): "task-upstream".'
+    );
+    expect(prompt).toContain(
+      "You do not have workspace, task store, file, command, or tool access"
+    );
+    expect(prompt).not.toContain("/Users/example");
+    expect(prompt).not.toContain(".taskgraph/tasks.json");
+    expect(prompt).not.toContain("Inspect the current task");
+    expect(prompt).not.toContain("Beads");
+  });
+
   it("omits absolute local paths from direct provider prompts", () => {
     const prompt = buildAgentWorkPrompt({
       issueId: "research",

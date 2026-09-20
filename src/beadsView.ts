@@ -15,6 +15,7 @@ import {
   DEFAULT_AGENT_MODEL,
   normalizeAgentModelName
 } from "./agentModelSelection";
+import { normalizeAgentOutputPath } from "./agentOutputPath";
 import {
   AGENT_PROVIDERS,
   type AgentExecutionOutcomeStatus,
@@ -82,6 +83,7 @@ import {
 import { renderBeadsWebviewHtml } from "./beadsWebview";
 import {
   type BeadsCapabilityCommandResult,
+  type BeadsWriteCapability,
   probeBeadsAgentWriteCapability,
   probeBeadsWriteCapability
 } from "./beadsWriteCapability";
@@ -89,6 +91,7 @@ import { BranchSwitchSyncCoordinator } from "./branchSwitchSync";
 import { checkExecutable } from "./commandAvailability";
 import { getConfig } from "./config";
 import { GitGraphView } from "./gitGraphView";
+import { LocalTaskStore } from "./localTaskStore";
 import { parsePlanDraft } from "./planDraft";
 import {
   buildPlanDraftGenerationPrompt,
@@ -137,7 +140,7 @@ export function getAgentStartBlockReason(
   }
   const status = normalizeBeadStatus(item.status);
   if (status !== "open") {
-    return `Refusing to start ${item.id}: current Beads status is ${status}; only open tasks can be started.`;
+    return `Refusing to start ${item.id}: current task status is ${status}; only open tasks can be started.`;
   }
   return null;
 }
@@ -250,7 +253,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     this.branchSyncCoordinator = new BranchSwitchSyncCoordinator(
       (workspacePath) => this.loadCurrentBranchKey(workspacePath),
       async (workspacePath) => {
-        await syncBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
+        await syncBeadsWorkspace((args, cwd) => this.runTaskCommand(args, cwd), workspacePath);
       },
       async () => {
         await this.refresh();
@@ -268,7 +271,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       vscode.workspace.createFileSystemWatcher("**/.beads/config.yaml"),
       vscode.workspace.createFileSystemWatcher("**/.beads/metadata.json"),
       vscode.workspace.createFileSystemWatcher("**/.beads/issues.json"),
-      vscode.workspace.createFileSystemWatcher("**/.beads/issues.jsonl")
+      vscode.workspace.createFileSystemWatcher("**/.beads/issues.jsonl"),
+      vscode.workspace.createFileSystemWatcher("**/.taskgraph/tasks.json")
     ];
 
     this.disposables.push(
@@ -346,7 +350,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const graphColumn = GitGraphView.closeCurrentPanel();
     this.panel = vscode.window.createWebviewPanel(
       "beads-git-graph.beadsPanel",
-      "Beads",
+      "Tasks",
       targetColumn ?? graphColumn ?? vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -506,7 +510,16 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const planImportCapabilities: NonNullable<BeadLoadResult["planImportCapabilities"]> = [];
     const agentWriteCapabilities: NonNullable<BeadLoadResult["agentWriteCapabilities"]> = [];
     const syncCapabilities: NonNullable<BeadLoadResult["syncCapabilities"]> = [];
-    const bdExecutableStatus = await this.getBdExecutableStatus();
+    const hasBeadsWorkspace = (
+      await Promise.all(
+        workspaceFolders.map(
+          async (folder) => !(await this.isLocalTaskWorkspace(folder.uri.fsPath))
+        )
+      )
+    ).some(Boolean);
+    const bdExecutableStatus = hasBeadsWorkspace
+      ? await this.getBdExecutableStatus()
+      : { available: false, command: "bd", message: null };
 
     for (const folder of workspaceFolders) {
       const workspaceInfo = {
@@ -515,7 +528,32 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       };
       const legacyFiles = await this.findLegacyBeadFiles(folder);
       const beadsDirUri = vscode.Uri.joinPath(folder.uri, ".beads");
-      const hasBeadsDirectory = await this.pathExists(beadsDirUri);
+      const hasBeadsDirectory = !(await this.isLocalTaskWorkspace(folder.uri.fsPath));
+
+      if (!hasBeadsDirectory) {
+        const localWorkspace = { ...workspaceInfo, storageKind: "local" as const };
+        try {
+          const items = await new LocalTaskStore(folder.uri.fsPath).list();
+          const capability = this.localWriteCapability();
+          agentWriteCapabilities.push({ ...localWorkspace, capability });
+          planImportCapabilities.push({ ...localWorkspace, capability });
+          if (items.length > 0) {
+            groups.push({
+              ...localWorkspace,
+              readinessKnown: true,
+              items: deriveParallelMergeItems(items)
+            });
+          } else {
+            emptyWorkspaces.push(localWorkspace);
+          }
+        } catch (error) {
+          errors.push({
+            source: path.join(folder.uri.fsPath, LocalTaskStore.relativePath),
+            message: error instanceof Error ? error.message : "Unable to read local tasks."
+          });
+        }
+        continue;
+      }
 
       if (hasBeadsDirectory) {
         agentWriteCapabilities.push({
@@ -538,7 +576,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           ...workspaceInfo,
           capability: bdExecutableStatus.available
             ? await probeBeadsSyncCapability(
-                (args, cwd) => this.runBdCommand(args, cwd),
+                (args, cwd) => this.runTaskCommand(args, cwd),
                 folder.uri.fsPath
               )
             : {
@@ -712,7 +750,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath.trim());
       if (workspacePath === null) {
         vscode.window.showWarningMessage(
-          "Refusing to import a Plan Draft outside an initialized workspace folder."
+          "Refusing to import a Plan Draft outside an open workspace folder."
         );
         this.postClientActionSettled(message.clientActionId, sourceWebview);
         return;
@@ -749,23 +787,23 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           return;
         }
 
-        const executableStatus = await this.getBdExecutableStatus();
-        const capability = await probeBeadsWriteCapability(
-          executableStatus.available,
-          executableStatus.message,
-          (args) => this.runBdCapabilityProbe(args, workspacePath)
-        );
+        const capability = await this.workspaceWriteCapability(workspacePath);
         if (!capability.supported) {
           vscode.window.showWarningMessage(`Plan import is disabled: ${capability.reason}`);
           return;
         }
 
         const mutations = projectPlanDraftMutations(parsed.draft);
+        const local = await this.isLocalTaskWorkspace(workspacePath);
+        const describeMutation = local
+          ? (mutation: (typeof mutations)[number]) =>
+              `${mutation.kind === "create" ? "Create task" : mutation.kind === "update" ? "Save task details for" : "Add dependency for"} ${mutation.taskId}`
+          : formatPlanMutation;
         const confirmation = await vscode.window.showWarningMessage(
           `Import ${parsed.draft.tasks.length} planned task(s) into ${path.basename(workspacePath)}?`,
           {
             modal: true,
-            detail: `${mutations.map((mutation, index) => `${index + 1}. ${formatPlanMutation(mutation)}`).join("\n")}\n\nMutations stop on the first failure. No automatic rollback is attempted.`
+            detail: `${mutations.map((mutation, index) => `${index + 1}. ${describeMutation(mutation)}`).join("\n")}\n\n${local ? "All tasks and dependencies are saved together in one local update." : "Mutations stop on the first failure. No automatic rollback is attempted."}`
           },
           "Import Plan"
         );
@@ -773,8 +811,21 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           return;
         }
 
+        await this.assertWorkspaceWriteCapability(workspacePath);
+        if (local !== (await this.isLocalTaskWorkspace(workspacePath))) {
+          throw new Error("The task source changed. Refresh before importing the plan.");
+        }
+        if (local) {
+          const created = await new LocalTaskStore(workspacePath).importPlan(parsed.draft);
+          await this.refresh();
+          vscode.window.showInformationMessage(
+            `Imported ${created.length} tasks and their dependencies into local task storage.`
+          );
+          return;
+        }
+
         const importResult = await executePlanImport(mutations, (args) =>
-          this.runBdCommand([...args], workspacePath)
+          this.runTaskCommand([...args], workspacePath)
         );
         await this.refresh();
         const createdSummary =
@@ -783,7 +834,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
             : `Created: ${importResult.createdIds.map(({ taskId, issueId }) => `${taskId} → ${issueId}`).join(", ")}.`;
         if (importResult.failed !== null) {
           vscode.window.showErrorMessage(
-            `Plan import stopped after ${importResult.completed.length} operation(s). ${createdSummary} Failed: ${formatPlanMutation(importResult.failed.mutation)} — ${importResult.failed.error}. ${importResult.unexecuted.length} operation(s) were not executed. No rollback was attempted.`
+            `Plan import stopped after ${importResult.completed.length} operation(s). ${createdSummary} Failed: ${describeMutation(importResult.failed.mutation)} — ${importResult.failed.error}. ${importResult.unexecuted.length} operation(s) were not executed. No rollback was attempted.`
           );
           return;
         }
@@ -791,6 +842,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           `Plan imported with ${importResult.completed.length} operation(s). ${createdSummary}`
         );
         return;
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          error instanceof Error ? error.message : "Unable to import the plan."
+        );
       } finally {
         this.settleClientAction(actionKey, message.clientActionId, sourceWebview);
       }
@@ -813,7 +868,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           }
 
           const result = await syncBeadsWorkspace(
-            (args, cwd) => this.runBdCommand(args, cwd),
+            (args, cwd) => this.runTaskCommand(args, cwd),
             folder.uri.fsPath
           );
           if (result.status === "synced") {
@@ -847,7 +902,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath.trim());
       if (workspacePath === null) {
         vscode.window.showWarningMessage(
-          "Refusing to sync Beads data outside an initialized workspace folder."
+          "Refusing to sync Beads data outside an open workspace folder."
         );
         this.postClientActionSettled(message.clientActionId, sourceWebview);
         return;
@@ -866,7 +921,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       }
       try {
         const result = await syncBeadsWorkspace(
-          (args, cwd) => this.runBdCommand(args, cwd),
+          (args, cwd) => this.runTaskCommand(args, cwd),
           workspacePath
         );
         await this.refresh();
@@ -902,6 +957,26 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       return;
     }
 
+    if (message.command === "editLocalTask") {
+      const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath);
+      const actionKey = `edit-task:${workspacePath}:${message.issueId}`;
+      if (!this.beginAction(actionKey, "Edit task", message.clientActionId, sourceWebview)) return;
+      try {
+        if (workspacePath === null || !(await this.isLocalTaskWorkspace(workspacePath))) {
+          throw new Error("Choose a local task in an open workspace folder.");
+        }
+        await this.assertWorkspaceWriteCapability(workspacePath);
+        await this.promptAndEditLocalTask(workspacePath, message.issueId);
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          error instanceof Error ? error.message : "Unable to edit task."
+        );
+      } finally {
+        this.settleClientAction(actionKey, message.clientActionId, sourceWebview);
+      }
+      return;
+    }
+
     if (
       message.command === "createBead" &&
       typeof message.workspacePath === "string" &&
@@ -910,7 +985,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath.trim());
       if (workspacePath === null) {
         vscode.window.showWarningMessage(
-          "Refusing to create a bead outside an initialized workspace folder."
+          "Refusing to create a bead outside an open workspace folder."
         );
         this.postClientActionSettled(message.clientActionId, sourceWebview);
         return;
@@ -942,7 +1017,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       if (issueId === "" || workspacePath === null) {
         if (workspacePath === null) {
           vscode.window.showWarningMessage(
-            "Refusing to close a bead outside an initialized workspace folder."
+            "Refusing to close a bead outside an open workspace folder."
           );
         }
         this.postClientActionSettled(message.clientActionId, sourceWebview);
@@ -963,17 +1038,17 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       try {
         await this.assertWorkspaceWriteCapability(workspacePath);
         const confirmation = await vscode.window.showWarningMessage(
-          `Close bead ${issueId}${message.title ? `: ${message.title}` : ""}?`,
+          `Close task ${issueId}${message.title ? `: ${message.title}` : ""}?`,
           { modal: true },
           "Close"
         );
         if (confirmation !== "Close") {
           return;
         }
-        await this.runBdCommand(["close", issueId], workspacePath);
-        await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
+        await this.runTaskCommand(["close", issueId], workspacePath);
+        await this.flushTaskWorkspace(workspacePath);
         await this.refresh();
-        vscode.window.showInformationMessage(`Closed bead ${issueId}.`);
+        vscode.window.showInformationMessage(`Closed task ${issueId}.`);
       } catch (error) {
         const messageText = error instanceof Error ? error.message : "Unable to close bead.";
         vscode.window.showErrorMessage(messageText);
@@ -993,7 +1068,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       if (issueId === "" || workspacePath === null) {
         if (workspacePath === null) {
           vscode.window.showWarningMessage(
-            "Refusing to update a bead outside an initialized workspace folder."
+            "Refusing to update a bead outside an open workspace folder."
           );
         }
         this.postClientActionSettled(message.clientActionId, sourceWebview);
@@ -1043,7 +1118,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       const workspacePath = await this.resolveAuthorizedWorkspacePath(message.workspacePath.trim());
       if (workspacePath === null) {
         vscode.window.showWarningMessage(
-          "Refusing to start parallel beads outside an initialized workspace folder."
+          "Refusing to start parallel beads outside an open workspace folder."
         );
         this.postClientActionSettled(message.clientActionId, sourceWebview);
         return;
@@ -1107,7 +1182,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       if (issueId === "" || workspacePath === null) {
         if (workspacePath === null) {
           vscode.window.showWarningMessage(
-            "Refusing to merge PRs outside an initialized workspace folder."
+            "Refusing to merge PRs outside an open workspace folder."
           );
         }
         this.postClientActionSettled(message.clientActionId, sourceWebview);
@@ -1174,7 +1249,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         reply({
           command: "planDraftGenerationResult",
           status: "error",
-          message: "Choose an initialized Beads workspace before generating a plan."
+          message: "Open a workspace folder before generating a plan."
         });
         return;
       }
@@ -1333,7 +1408,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       `Generate a task plan with ${providerLabel}?`,
       {
         modal: true,
-        detail: `1 × ${providerLabel} / ${model}\n\nThe provider receives your goal, a fixed Plan Draft JSON schema, the workspace display name, relative SSOT candidate names, and configured provider/model choices. File contents, absolute local paths, and API credentials are not included in the prompt. Cloud providers may charge for this request. The response is preserved locally as untrusted text and remains an editable draft; it is never imported into Beads automatically.`
+        detail: `1 × ${providerLabel} / ${model}\n\nThe provider receives your goal, a fixed Plan Draft JSON schema, the workspace display name, relative SSOT candidate names, and configured provider/model choices. File contents, absolute local paths, and API credentials are not included in the prompt. Cloud providers may charge for this request. The response is preserved locally as untrusted text and remains an editable draft; it is never imported into tasks automatically.`
       },
       "Generate Draft"
     );
@@ -1406,12 +1481,12 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     if (startResult.status === "not-ready") {
       vscode.window.showWarningMessage(
         startResult.phase === "before-preparation"
-          ? `Refusing to start ${issueId}: bd ready no longer reports this task as ready. Refresh the Beads view and review its dependencies.`
+          ? `Refusing to start ${issueId}: This task is no longer ready. Refresh the Tasks view and review its dependencies.`
           : startResult.phase === "dependencies-changed"
-            ? `Stopped ${issueId} because its dependency handoffs changed while generating the response. The response artifact was preserved locally and opened when possible; no Beads mutation was made.`
+            ? `Stopped ${issueId} because its dependency handoffs changed while generating the response. The response artifact was preserved locally and opened when possible; no task state was changed.`
             : provider === "copilot"
-              ? `Stopped ${issueId} before updating Beads because readiness changed while preparing its worktree. No agent session was started.`
-              : `Stopped ${issueId} before updating Beads because readiness changed while generating the response. The response artifact was preserved locally and opened when possible; no Beads mutation was made.`
+              ? `Stopped ${issueId} before updating task state because readiness changed while preparing its worktree. No agent session was started.`
+              : `Stopped ${issueId} before updating task state because readiness changed while generating the response. The response artifact was preserved locally and opened when possible; no task state was changed.`
       );
       return;
     }
@@ -1577,13 +1652,13 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         });
         if (capture.status === "opened-unsaved") {
           throw new Error(
-            `Generated the ${values.provider} edit candidate, but extension storage failed: ${capture.storageError}. The candidate was opened as an unsaved document; save it before closing. No workspace or Beads mutation was made.`
+            `Generated the ${values.provider} edit candidate, but extension storage failed: ${capture.storageError}. The candidate was opened as an unsaved document; save it before closing. No workspace or task mutation was made.`
           );
         }
         if (result.status === "review-required") {
           await this.openAgentResponseArtifact(capture.artifact);
           throw new Error(
-            `The model content check did not pass after ${result.attempts} attempt(s): ${result.reason} No workspace file or Beads state was changed; the candidate was preserved for review.`
+            `The model content check did not pass after ${result.attempts} attempt(s): ${result.reason} No workspace file or task state was changed; the candidate was preserved for review.`
           );
         }
         const prepared: PreparedAgentExecution = {
@@ -1616,7 +1691,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
             }
             throw new AgentProviderError(
               "cancelled",
-              "The AI task was cancelled before Beads was updated."
+              "The AI task was cancelled before task state was updated."
             );
           }
           return operation();
@@ -1632,13 +1707,13 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           if (!approved) {
             throw new AgentProviderError(
               "cancelled",
-              `The proposed edit for ${values.issueId} was preserved but not approved; no workspace file or Beads state was changed.`
+              `The proposed edit for ${values.issueId} was preserved but not approved; no workspace file or task state was changed.`
             );
           }
           if (values.signal?.aborted) {
             throw new AgentProviderError(
               "cancelled",
-              `The proposed edit for ${values.issueId} was preserved because the run was cancelled during review; no workspace file or Beads state was changed.`
+              `The proposed edit for ${values.issueId} was preserved because the run was cancelled during review; no workspace file or task state was changed.`
             );
           }
           const dependenciesAfterReview =
@@ -1652,7 +1727,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           ) {
             throw new AgentProviderError(
               "cancelled",
-              `The proposed edit for ${values.issueId} was preserved because readiness or dependencies changed during human review; no workspace file or Beads state was changed.`
+              `The proposed edit for ${values.issueId} was preserved because readiness or dependencies changed during human review; no workspace file or task state was changed.`
             );
           }
           const agent = `${values.provider}:${values.model}`;
@@ -1707,7 +1782,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
               `artifact_run=${prepared.artifact.runId}`,
               `artifact=${prepared.artifact.reference}`
             ];
-            await this.runBdCommand(
+            await this.runTaskCommand(
               buildAgentBeadUpdateArgs({
                 issueId: values.issueId,
                 assignee: agent,
@@ -1717,10 +1792,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
               values.workspacePath
             );
             beadUpdated = true;
-            await flushBeadsWorkspace(
-              (args, cwd) => this.runBdCommand(args, cwd),
-              values.workspacePath
-            );
+            await this.flushTaskWorkspace(values.workspacePath);
           } catch (error) {
             let rollbackProblem: string | undefined;
             if (!beadUpdated) {
@@ -1732,13 +1804,13 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
               }
             }
             await this.openAgentResponseArtifact(prepared.artifact);
-            const message = error instanceof Error ? error.message : "unknown Beads error";
+            const message = error instanceof Error ? error.message : "unknown task storage error";
             throw new Error(
               beadUpdated
-                ? `Applied ${prepared.outputPath} and updated local Beads, but its flush failed. The audit artifact was opened. ${message}`
+                ? `Applied ${prepared.outputPath} and updated task state, but its flush failed. The audit artifact was opened. ${message}`
                 : rollbackProblem !== undefined
-                  ? `The Beads update failed, and ${prepared.outputPath} could not be rolled back. The audit artifact was opened for manual recovery. ${rollbackProblem} ${message}`
-                  : `The Beads update failed, so ${prepared.outputPath} was rolled back. The audit artifact was opened. ${message}`
+                  ? `The task update failed, and ${prepared.outputPath} could not be rolled back. The audit artifact was opened for manual recovery. ${rollbackProblem} ${message}`
+                  : `The task update failed, so ${prepared.outputPath} was rolled back. The audit artifact was opened. ${message}`
             );
           }
           await this.openAgentWorkspaceFile(applied.absolutePath);
@@ -1763,7 +1835,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           prepared.worktree.branch.trim() === "" ? "" : `branch=${prepared.worktree.branch.trim()}`
         ].filter((entry) => entry !== "");
 
-        await this.runBdCommand(
+        await this.runTaskCommand(
           buildAgentBeadUpdateArgs({
             issueId: values.issueId,
             assignee: values.model,
@@ -1772,10 +1844,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           }),
           values.workspacePath
         );
-        await flushBeadsWorkspace(
-          (args, cwd) => this.runBdCommand(args, cwd),
-          values.workspacePath
-        );
+        await this.flushTaskWorkspace(values.workspacePath);
 
         phase("opening-session");
         return this.openAssignAgentSession({
@@ -2183,7 +2252,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     if (startResult.status === "not-ready") {
       const message =
         startResult.phase === "before-preparation"
-          ? "No longer reported ready by bd."
+          ? "No longer ready according to current task dependencies."
           : startResult.phase === "dependencies-changed"
             ? "Dependency handoffs changed after generation; the response artifact was preserved locally."
             : candidate.provider === "copilot"
@@ -2300,8 +2369,15 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
 
     await this.runGitCommand(["pull", "--rebase"], workspacePath);
+    if (await this.isLocalTaskWorkspace(workspacePath)) {
+      await this.refresh();
+      vscode.window.showInformationMessage(
+        `Merged ${mergedPrs.join(", ")}. Local tasks are already saved.`
+      );
+      return;
+    }
     const syncResult = await syncBeadsWorkspace(
-      (args, cwd) => this.runBdCommand(args, cwd),
+      (args, cwd) => this.runTaskCommand(args, cwd),
       workspacePath
     );
     await this.refresh();
@@ -2325,7 +2401,12 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     dependencyIds: readonly string[];
   }): Promise<AssignAgentOpenResult> {
     const commands = new Set(await vscode.commands.getCommands(true));
-    const prompt = buildAgentWorkPrompt(values);
+    const prompt = buildAgentWorkPrompt({
+      ...values,
+      taskStorePath: (await this.isLocalTaskWorkspace(values.workspacePath))
+        ? path.join(values.workspacePath, LocalTaskStore.relativePath)
+        : undefined
+    });
     const resource = vscode.Uri.file(values.worktree?.trim() || values.workspacePath);
 
     for (const command of COPILOT_ASSIGN_COMMAND_CANDIDATES) {
@@ -2508,22 +2589,35 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   private assertTrustedWorkspaceForAgentAction() {
-    assertBeadsProcessTrusted(vscode.workspace.isTrusted);
+    if (!vscode.workspace.isTrusted)
+      throw new Error("Trust this workspace to change tasks or run AI.");
+  }
+
+  private async workspaceWriteCapability(workspacePath: string): Promise<BeadsWriteCapability> {
+    if (await this.isLocalTaskWorkspace(workspacePath)) {
+      await new LocalTaskStore(workspacePath).list();
+      return this.localWriteCapability();
+    }
+    const executableStatus = await this.getBdExecutableStatus();
+    return probeBeadsWriteCapability(executableStatus.available, executableStatus.message, (args) =>
+      this.runBdCapabilityProbe(args, workspacePath)
+    );
   }
 
   private async assertWorkspaceWriteCapability(workspacePath: string) {
-    const executableStatus = await this.getBdExecutableStatus();
-    const capability = await probeBeadsWriteCapability(
-      executableStatus.available,
-      executableStatus.message,
-      (args) => this.runBdCapabilityProbe(args, workspacePath)
-    );
+    this.assertTrustedWorkspaceForAgentAction();
+    const capability = await this.workspaceWriteCapability(workspacePath);
     if (!capability.supported) {
-      throw new Error(`Beads cannot be updated safely: ${capability.reason}`);
+      throw new Error(`Tasks cannot be updated safely: ${capability.reason}`);
     }
   }
 
   private async assertAgentWriteCapability(workspacePath: string) {
+    this.assertTrustedWorkspaceForAgentAction();
+    if (await this.isLocalTaskWorkspace(workspacePath)) {
+      await this.assertWorkspaceWriteCapability(workspacePath);
+      return;
+    }
     const executableStatus = await this.getBdExecutableStatus();
     const capability = await probeBeadsAgentWriteCapability(
       executableStatus.available,
@@ -2608,7 +2702,7 @@ A provider can write only its declared relative target after its model content c
   ) {
     if ((await this.openAgentResponseArtifact(artifact)) !== "response-opened") {
       throw new Error(
-        `The proposed edit for ${issueId} could not be opened for human review; no workspace file or Beads state was changed.`
+        `The proposed edit for ${issueId} could not be opened for human review; no workspace file or task state was changed.`
       );
     }
     const action = "Apply Reviewed Edit";
@@ -2650,16 +2744,16 @@ A provider can write only its declared relative target after its model content c
   }
 
   private async queryAgentTaskExecutionSpec(issueId: string, workspacePath: string) {
-    const stdout = await this.runBdCommand(["show", issueId, "--json"], workspacePath);
+    const stdout = await this.runTaskCommand(["show", issueId, "--json"], workspacePath);
     let parsed: unknown;
     try {
       parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
     } catch {
-      throw new Error(`Unable to parse current Beads task ${issueId}; no provider was contacted.`);
+      throw new Error(`Unable to parse current task ${issueId}; no provider was contacted.`);
     }
     const spec = parseAgentTaskExecutionSpec(parsed, issueId);
     if (spec === null) {
-      throw new Error(`Unable to load current Beads task ${issueId}; no provider was contacted.`);
+      throw new Error(`Unable to load current task ${issueId}; no provider was contacted.`);
     }
     return spec;
   }
@@ -2717,7 +2811,7 @@ A provider can write only its declared relative target after its model content c
       const document = await vscode.workspace.openTextDocument(vscode.Uri.file(absolutePath));
       await vscode.window.showTextDocument(document, { preview: true });
     } catch {
-      // The verified edit and Beads update already succeeded; opening the editor is best effort.
+      // The verified edit and task update already succeeded; opening the editor is best effort.
     }
   }
 
@@ -2759,7 +2853,10 @@ A provider can write only its declared relative target after its model content c
       fs.existsSync(path.join(workspacePath, candidate))
     );
 
-    return [`bd:${issueId}`, ...references].join(", ");
+    const taskReference = fs.existsSync(path.join(workspacePath, ".beads"))
+      ? `bd:${issueId}`
+      : `${LocalTaskStore.relativePath}#${issueId}`;
+    return [taskReference, ...references].join(", ");
   }
 
   private loadAssignSsotManifestEntries(workspacePath: string, issueId: string) {
@@ -3161,13 +3258,30 @@ A provider can write only its declared relative target after its model content c
   }
 
   private async promptAndCreateBead(workspacePath: string) {
+    if (await this.isLocalTaskWorkspace(workspacePath)) {
+      const title = await vscode.window.showInputBox({
+        title: "Create Task",
+        prompt: "What needs to be done? Saved locally; no AI runs automatically.",
+        ignoreFocusOut: true,
+        validateInput: (value) => (value.trim() === "" ? "Title is required." : undefined)
+      });
+      if (title === undefined) return;
+      await this.createBead(workspacePath, {
+        type: "task",
+        title: title.trim(),
+        status: "open",
+        priority: "P2"
+      });
+      await this.refresh();
+      return;
+    }
     const type = await this.pickCreateBeadType();
     if (!type) {
       return;
     }
 
     const title = await vscode.window.showInputBox({
-      title: "Create Bead",
+      title: "Create Task",
       prompt: "Title",
       placeHolder: "Implement create action",
       ignoreFocusOut: true,
@@ -3194,7 +3308,7 @@ A provider can write only its declared relative target after its model content c
       priority
     });
     await this.refresh();
-    vscode.window.showInformationMessage(`Created bead ${bead.id}.`);
+    vscode.window.showInformationMessage(`Created task ${bead.id}.`);
   }
 
   private async pickCreateBeadType(): Promise<CreateBeadType | undefined> {
@@ -3207,7 +3321,7 @@ A provider can write only its declared relative target after its model content c
         { label: "Chore", value: "chore" as const }
       ],
       {
-        title: "Create Bead",
+        title: "Create Task",
         placeHolder: "Type",
         ignoreFocusOut: true
       }
@@ -3225,7 +3339,7 @@ A provider can write only its declared relative target after its model content c
         { label: "Closed", value: "closed" as const }
       ],
       {
-        title: "Create Bead",
+        title: "Create Task",
         placeHolder: "Status",
         ignoreFocusOut: true
       }
@@ -3244,7 +3358,7 @@ A provider can write only its declared relative target after its model content c
         { label: "P4", value: "P4" as const }
       ],
       {
-        title: "Create Bead",
+        title: "Create Task",
         placeHolder: "Priority",
         ignoreFocusOut: true
       }
@@ -3262,7 +3376,7 @@ A provider can write only its declared relative target after its model content c
       priority: CreateBeadPriority;
     }
   ) {
-    const stdout = await this.runBdCommand(
+    const stdout = await this.runTaskCommand(
       [
         "create",
         "--json",
@@ -3278,12 +3392,12 @@ A provider can write only its declared relative target after its model content c
     const bead = this.parseCreatedBead(stdout);
 
     if (values.status === "closed") {
-      await this.runBdCommand(["close", bead.id], workspacePath);
+      await this.runTaskCommand(["close", bead.id], workspacePath);
     } else if (values.status !== "open") {
-      await this.runBdCommand(["update", bead.id, "--status", values.status], workspacePath);
+      await this.runTaskCommand(["update", bead.id, "--status", values.status], workspacePath);
     }
 
-    await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
+    await this.flushTaskWorkspace(workspacePath);
     return bead;
   }
 
@@ -3314,6 +3428,130 @@ A provider can write only its declared relative target after its model content c
     }
   }
 
+  private localWriteCapability(): BeadsWriteCapability {
+    return vscode.workspace.isTrusted
+      ? { supported: true, state: "supported", reason: "Tasks are saved locally by the extension." }
+      : {
+          supported: false,
+          state: "probe-failed",
+          reason: "Trust this workspace to change tasks or run AI."
+        };
+  }
+
+  private async isLocalTaskWorkspace(workspacePath: string) {
+    try {
+      await fs.promises.lstat(path.join(workspacePath, ".beads"));
+      return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+      throw error;
+    }
+  }
+
+  private async runTaskCommand(args: string[], cwd: string) {
+    this.assertTrustedWorkspaceForAgentAction();
+    const workspacePath = await this.resolveAuthorizedWorkspacePath(cwd);
+    if (workspacePath === null)
+      throw new Error("Task operations require an open workspace folder.");
+    if (await this.isLocalTaskWorkspace(workspacePath)) {
+      return new LocalTaskStore(workspacePath).execute(args);
+    }
+    return this.runBdCommand(args, workspacePath);
+  }
+
+  private async flushTaskWorkspace(workspacePath: string) {
+    if (await this.isLocalTaskWorkspace(workspacePath)) return;
+    await flushBeadsWorkspace((args, cwd) => this.runBdCommand(args, cwd), workspacePath);
+  }
+
+  private async promptAndEditLocalTask(workspacePath: string, issueId: string) {
+    const store = new LocalTaskStore(workspacePath);
+    const items = await store.list();
+    const task = items.find((item) => item.id === issueId);
+    if (!task) throw new Error("The task no longer exists. Refresh the Tasks view.");
+    const selection = await vscode.window.showQuickPick(
+      [
+        { label: "Title", field: "title" },
+        { label: "Status", field: "status" },
+        { label: "Dependencies", field: "dependencyIds" },
+        { label: "Description", field: "description" },
+        { label: "AI instructions", field: "taskInstructions" },
+        { label: "Output file", field: "outputPath" },
+        { label: "Acceptance criteria", field: "acceptanceCriteria" }
+      ],
+      { title: `Edit: ${task.title}`, ignoreFocusOut: true }
+    );
+    if (!selection) return;
+    const values = {
+      title: task.title,
+      status: task.status,
+      dependencyIds: [...task.dependencyIds]
+    } as {
+      title: string;
+      status: string;
+      dependencyIds: string[];
+      description?: string;
+      taskInstructions?: string;
+      outputPath?: string;
+      acceptanceCriteria?: string;
+    };
+    if (selection.field === "status") {
+      const status = await vscode.window.showQuickPick(
+        [
+          { label: "Open", value: "open" },
+          { label: "In progress", value: "in_progress" },
+          { label: "Blocked", value: "blocked" },
+          { label: "Closed", value: "closed" }
+        ],
+        { title: "Task status", ignoreFocusOut: true }
+      );
+      if (!status) return;
+      values.status = status.value;
+    } else if (selection.field === "dependencyIds") {
+      const dependencies = await vscode.window.showQuickPick(
+        items
+          .filter((item) => item.id !== task.id)
+          .map((item) => ({
+            label: item.title,
+            description: item.id,
+            id: item.id,
+            picked: task.dependencyIds.includes(item.id)
+          })),
+        { title: "Tasks that must finish first", canPickMany: true, ignoreFocusOut: true }
+      );
+      if (!dependencies) return;
+      values.dependencyIds = dependencies.map((item) => item.id);
+    } else {
+      const field = selection.field as
+        | "title"
+        | "description"
+        | "taskInstructions"
+        | "outputPath"
+        | "acceptanceCriteria";
+      const value = await vscode.window.showInputBox({
+        title: selection.label,
+        value: task[field] ?? "",
+        ignoreFocusOut: true,
+        validateInput: (input) =>
+          field === "title" && input.trim() === ""
+            ? "Title is required."
+            : field === "outputPath" &&
+                input.trim() !== "" &&
+                normalizeAgentOutputPath(input) === null
+              ? "Use a relative workspace file path outside protected task and configuration directories."
+              : undefined
+      });
+      if (value === undefined) return;
+      values[field] = value.trim();
+    }
+    // Recheck trust and source after the user interaction, before the atomic edit.
+    await this.assertWorkspaceWriteCapability(workspacePath);
+    if (!(await this.isLocalTaskWorkspace(workspacePath)))
+      throw new Error("The task source changed. Refresh before editing.");
+    await store.updateTask(task.id, values, task.updatedAt);
+    await this.refresh();
+  }
+
   private async resolveAuthorizedWorkspacePath(workspacePath: string) {
     const normalizedPath = workspacePath.trim();
     if (normalizedPath === "") {
@@ -3328,8 +3566,7 @@ A provider can write only its declared relative target after its model content c
       return null;
     }
 
-    const beadsDirUri = vscode.Uri.joinPath(workspaceFolder.uri, ".beads");
-    return (await this.pathExists(beadsDirUri)) ? workspaceFolder.uri.fsPath : null;
+    return workspaceFolder.uri.scheme === "file" ? workspaceFolder.uri.fsPath : null;
   }
 
   private async syncBranchWatchers() {
@@ -3443,7 +3680,7 @@ A provider can write only its declared relative target after its model content c
   }
 
   private async loadBdItemsFromCli(cwd: string): Promise<CliLoadResult> {
-    const stdout = await this.runBdCommand(["list", "--json", "--limit", "0", "--all"], cwd);
+    const stdout = await this.runTaskCommand(["list", "--json", "--limit", "0", "--all"], cwd);
     const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
     const cliItems = extractBeadItems(parsed);
     const warnings: BeadWarning[] = [];
@@ -3573,7 +3810,7 @@ A provider can write only its declared relative target after its model content c
   }
 
   private async queryReadyItemIds(cwd: string) {
-    return queryReadyItemIdsWithLimitFallback((args) => this.runBdCommand(args, cwd));
+    return queryReadyItemIdsWithLimitFallback((args) => this.runTaskCommand(args, cwd));
   }
 
   private async queryDependencyIdsForStart(issueIds: readonly string[], cwd: string) {
@@ -3585,7 +3822,7 @@ A provider can write only its declared relative target after its model content c
     const missingIssueIds = uniqueIssueIds.filter((issueId) => !itemById.has(issueId));
     if (missingIssueIds.length > 0) {
       throw new Error(
-        `Unable to verify current Beads dependencies for: ${missingIssueIds.join(", ")}. No work was started.`
+        `Unable to verify current task dependencies for: ${missingIssueIds.join(", ")}. No work was started.`
       );
     }
 
@@ -3606,7 +3843,7 @@ A provider can write only its declared relative target after its model content c
   private async loadBdShowItems(issueIds: string[], cwd: string) {
     const items = await Promise.all(
       issueIds.map(async (issueId) => {
-        const stdout = await this.runBdCommand(["show", issueId, "--json"], cwd);
+        const stdout = await this.runTaskCommand(["show", issueId, "--json"], cwd);
         const parsed = stdout.trim() === "" ? [] : JSON.parse(stdout);
         return extractBeadItems(parsed);
       })
@@ -3646,8 +3883,8 @@ A provider can write only its declared relative target after its model content c
   private async runBdCommand(args: string[], cwd: string) {
     assertBeadsProcessTrusted(vscode.workspace.isTrusted);
     const workspacePath = await this.resolveAuthorizedWorkspacePath(cwd);
-    if (workspacePath === null) {
-      throw new Error("Refusing to run bd outside an initialized workspace folder.");
+    if (workspacePath === null || (await this.isLocalTaskWorkspace(workspacePath))) {
+      throw new Error("Refusing to run bd outside an open workspace folder.");
     }
 
     return new Promise<string>((resolve, reject) => {
@@ -3684,8 +3921,8 @@ A provider can write only its declared relative target after its model content c
   ): Promise<BeadsCapabilityCommandResult> {
     assertBeadsProcessTrusted(vscode.workspace.isTrusted);
     const workspacePath = await this.resolveAuthorizedWorkspacePath(cwd);
-    if (workspacePath === null) {
-      throw new Error("Refusing to probe bd outside an initialized workspace folder.");
+    if (workspacePath === null || (await this.isLocalTaskWorkspace(workspacePath))) {
+      throw new Error("Refusing to probe bd outside an open workspace folder.");
     }
 
     return new Promise((resolve, reject) => {

@@ -66,6 +66,20 @@ describe("isBeadsRequestMessage", () => {
     ).toBe(true);
   });
 
+  it("validates native edit messages and their action identifiers", () => {
+    const message = {
+      command: "editLocalTask",
+      workspacePath: "/tmp/local",
+      issueId: "task-1",
+      clientActionId: "edit-1"
+    };
+    expect(isBeadsRequestMessage(message)).toBe(true);
+    expect(isBeadsRequestMessage({ ...message, workspacePath: "" })).toBe(false);
+    expect(isBeadsRequestMessage({ ...message, issueId: "" })).toBe(false);
+    expect(isBeadsRequestMessage({ ...message, issueId: "task-1\nother" })).toBe(false);
+    expect(isBeadsRequestMessage({ ...message, clientActionId: 10 })).toBe(false);
+  });
+
   it("rejects malformed messages", () => {
     expect(isBeadsRequestMessage(null)).toBe(false);
     expect(isBeadsRequestMessage({ command: "syncBeads" })).toBe(false);

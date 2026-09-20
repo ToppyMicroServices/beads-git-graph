@@ -107,7 +107,7 @@ function executionRun(index = 1, phase = "queued") {
     updatedAt: "2026-09-13T00:00:01Z"
   };
 }
-function render(revision = 0, executionSnapshot = emptySnapshot) {
+function render(revision = 0, executionSnapshot = emptySnapshot, overrides = {}) {
   const capability = { supported: true, state: "supported", reason: "Fixture supports writes" };
   return renderBeadsWebviewHtml(
     { cspSource: "https://fixture.invalid", asWebviewUri: (uri) => uri },
@@ -128,7 +128,8 @@ function render(revision = 0, executionSnapshot = emptySnapshot) {
       warnings: [],
       bdExecutableStatus: { available: true, message: "" },
       agentWriteCapabilities: [{ workspace: "UI smoke", workspacePath, capability }],
-      planImportCapabilities: [{ workspace: "UI smoke", workspacePath, capability }]
+      planImportCapabilities: [{ workspace: "UI smoke", workspacePath, capability }],
+      ...overrides
     }
   );
 }
@@ -140,7 +141,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_EXE
 const results = [];
 const errors = [];
 let page;
-async function reset(mode = "graph", executionSnapshot = emptySnapshot) {
+async function reset(mode = "graph", executionSnapshot = emptySnapshot, overrides = {}) {
   await page?.close();
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.on("pageerror", (error) => errors.push(error.message));
@@ -159,7 +160,7 @@ async function reset(mode = "graph", executionSnapshot = emptySnapshot) {
       doc.head.append(style);
       return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
     },
-    render(0, executionSnapshot)
+    render(0, executionSnapshot, overrides)
   );
   await page.setContent(fixtureHtml);
   await page.evaluate((viewMode) => {
@@ -224,7 +225,141 @@ async function executionSnapshot(snapshot) {
   );
   await settle();
 }
+const localWorkspace = { workspace: "Native tasks", workspacePath, storageKind: "local" };
+const localCapability = {
+  supported: true,
+  state: "supported",
+  reason: "Local task storage is writable."
+};
+function nativeFixture(empty = false) {
+  return {
+    groups: empty ? [] : [{ ...localWorkspace, readinessKnown: true, items }],
+    emptyWorkspaces: empty ? [localWorkspace] : [],
+    bdExecutableStatus: { available: false, command: "bd", message: "bd is not installed" },
+    agentWriteCapabilities: [{ ...localWorkspace, capability: localCapability }],
+    planImportCapabilities: [{ ...localWorkspace, capability: localCapability }]
+  };
+}
+async function settleAction(clientActionId) {
+  await page.evaluate(
+    (id) =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { command: "actionSettled", clientActionId: id }
+        })
+      ),
+    clientActionId
+  );
+  await settle();
+}
 try {
+  await test("Native empty workspace enables creation and local plan import without bd", async () => {
+    await reset("table", emptySnapshot, nativeFixture(true));
+    assert.equal(await page.locator("#syncBeads").isVisible(), false);
+    assert.match(
+      await page.locator("#beadsWorkspaceViews").innerText(),
+      /when you first create or import tasks/
+    );
+    await page.locator(".workspaceCreateBead").click();
+    const create = await page.evaluate(() =>
+      window.messages.find((message) => message.command === "createBead")
+    );
+    assert.equal(create.workspacePath, workspacePath);
+    assert.ok(create.clientActionId);
+    await settleAction(create.clientActionId);
+    assert.equal(await page.locator(".workspaceCreateBead").isEnabled(), true);
+    await page.setViewportSize({ width: 640, height: 900 });
+    await page.screenshot({ path: join(output, "native-empty-640.png"), fullPage: true });
+    await page.locator("#planView").click();
+    await page.locator(".planAdvanced summary").click();
+    await page.locator("#loadPlanDraftExample").click();
+    assert.match(
+      await page.locator(".planMutationPreview").innerText(),
+      /Tasks to save in .taskgraph\/tasks.json/
+    );
+    assert.doesNotMatch(
+      await page.locator(".planMutationPreview").innerText(),
+      /bd create|Beads mutations/
+    );
+    await page.screenshot({ path: join(output, "native-plan-640.png"), fullPage: true });
+    await page.locator("#importPlanDraft").click();
+    const imported = await page.evaluate(() =>
+      window.messages.find((message) => message.command === "importPlanDraft")
+    );
+    assert.equal(imported.workspacePath, workspacePath);
+    assert.ok(imported.clientActionId);
+    assert.equal(await page.locator("#generatePlanDraftWithAi").isEnabled(), true);
+    const bounds = await page.evaluate(() => ({
+      width: document.documentElement.clientWidth,
+      scroll: document.documentElement.scrollWidth
+    }));
+    assert.ok(bounds.scroll <= bounds.width + 1, `Native Plan overflow: ${JSON.stringify(bounds)}`);
+  });
+  await test("Native task details post edit and Start AI actions without bd", async () => {
+    await reset("graph", emptySnapshot, nativeFixture());
+    await page.locator('[data-graph-details-id="task-1"]').first().click();
+    const edit = page.locator(".graphSelectedDetails .editLocalTask");
+    assert.equal(await edit.isEnabled(), true);
+    await edit.click();
+    const edited = await page.evaluate(() =>
+      window.messages.find((message) => message.command === "editLocalTask")
+    );
+    assert.equal(edited.workspacePath, workspacePath);
+    assert.equal(edited.issueId, "task-1");
+    assert.ok(edited.clientActionId);
+    assert.equal(await edit.isEnabled(), false);
+    await settleAction(edited.clientActionId);
+    assert.equal(await edit.isEnabled(), true);
+    await page.locator('[data-assign-start-id="task-1"]').first().click();
+    const started = await page.evaluate(() =>
+      window.messages.find((message) => message.command === "assignStartBead")
+    );
+    assert.equal(started.issueId, "task-1");
+    assert.ok(started.clientActionId);
+    await settleAction(started.clientActionId);
+    for (const mode of ["graph", "control", "table"]) {
+      await reset(mode, emptySnapshot, nativeFixture());
+      await page.setViewportSize({ width: 640, height: 900 });
+      await settle();
+      const bounds = await page.evaluate(() => ({
+        width: document.documentElement.clientWidth,
+        scroll: document.documentElement.scrollWidth
+      }));
+      assert.ok(
+        bounds.scroll <= bounds.width + 1,
+        `Native ${mode} overflow: ${JSON.stringify(bounds)}`
+      );
+      await page.screenshot({ path: join(output, `native-${mode}-640.png`), fullPage: true });
+    }
+    await page.locator('.beadRow[data-id="task-1"] .rowActionsButton').click();
+    assert.equal(await page.locator("#editLocalTaskAction").isVisible(), true);
+    await page.locator("#editLocalTaskAction").click();
+    assert.equal(
+      await page.evaluate(() =>
+        window.messages.some((message) => message.command === "editLocalTask")
+      ),
+      true
+    );
+  });
+  await test("Workspace refresh preserves native storage and sync visibility", async () => {
+    await page.evaluate(
+      (html) =>
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            data: { command: "beadsRenderUpdate", generation: 1, html }
+          })
+        ),
+      render(1, emptySnapshot, nativeFixture())
+    );
+    await settle();
+    assert.equal(await page.locator("#syncBeads").isVisible(), false);
+    assert.equal(
+      await page.locator("#planDraftWorkspace option").getAttribute("data-storage-kind"),
+      "local"
+    );
+    await page.locator('[data-graph-details-id="task-1"]').first().click();
+    assert.equal(await page.locator(".graphSelectedDetails .editLocalTask").isEnabled(), true);
+  });
   await test(
     "Manage maps explicit plan parents and dependencies without inferring live activity",
     async () => {

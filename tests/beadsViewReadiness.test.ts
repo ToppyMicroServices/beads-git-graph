@@ -140,7 +140,7 @@ describe("live Start AI task validation", () => {
     "rejects a task whose live status is %s",
     (status) => {
       expect(getAgentStartBlockReason({ id: "task-1", status, type: "task" })).toBe(
-        `Refusing to start task-1: current Beads status is ${status}; only open tasks can be started.`
+        `Refusing to start task-1: current task status is ${status}; only open tasks can be started.`
       );
     }
   );

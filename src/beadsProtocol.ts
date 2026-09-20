@@ -18,6 +18,7 @@ export type BeadsRequestMessage = (
   | { command: "openGitGraphForCommit"; commitHash: string }
   | { command: "openAgentArtifact"; artifactUri: string }
   | { command: "createBead"; workspacePath: string }
+  | { command: "editLocalTask"; workspacePath: string; issueId: string }
   | { command: "closeBead"; issueId: string; workspacePath: string; title?: string }
   | {
       command: "assignStartBead";
@@ -206,6 +207,8 @@ export function isBeadsRequestMessage(message: unknown): message is BeadsRequest
     case "syncBeads":
     case "createBead":
       return typeof record.workspacePath === "string";
+    case "editLocalTask":
+      return isBoundedOneLine(record.workspacePath, 4096) && isBoundedOneLine(record.issueId, 200);
     case "generatePlanDraft":
       return (
         isBoundedOneLine(record.requestId, 100) &&

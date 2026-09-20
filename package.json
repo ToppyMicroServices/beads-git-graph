@@ -1,8 +1,8 @@
 {
   "name": "beads-git-graph",
   "displayName": "Beads Git Graph",
-  "version": "0.7.0",
-  "description": "Git graph and Beads issue tools for VS Code.",
+  "version": "0.9.0",
+  "description": "Local tasks, dependencies, AI work, and Git history for VS Code. Beads is optional.",
   "categories": [
     "Other",
     "SCM Providers",
@@ -18,6 +18,7 @@
     "git log",
     "issue tracker",
     "scm",
+    "task management",
     "visualize"
   ],
   "homepage": "https://github.com/ToppyMicroServices/beads-git-graph",
@@ -95,12 +96,12 @@
       {
         "category": "Beads Git Graph",
         "command": "beads-git-graph.refreshBeads",
-        "title": "Refresh Beads"
+        "title": "Refresh Tasks"
       },
       {
         "category": "Beads Git Graph",
         "command": "beads-git-graph.focusBeadsView",
-        "title": "Focus Beads View"
+        "title": "Focus Tasks View"
       },
       {
         "category": "Beads Git Graph",
@@ -142,7 +143,7 @@
       "beads-git-graph": [
         {
           "id": "beads-git-graph.beadsView",
-          "name": "Beads",
+          "name": "Tasks",
           "type": "webview"
         }
       ]
@@ -376,7 +377,7 @@
           "type": "string",
           "default": "bd",
           "scope": "machine",
-          "description": "Path or command name for the Beads CLI executable used by the Beads view."
+          "description": "Path or command name for the Beads CLI executable used in existing .beads workspaces. Built-in local tasks do not require it."
         },
         "beads-git-graph.agentModelOptions": {
           "type": "array",
@@ -449,7 +450,7 @@
           "minimum": 1,
           "maximum": 8,
           "default": 4,
-          "description": "Maximum number of direct Ollama, Hugging Face, OpenAI, or Anthropic requests run concurrently. Beads and Git mutations remain serialized per workspace."
+          "description": "Maximum number of direct Ollama, Hugging Face, OpenAI, or Anthropic requests run concurrently. Task and Git mutations remain serialized per workspace."
         },
         "beads-git-graph.agentArtifactRetentionCount": {
           "type": "integer",
@@ -499,7 +500,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "Git history and tracked Beads JSON/JSONL viewing remain available. AI execution, credential management, worktree creation, bd execution, and Git or Beads mutations require a trusted workspace.",
+      "description": "Git history, local tasks, and tracked Beads JSON/JSONL viewing remain available. AI execution, credential management, worktree creation, bd execution, and Git or task mutations require a trusted workspace.",
       "restrictedConfigurations": [
         "beads-git-graph.agentOllamaBaseUrl",
         "beads-git-graph.bdPath",

@@ -59,6 +59,21 @@ describe("Plan Draft preview", () => {
     expect(html).not.toContain('id="importPlanDraft" type="button" title="compatible" disabled');
   });
 
+  it("describes local task writes without Beads commands", () => {
+    const html = renderPlanDraftPreview({
+      draft,
+      errors: [],
+      storageKind: "local",
+      capability: { supported: true, state: "supported", reason: "Local task storage is writable." }
+    });
+    expect(html).toContain("Tasks to save in .taskgraph/tasks.json (2)");
+    expect(html).toContain("Create task: Design &quot;preview&quot; (P1)");
+    expect(html).toContain("Depends on: plan-a");
+    expect(html).not.toContain("bd create");
+    expect(html).not.toContain("Beads mutations");
+    expect(html).toContain("Review and approve saving these tasks and dependencies.");
+  });
+
   it.each([
     ["missing-executable", "bd missing"],
     ["unsupported-command", "create unavailable"],

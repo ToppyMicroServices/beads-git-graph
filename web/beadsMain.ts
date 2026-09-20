@@ -114,6 +114,9 @@ type BeadsWebviewState = {
 };
 
 interface BeadRowItem {
+  storageKind?: "local" | "beads";
+  workspacePath?: string;
+  editable?: boolean;
   id: string;
   title: string;
   type: string;
@@ -286,6 +289,7 @@ const filterEmptyState = queryElement<HTMLDivElement>("#filterEmptyState");
 const resetEmptyFilters = queryElement<HTMLButtonElement>("#resetEmptyFilters");
 const rowContextMenu = queryElement<HTMLDivElement>("#rowContextMenu");
 const createBeadAction = queryElement<HTMLButtonElement>("#createBeadAction");
+const editLocalTaskAction = queryElement<HTMLButtonElement>("#editLocalTaskAction");
 const closeBeadAction = queryElement<HTMLButtonElement>("#closeBeadAction");
 const stats = queryElement<HTMLDivElement>("#stats");
 const refreshButton = queryElement<HTMLButtonElement>("#refresh");
@@ -723,6 +727,8 @@ function renderCurrentPlanPreview() {
   }
   planDraftPreview.innerHTML = renderPlanDraftPreview({
     ...currentPlanPreview,
+    storageKind:
+      planDraftWorkspace.selectedOptions[0]?.dataset.storageKind === "local" ? "local" : "beads",
     capability: getSelectedPlanCapability()
   });
   planDraftPreview
@@ -1386,9 +1392,12 @@ function captureRenderFocus() {
   const issue = getSelectedIssue();
   const details =
     element instanceof Element ? element.closest(".graphSelectedDetails, .inlineDetailsRow") : null;
-  const actionClass = ["graphSelectedDetailsClose", "commitLink", "openAgentArtifact"].find(
-    (name) => element?.classList.contains(name)
-  );
+  const actionClass = [
+    "graphSelectedDetailsClose",
+    "commitLink",
+    "openAgentArtifact",
+    "editLocalTask"
+  ].find((name) => element?.classList.contains(name));
   const commit = element?.getAttribute("data-commit");
   const artifact = element?.getAttribute("data-artifact-uri");
   return () => {
@@ -1440,7 +1449,7 @@ function applyBeadsRenderUpdate(
     return;
   }
 
-  const sanitizedHtml = DOMPurify.sanitize(message.html);
+  const sanitizedHtml = DOMPurify.sanitize(message.html, { WHOLE_DOCUMENT: true });
   const parsed = new DOMParser().parseFromString(sanitizedHtml, "text/html");
   const nextWorkspaceViews = parsed.querySelector<HTMLDivElement>("#beadsWorkspaceViews");
   const nextWarnings = parsed.querySelector<HTMLDivElement>("#beadsWarnings");
@@ -1481,6 +1490,7 @@ function applyBeadsRenderUpdate(
     parsed.body.dataset.syncUnavailableReason || "The active Beads CLI does not provide bd sync.";
   hasSyncWarnings = parsed.body.dataset.hasSyncWarnings === "1";
   document.body.dataset.bdAvailable = bdAvailable ? "1" : "0";
+  document.body.dataset.hasBeadsWorkspaces = parsed.body.dataset.hasBeadsWorkspaces ?? "1";
   document.body.dataset.syncAvailable = syncAvailable ? "1" : "0";
   document.body.dataset.syncUnavailableReason = syncUnavailableReason;
   document.body.dataset.hasSyncWarnings = hasSyncWarnings ? "1" : "0";
@@ -1609,18 +1619,23 @@ function openContextMenu(
   const writeAvailable = section?.dataset.writeAvailable === "1";
   const unavailableReason =
     section?.dataset.writeUnavailableReason ||
-    "Beads write capability has not been confirmed for this workspace.";
+    "Task write capability has not been confirmed for this workspace.";
   createBeadAction.disabled = !writeAvailable || contextMenuWorkspacePath === "";
+  editLocalTaskAction.hidden = item?.storageKind !== "local" || item.synthetic;
+  editLocalTaskAction.disabled = !writeAvailable || item?.editable !== true;
+  editLocalTaskAction.title = writeAvailable
+    ? "Edit title, status, and dependencies"
+    : unavailableReason;
   closeBeadAction.disabled =
     !writeAvailable || item === null || (row?.dataset.status ?? "") === "closed";
-  createBeadAction.title = createBeadAction.disabled ? unavailableReason : "Create a bead";
+  createBeadAction.title = createBeadAction.disabled ? unavailableReason : "Create a task";
   closeBeadAction.title = !writeAvailable
     ? unavailableReason
     : item === null
-      ? "Select a bead to close."
+      ? "Select a task to close."
       : (row?.dataset.status ?? "") === "closed"
-        ? "This bead is already closed."
-        : "Close this bead";
+        ? "This task is already closed."
+        : "Close this task";
   rowContextMenu.classList.add("open");
   const menuRect = rowContextMenu.getBoundingClientRect();
   const viewportMargin = 4;
@@ -1721,7 +1736,9 @@ function handleMenuKeydown(menu: HTMLElement, event: KeyboardEvent, close: () =>
   if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
     return;
   }
-  const buttons = Array.from(menu.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+  const buttons = Array.from(
+    menu.querySelectorAll<HTMLButtonElement>("button:not(:disabled):not([hidden])")
+  );
   if (buttons.length === 0) {
     return;
   }
@@ -1866,6 +1883,9 @@ function renderDetailsMarkup(item: BeadRowItem) {
       : "",
     item.parallelizable
       ? `<span class="detailPill">${escapeHtml(item.parallelizableSource === "ready" ? "Parallel ready" : "Parallel OK")}</span>`
+      : "",
+    item.storageKind === "local" && !item.synthetic
+      ? `<button class="editLocalTask detailPill" type="button" data-edit-task-id="${escapeHtml(item.id)}" data-edit-workspace="${escapeHtml(item.workspacePath ?? "")}"${item.editable ? "" : " disabled"}>Edit task</button>`
       : "",
     item.readyByBd ? '<span class="detailPill">Ready confirmed</span>' : "",
     provider !== "-" ? `<span class="detailPill">Provider ${escapeHtml(provider)}</span>` : "",
@@ -3910,7 +3930,7 @@ generatePlanDraftWithAi.addEventListener("click", () => {
     return;
   }
   if (workspacePath === "") {
-    setPlanGenerationStatus("error", "Choose an initialized Beads workspace first.");
+    setPlanGenerationStatus("error", "Choose a workspace folder first.");
     return;
   }
 
@@ -4042,6 +4062,18 @@ document.addEventListener("click", (event) => {
   if (!target.closest(".contextMenu")) {
     closeContextMenu();
   }
+  const editButton = target.closest<HTMLButtonElement>(".editLocalTask");
+  if (editButton !== null) {
+    event.preventDefault();
+    if (!editButton.disabled) {
+      postEditLocalTask(
+        editButton.dataset.editWorkspace ?? "",
+        editButton.dataset.editTaskId ?? "",
+        editButton
+      );
+    }
+    return;
+  }
   const artifactButton = target.closest(".openAgentArtifact") as HTMLButtonElement | null;
   if (artifactButton !== null) {
     event.preventDefault();
@@ -4132,6 +4164,39 @@ function postCreateBead(workspacePath: string, trigger?: HTMLButtonElement) {
   }
   vscode.postMessage({ command: "createBead", workspacePath, clientActionId });
 }
+
+function postEditLocalTask(workspacePath: string, issueId: string, trigger: HTMLButtonElement) {
+  if (workspacePath === "" || issueId === "") {
+    return;
+  }
+  const matchingButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>(".editLocalTask")
+  ).filter(
+    (button) =>
+      button.dataset.editWorkspace === workspacePath && button.dataset.editTaskId === issueId
+  );
+  if (!matchingButtons.includes(trigger)) {
+    matchingButtons.push(trigger);
+  }
+  const clientActionId = beginClientAction(
+    `edit-local-task:${workspacePath}:${issueId}`,
+    matchingButtons,
+    "Editing…"
+  );
+  if (clientActionId !== null) {
+    vscode.postMessage({ command: "editLocalTask", workspacePath, issueId, clientActionId });
+  }
+}
+
+editLocalTaskAction.addEventListener("click", () => {
+  if (editLocalTaskAction.disabled || contextMenuRow === null) {
+    return;
+  }
+  const workspacePath = contextMenuRow.dataset.workspacePath ?? "";
+  const issueId = contextMenuRow.dataset.id ?? "";
+  closeContextMenu();
+  postEditLocalTask(workspacePath, issueId, editLocalTaskAction);
+});
 
 createBeadAction.addEventListener("click", () => {
   const workspacePath = contextMenuWorkspacePath;

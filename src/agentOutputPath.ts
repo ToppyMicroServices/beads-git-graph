@@ -57,7 +57,7 @@ export function normalizeAgentOutputPath(value: unknown) {
   );
   if (
     hasUnsafeCrossPlatformSegment ||
-    [".git", ".beads", ".vscode", ".codex", ".agents", ".github"].includes(first) ||
+    [".git", ".beads", ".taskgraph", ".vscode", ".codex", ".agents", ".github"].includes(first) ||
     lowerSegments.some(
       (segment) => segment === ".env" || segment.startsWith(".env.") || segment === "agents.md"
     )

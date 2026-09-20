@@ -366,7 +366,8 @@ function renderAgentWorkCard(
   agentAliases: ReadonlyMap<string, string>,
   writeAvailable: boolean,
   writeUnavailableReason: string,
-  readinessKnown: boolean
+  readinessKnown: boolean,
+  isLocal = false
 ) {
   const item = entry.item;
   const normalizedStatus = normalizeBeadStatus(item.status);
@@ -428,7 +429,9 @@ function renderAgentWorkCard(
     item.dependencyIds.length > 0
   ) {
     const mergeTitle = writeAvailable
-      ? "Check agent worktrees, auto-merge their PRs, then sync Beads."
+      ? isLocal
+        ? "Check agent worktrees and auto-merge their PRs."
+        : "Check agent worktrees, auto-merge their PRs, then sync Beads."
       : writeUnavailableReason;
     primaryAction = `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="${escapeHtml(mergeTitle)}" aria-label="${escapeHtml(`Merge PRs for ${taskActionContext}`)}"${writeAvailable ? "" : " disabled"}>Merge PRs</button>`;
   }
@@ -444,7 +447,8 @@ function renderAgentWorkQueue(
   writeUnavailableReason: string,
   readinessKnown: boolean,
   diagnosticHtml: string,
-  executionSnapshot?: AgentExecutionSnapshot
+  executionSnapshot?: AgentExecutionSnapshot,
+  isLocal = false
 ) {
   const queue = buildAgentWorkQueue(items);
   const overview = AGENT_WORK_LANES.map(
@@ -460,14 +464,15 @@ function renderAgentWorkQueue(
           agentAliases,
           writeAvailable,
           writeUnavailableReason,
-          readinessKnown
+          readinessKnown,
+          isLocal
         )
       )
       .join("");
     return `<div class="agentWorkLane" data-work-lane="${lane}"><div class="agentWorkLaneHeader"><span>${AGENT_WORK_LANE_LABELS[lane]}</span><span class="agentWorkLaneCount">${queue.counts[lane]}</span></div><div class="agentWorkLaneCards">${cards}<div class="agentWorkLaneEmpty"${queue.counts[lane] === 0 ? "" : " hidden"}>No matching work</div></div></div>`;
   }).join("");
 
-  return `<div class="agentWorkQueue" data-workspace-path="${escapeHtml(workspacePath)}">${diagnosticHtml}<div class="agentWorkQueueHeader"><div><div class="agentWorkQueueTitle">Agent Work Queue</div><div class="agentWorkQueueHint">Derived from Beads status and recorded Git/PR metadata. “Recorded in progress” is not live-agent monitoring.</div></div><div class="agentWorkOverview">${overview}</div></div>${renderAgentPlan(items, workspacePath, agentAliases)}${renderAgentExecutionPanel(workspacePath, executionSnapshot)}<div class="agentWorkDetailsHost"></div><div class="agentWorkLanes">${lanes}</div></div>`;
+  return `<div class="agentWorkQueue" data-workspace-path="${escapeHtml(workspacePath)}">${diagnosticHtml}<div class="agentWorkQueueHeader"><div><div class="agentWorkQueueTitle">Agent Work Queue</div><div class="agentWorkQueueHint">Derived from ${isLocal ? "task" : "Beads"} status and recorded Git/PR metadata. “Recorded in progress” is not live-agent monitoring.</div></div><div class="agentWorkOverview">${overview}</div></div>${renderAgentPlan(items, workspacePath, agentAliases)}${renderAgentExecutionPanel(workspacePath, executionSnapshot)}<div class="agentWorkDetailsHost"></div><div class="agentWorkLanes">${lanes}</div></div>`;
 }
 
 function renderBeadsDependencyGraph(
@@ -476,7 +481,8 @@ function renderBeadsDependencyGraph(
   agentAliases: ReadonlyMap<string, string>,
   writeAvailable: boolean,
   writeUnavailableReason: string,
-  readinessKnown: boolean
+  readinessKnown: boolean,
+  isLocal = false
 ) {
   const items = hierarchyItems.map((entry) => entry.item);
   const graph = buildBeadDependencyGraph(items);
@@ -627,9 +633,9 @@ function renderBeadsDependencyGraph(
         const executionStateLabel = getExecutionStateLabel(item, normalizedStatus, derivedMerge);
         const graphWorkBadge =
           graphWorkFocus === "running"
-            ? '<span class="graphWorkBadge running" title="Beads records this task as in progress. Live agent activity is not confirmed."><span class="graphRunningDot" aria-hidden="true"></span>Now · Recorded</span>'
+            ? `<span class="graphWorkBadge running" title="${isLocal ? "The task is recorded" : "Beads records this task"} as in progress. Live agent activity is not confirmed."><span class="graphRunningDot" aria-hidden="true"></span>Now · Recorded</span>`
             : graphWorkFocus === "next-ready"
-              ? '<span class="graphWorkBadge nextReady" title="bd ready confirms this open task can start now.">Next · Ready</span>'
+              ? `<span class="graphWorkBadge nextReady" title="${isLocal ? "All task dependencies are complete." : "bd ready confirms this open task can start now."}">Next · Ready</span>`
               : "";
         const dependencyWarning = dependencyWarnings.get(item.id) ?? "";
         const mergeRiskWarning = mergeRiskWarnings.get(item.id) ?? "";
@@ -658,7 +664,7 @@ function renderBeadsDependencyGraph(
         const initialDisplay = isDefaultVisibleStatus(normalizedStatus) ? "" : "display:none;";
         const taskActionContext = `${item.id}: ${item.title}`;
         const actionHtml = derivedMerge
-          ? `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="${escapeHtml(writeAvailable ? "Check agent worktrees, auto-merge their PRs, then sync Beads." : writeUnavailableReason)}" aria-label="${escapeHtml(`Merge PRs for ${taskActionContext}`)}"${writeAvailable ? "" : " disabled"}>Merge PRs</button>`
+          ? `<button class="mergeParallelPrs" type="button" data-merge-id="${escapeHtml(item.id)}" data-merge-workspace="${escapeHtml(workspacePath)}" data-merge-title="${escapeHtml(item.title)}" data-merge-dependencies="${escapeHtml(item.dependencyIds.join(","))}" title="${escapeHtml(writeAvailable ? (isLocal ? "Check agent worktrees and auto-merge their PRs." : "Check agent worktrees, auto-merge their PRs, then sync Beads.") : writeUnavailableReason)}" aria-label="${escapeHtml(`Merge PRs for ${taskActionContext}`)}"${writeAvailable ? "" : " disabled"}>Merge PRs</button>`
           : renderStartAiAction("graph", item, workspacePath, startEligibility);
         const graphBadges = [
           executionStateLabel === "" || graphWorkFocus !== "none"
@@ -735,7 +741,7 @@ function renderBeadsDependencyGraph(
           )
           .join("")}</div></details>`
       : "";
-  const graphWorkSummary = `<span class="summaryPill graphRunningSummary${runningCount === 0 ? " isEmpty" : ""}" aria-label="${runningCount} Now, recorded in progress; live activity is not confirmed" title="Beads records these tasks as in progress; this is not a live heartbeat"><span class="graphRunningDot" aria-hidden="true"></span><strong>${runningCount}</strong> Now (recorded)</span><span class="summaryPill graphNextSummary" title="Open tasks confirmed by bd ready"><strong>${nextReadyCount}</strong> Next</span>`;
+  const graphWorkSummary = `<span class="summaryPill graphRunningSummary${runningCount === 0 ? " isEmpty" : ""}" aria-label="${runningCount} Now, recorded in progress; live activity is not confirmed" title="${isLocal ? "These tasks are recorded" : "Beads records these tasks"} as in progress; this is not a live heartbeat"><span class="graphRunningDot" aria-hidden="true"></span><strong>${runningCount}</strong> Now (recorded)</span><span class="summaryPill graphNextSummary" title="${isLocal ? "Open tasks with completed dependencies" : "Open tasks confirmed by bd ready"}"><strong>${nextReadyCount}</strong> Next</span>`;
   const criticalSummary = `<span class="summaryPill criticalSummary" title="${escapeHtml(graph.criticalPathIds.join(" -> "))}"${graph.criticalPathIds.length > 0 ? "" : " hidden"}>${graph.criticalPathIds.length} chain</span>`;
   const cycleSummary = `<span class="summaryPill cycleSummary"${graph.cycleIds.size > 0 ? "" : " hidden"}>${graph.cycleIds.size} cycle</span>`;
   const pathUnavailable = graph.cycleIds.size > 0;
@@ -759,6 +765,16 @@ export function renderBeadsWebviewHtml(
 ) {
   const nonce = getNonce();
   const rows = result.groups;
+  const localWorkspacePaths = new Set(
+    [...rows, ...result.emptyWorkspaces, ...(result.localWorkspaces ?? [])]
+      .filter((workspace) => workspace.storageKind === "local")
+      .map((workspace) => workspace.workspacePath)
+  );
+  const hasBeadsWorkspaces = [
+    ...rows,
+    ...result.emptyWorkspaces,
+    ...result.unavailableWorkspaces
+  ].some((workspace) => workspace.storageKind !== "local");
   const showWorkspaceLabel =
     rows.length + result.emptyWorkspaces.length + result.unavailableWorkspaces.length > 1;
   const scriptUri = webview.asWebviewUri(
@@ -771,12 +787,8 @@ export function renderBeadsWebviewHtml(
     result.emptyWorkspaces.length === 0 &&
     result.unavailableWorkspaces.length === 0
   ) {
-    if (!result.bdExecutableStatus.available) {
-      bodyHtml = `<div class="empty">The Beads CLI could not be found. Set <code>beads-git-graph.bdPath</code> to a valid executable or install <code>bd</code> so it is available on PATH.${result.bdExecutableStatus.message ? `<br><br>${escapeHtml(result.bdExecutableStatus.message)}` : ""}</div>`;
-    } else {
-      bodyHtml =
-        '<div class="empty">Beads is not initialized in this workspace. Run <code>bd init</code> to create <code>.beads</code>, or add legacy <code>.beads/beads.json</code> or <code>.beads/issues.jsonl</code> data.</div>';
-    }
+    bodyHtml =
+      '<div class="empty">Open a folder to create tasks, connect dependencies, and plan AI work.</div>';
   } else {
     const agentAliases = buildAgentAliasMap(
       rows.flatMap((group) =>
@@ -785,31 +797,32 @@ export function renderBeadsWebviewHtml(
     );
     const populatedHtml = rows
       .map((group) => {
+        const isLocal = group.storageKind === "local";
+        const taskStoreAvailable = isLocal || result.bdExecutableStatus.available;
         const agentWriteCapability = (result.agentWriteCapabilities ?? []).find(
           (entry) => entry.workspacePath === group.workspacePath
         )?.capability;
         const workspaceWriteCapability = (result.planImportCapabilities ?? []).find(
           (entry) => entry.workspacePath === group.workspacePath
         )?.capability;
-        const writeAvailable =
-          result.bdExecutableStatus.available && agentWriteCapability?.supported === true;
+        const writeAvailable = taskStoreAvailable && agentWriteCapability?.supported === true;
         const writeUnavailableReason = writeAvailable
           ? ""
-          : !result.bdExecutableStatus.available
+          : !taskStoreAvailable
             ? "The Beads CLI is unavailable; configure bd before changing task state."
             : agentWriteCapability?.supported === false
-              ? `AI actions are disabled because Beads cannot be updated safely: ${agentWriteCapability.reason}`
-              : "AI actions are unavailable because Beads write capability is unconfirmed.";
+              ? `AI actions are disabled because ${isLocal ? "tasks" : "Beads"} cannot be updated safely: ${agentWriteCapability.reason}`
+              : `AI actions are unavailable because ${isLocal ? "task" : "Beads"} write capability is unconfirmed.`;
         const readinessKnown = group.readinessKnown;
         const workspaceWriteAvailable =
-          result.bdExecutableStatus.available && workspaceWriteCapability?.supported === true;
+          taskStoreAvailable && workspaceWriteCapability?.supported === true;
         const workspaceWriteUnavailableReason = workspaceWriteAvailable
           ? ""
-          : !result.bdExecutableStatus.available
+          : !taskStoreAvailable
             ? "The Beads CLI is unavailable; configure bd before changing task state."
             : workspaceWriteCapability?.supported === false
-              ? `Beads changes are disabled: ${workspaceWriteCapability.reason}`
-              : "Beads changes are disabled because write capability is unconfirmed.";
+              ? `${isLocal ? "Task" : "Beads"} changes are disabled: ${workspaceWriteCapability.reason}`
+              : `${isLocal ? "Task" : "Beads"} changes are disabled because write capability is unconfirmed.`;
         const writeCapabilityWarning =
           agentWriteCapability?.supported === false
             ? `<div class="warnings agentWriteWarning"><strong>AI actions disabled</strong><div>${escapeHtml(agentWriteCapability.reason)}</div></div>`
@@ -842,7 +855,7 @@ export function renderBeadsWebviewHtml(
             );
           }
         }
-        const workspaceTitle = showWorkspaceLabel ? group.workspace : "Beads";
+        const workspaceTitle = showWorkspaceLabel ? group.workspace : "Tasks";
         const parallelReadyCandidates = flatItems
           .map((entry) => entry.item)
           .filter((item) => {
@@ -890,7 +903,9 @@ export function renderBeadsWebviewHtml(
                   : item.parallelizableSuppressed
                     ? "marked serial"
                     : !item.readyByBd
-                      ? "not reported ready by bd"
+                      ? isLocal
+                        ? "dependencies are not complete"
+                        : "not reported ready by bd"
                       : "fewer than two ready tasks";
             return { issueId: item.id, title: item.title, reason };
           });
@@ -1008,6 +1023,9 @@ export function renderBeadsWebviewHtml(
                 : `<span class="parallelMarker ${escapeHtml(item.parallelizableSource === "ready" ? "readyParallelMarker" : "explicitParallelMarker")}" title="${escapeHtml(parallelTitle)}">${escapeHtml(parallelLabel)}</span>`;
             const serializedItem = {
               ...item,
+              storageKind: group.storageKind ?? "beads",
+              workspacePath: group.workspacePath,
+              editable: isLocal && workspaceWriteAvailable && !item.synthetic,
               normalizedStatus,
               displayAgent: rowAgentLabel,
               displayAssignee: rowAssigneeLabel === "" ? "-" : rowAssigneeLabel,
@@ -1047,7 +1065,8 @@ export function renderBeadsWebviewHtml(
           agentAliases,
           writeAvailable,
           writeUnavailableReason,
-          readinessKnown
+          readinessKnown,
+          isLocal
         );
         const agentWorkQueueHtml = renderAgentWorkQueue(
           flatItems.map((entry) => entry.item),
@@ -1057,7 +1076,8 @@ export function renderBeadsWebviewHtml(
           writeUnavailableReason,
           readinessKnown,
           writeCapabilityWarning,
-          result.executionSnapshot
+          result.executionSnapshot,
+          isLocal
         );
         const createAction = renderWorkspaceCreateAction(
           group.workspacePath,
@@ -1070,31 +1090,32 @@ export function renderBeadsWebviewHtml(
             ? `<button class="startParallelBeads workspaceAction" type="button" data-start-parallel-workspace="${escapeHtml(group.workspacePath)}" data-start-parallel-items="${encodeJsonData(parallelStartTargets)}" data-start-parallel-skipped="${encodeJsonData(skippedParallelTargets)}" title="${escapeHtml(writeAvailable ? `Assign and start the parallel-ready tasks currently visible through filters${skippedParallelTargets.length > 0 ? `; ${skippedParallelTargets.length} visible active task(s) may be skipped with reasons` : ""}` : writeUnavailableReason)}" aria-label="${escapeHtml(`Start ${parallelStartTargets.length} currently visible parallel-ready tasks in ${workspaceTitle}`)}"${writeAvailable ? "" : " disabled"}>${parallelStartTargets.length} Start Parallel</button>`
             : "";
 
-        return `<section data-workspace-path="${escapeHtml(group.workspacePath)}" data-write-available="${workspaceWriteAvailable ? "1" : "0"}" data-write-unavailable-reason="${escapeHtml(workspaceWriteUnavailableReason)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceHeaderRight"><div class="workspaceSummary">${workspaceSummary}</div>${createAction}${parallelAction}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th aria-sort="none"><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th aria-sort="none"><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th aria-sort="none"><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated"> </span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div>${graphHtml}${agentWorkQueueHtml}</section>`;
+        return `<section data-storage-kind="${group.storageKind ?? "beads"}" data-workspace-path="${escapeHtml(group.workspacePath)}" data-write-available="${workspaceWriteAvailable ? "1" : "0"}" data-write-unavailable-reason="${escapeHtml(workspaceWriteUnavailableReason)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceHeaderRight"><div class="workspaceSummary">${workspaceSummary}</div>${createAction}${parallelAction}</div></div><div class="tableWrap"><svg class="hierarchyOverlay" aria-hidden="true"></svg><table><thead><tr><th aria-sort="none"><button class="sortToggle" data-sort-key="type" type="button" title="Sort by type">Type <span class="sortIcon" data-sort-key="type"> </span></button></th><th>Parallel</th><th>Title</th><th>Status</th><th aria-sort="none"><button class="sortToggle" data-sort-key="priority" type="button" title="Sort by priority">Priority <span class="sortIcon" data-sort-key="priority"> </span></button></th><th aria-sort="none"><button class="sortToggle" data-sort-key="updated" type="button" title="Sort by updated">Updated <span class="sortIcon" data-sort-key="updated"> </span></button></th></tr></thead><tbody>${itemRows}</tbody></table></div>${graphHtml}${agentWorkQueueHtml}</section>`;
       })
       .join("");
     const emptyHtml = result.emptyWorkspaces
       .map((workspace) => {
+        const isLocal = workspace.storageKind === "local";
+        const taskStoreAvailable = isLocal || result.bdExecutableStatus.available;
         const capability = (result.planImportCapabilities ?? []).find(
           (entry) => entry.workspacePath === workspace.workspacePath
         )?.capability;
-        const writeAvailable =
-          result.bdExecutableStatus.available && capability?.supported === true;
+        const writeAvailable = taskStoreAvailable && capability?.supported === true;
         const unavailableReason = writeAvailable
           ? ""
-          : !result.bdExecutableStatus.available
+          : !taskStoreAvailable
             ? "The Beads CLI is unavailable; configure bd before changing task state."
             : capability?.supported === false
-              ? `Beads changes are disabled: ${capability.reason}`
-              : "Beads changes are disabled because write capability is unconfirmed.";
-        const workspaceTitle = showWorkspaceLabel ? workspace.workspace : "Beads";
+              ? `${isLocal ? "Task" : "Beads"} changes are disabled: ${capability.reason}`
+              : `${isLocal ? "Task" : "Beads"} changes are disabled because write capability is unconfirmed.`;
+        const workspaceTitle = showWorkspaceLabel ? workspace.workspace : "Tasks";
         const createAction = renderWorkspaceCreateAction(
           workspace.workspacePath,
           workspaceTitle,
           writeAvailable,
           unavailableReason
         );
-        return `<section data-workspace-path="${escapeHtml(workspace.workspacePath)}" data-write-available="${writeAvailable ? "1" : "0"}" data-write-unavailable-reason="${escapeHtml(unavailableReason)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceHeaderRight">${createAction}</div></div><div class="empty">No tasks exist yet. Use <strong>Create task</strong> to add the first one.${writeAvailable ? "" : `<div class="emptyActionReason">${escapeHtml(unavailableReason)}</div>`}</div></section>`;
+        return `<section data-storage-kind="${workspace.storageKind ?? "beads"}" data-workspace-path="${escapeHtml(workspace.workspacePath)}" data-write-available="${writeAvailable ? "1" : "0"}" data-write-unavailable-reason="${escapeHtml(unavailableReason)}"><div class="workspaceHeader"><div class="workspaceName">${escapeHtml(workspaceTitle)}</div><div class="workspaceHeaderRight">${createAction}</div></div><div class="empty">No tasks exist yet. Use <strong>Create task</strong> to add the first one.${isLocal ? " You can also open <strong>Plan</strong> to review and import a task plan. Tasks and dependencies are saved in <code>.taskgraph/tasks.json</code> when you first create or import tasks. No Beads installation is needed." : ""}${writeAvailable ? "" : `<div class="emptyActionReason">${escapeHtml(unavailableReason)}</div>`}</div></section>`;
       })
       .join("");
     const unavailableHtml = result.unavailableWorkspaces
@@ -1107,7 +1128,9 @@ export function renderBeadsWebviewHtml(
     bodyHtml = populatedHtml + emptyHtml + unavailableHtml;
   }
 
-  const syncCapabilities = result.syncCapabilities ?? [];
+  const syncCapabilities = (result.syncCapabilities ?? []).filter(
+    (entry) => !localWorkspacePaths.has(entry.workspacePath)
+  );
   const syncAvailable =
     result.bdExecutableStatus.available &&
     syncCapabilities.some((entry) => entry.capability.supported);
@@ -1133,7 +1156,7 @@ export function renderBeadsWebviewHtml(
               ? "The Beads CLI is unavailable; configure bd before syncing."
               : (workspaceSyncCapability?.reason ??
                 "The active Beads CLI does not provide bd sync.");
-            return `<li>${escapeHtml(warning.source)}: ${escapeHtml(warning.message)}${warning.workspacePath ? ` <button class="warningAction" type="button" data-sync-workspace="${escapeHtml(warning.workspacePath)}" title="${escapeHtml(workspaceSyncAvailable ? "Sync this Beads workspace." : workspaceSyncReason)}"${workspaceSyncAvailable ? "" : " disabled"}>Sync Now</button>` : ""}</li>`;
+            return `<li>${escapeHtml(warning.source)}: ${escapeHtml(warning.message)}${warning.workspacePath && !localWorkspacePaths.has(warning.workspacePath) ? ` <button class="warningAction" type="button" data-sync-workspace="${escapeHtml(warning.workspacePath)}" title="${escapeHtml(workspaceSyncAvailable ? "Sync this Beads workspace." : workspaceSyncReason)}"${workspaceSyncAvailable ? "" : " disabled"}>Sync Now</button>` : ""}</li>`;
           })
           .join("")}</ul></div>`
       : "";
@@ -1144,14 +1167,14 @@ export function renderBeadsWebviewHtml(
   const planImportCapabilities = result.planImportCapabilities ?? [];
   const planWorkspaceOptions =
     planImportCapabilities.length === 0
-      ? '<option value="">No initialized Beads workspace</option>'
+      ? '<option value="">Open a workspace folder</option>'
       : planImportCapabilities
           .map(
             ({ workspace, workspacePath, capability }) =>
-              `<option value="${escapeHtml(workspacePath)}" data-plan-capability="${escapeHtml(encodeURIComponent(JSON.stringify(capability)))}">${escapeHtml(workspace)}</option>`
+              `<option value="${escapeHtml(workspacePath)}" data-storage-kind="${localWorkspacePaths.has(workspacePath) ? "local" : "beads"}" data-plan-capability="${escapeHtml(encodeURIComponent(JSON.stringify(capability)))}">${escapeHtml(workspace)}</option>`
           )
           .join("");
-  const planDraftHtml = `<section id="planDraftView" aria-label="AI task planning"><div class="planDraftHeader"><div><div class="workspaceName">AI Plan &amp; Parallel Run</div><p>Turn one goal into dependency-linked tasks, review the draft, then import and run only ready work.</p></div><label>Target workspace<select id="planDraftWorkspace"${planImportCapabilities.length === 0 ? " disabled" : ""}>${planWorkspaceOptions}</select></label></div><ol class="planFlow" aria-label="Planning workflow"><li><strong>1</strong><span>Describe goal</span></li><li><strong>2</strong><span>Review AI draft</span></li><li><strong>3</strong><span>Import to Beads</span></li><li><strong>4</strong><span>Run ready tasks</span></li></ol><div class="planGoalComposer"><label for="planGoalText">What should this project accomplish?</label><textarea id="planGoalText" maxlength="4000" placeholder="Example: Compare three implementation approaches, build the selected one, and have a separate AI review the result."></textarea><div class="planGoalActions"><button id="generatePlanDraftWithAi" type="button"${planImportCapabilities.length === 0 ? ' title="Open an initialized Beads workspace first." disabled' : ""}>Generate task plan with AI</button><span id="planGenerationStatus" role="status" aria-live="polite">Nothing is sent until you choose Generate and approve the provider request.</span></div><p class="planPrivacyHint">AI generation creates an editable local draft only. It never imports tasks or writes Beads automatically. Do not include credentials or other secrets; response artifacts and imported Beads records are stored as plain text and Beads records may be Git-tracked.</p></div><details class="planAdvanced"><summary>Advanced: view or edit Plan Draft JSON</summary><div class="planDraftEditor"><label for="planDraftText">Draft JSON</label><textarea id="planDraftText" spellcheck="false" placeholder="Generate a draft, paste version 1 JSON, or load the example."></textarea><div class="planDraftEditorActions"><button id="loadPlanDraftExample" type="button">Load example</button><button id="previewPlanDraft" type="button">Preview edited JSON</button></div></div></details><div id="planDraftPreview" tabindex="-1" aria-label="Plan draft preview"><div class="empty">Generate or preview a draft to see tasks, validation errors, dependency levels, the longest dependency chain, parallel candidates, provider/model transitions, and pending mutations.</div></div></section>`;
+  const planDraftHtml = `<section id="planDraftView" aria-label="AI task planning"><div class="planDraftHeader"><div><div class="workspaceName">AI Plan &amp; Parallel Run</div><p>Turn one goal into dependency-linked tasks, review the draft, then import and run only ready work.</p></div><label>Target workspace<select id="planDraftWorkspace"${planImportCapabilities.length === 0 ? " disabled" : ""}>${planWorkspaceOptions}</select></label></div><ol class="planFlow" aria-label="Planning workflow"><li><strong>1</strong><span>Describe goal</span></li><li><strong>2</strong><span>Review AI draft</span></li><li><strong>3</strong><span>Import tasks</span></li><li><strong>4</strong><span>Run ready tasks</span></li></ol><div class="planGoalComposer"><label for="planGoalText">What should this project accomplish?</label><textarea id="planGoalText" maxlength="4000" placeholder="Example: Compare three implementation approaches, build the selected one, and have a separate AI review the result."></textarea><div class="planGoalActions"><button id="generatePlanDraftWithAi" type="button"${planImportCapabilities.length === 0 ? ' title="Open a workspace folder first." disabled' : ""}>Generate task plan with AI</button><span id="planGenerationStatus" role="status" aria-live="polite">Nothing is sent until you choose Generate and approve the provider request.</span></div><p class="planPrivacyHint">AI generation creates an editable local draft only. It never imports tasks automatically. Do not include credentials or other secrets; response artifacts and imported task records are stored as plain text and task records may be Git-tracked.</p></div><details class="planAdvanced"><summary>Advanced: view or edit Plan Draft JSON</summary><div class="planDraftEditor"><label for="planDraftText">Draft JSON</label><textarea id="planDraftText" spellcheck="false" placeholder="Generate a draft, paste version 1 JSON, or load the example."></textarea><div class="planDraftEditorActions"><button id="loadPlanDraftExample" type="button">Load example</button><button id="previewPlanDraft" type="button">Preview edited JSON</button></div></div></details><div id="planDraftPreview" tabindex="-1" aria-label="Plan draft preview"><div class="empty">Generate or preview a draft to see tasks, validation errors, dependency levels, the longest dependency chain, parallel candidates, provider/model transitions, and pending mutations.</div></div></section>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1162,6 +1185,7 @@ export function renderBeadsWebviewHtml(
 <style>
 body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:6px;background:var(--vscode-editor-background);font-size:13px;}
 body[data-view-mode="loading"]>*{visibility:hidden;}
+body[data-has-beads-workspaces="0"] #syncBeads{display:none;}
 [hidden]{display:none!important;}
 .toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px;margin-bottom:6px;padding:6px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));box-shadow:0 1px 4px rgba(0,0,0,.12);}
 .toolbarMain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;}
@@ -1572,6 +1596,7 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 .planMutationPreview summary{cursor:pointer;font-weight:700;}
 .planMutationPreview ol{display:grid;gap:7px;margin:8px 0 0;padding-left:22px;}
 .planMutationPreview li span{display:inline-block;min-width:95px;font-size:10px;font-weight:750;text-transform:uppercase;color:var(--vscode-descriptionForeground);}
+.planMutationPreview li.localTaskMutation span{display:block;font-size:12px;font-weight:400;text-transform:none;overflow-wrap:anywhere;}
 .planMutationPreview code{display:block;margin-top:2px;overflow-wrap:anywhere;white-space:pre-wrap;}
 @media (prefers-reduced-motion:reduce){
   .graphRunningDot{animation:none;opacity:1;}
@@ -1631,10 +1656,10 @@ th:nth-child(1){width:52px;}th:nth-child(2){width:72px;}th:nth-child(4){width:78
 code{font-family:var(--vscode-editor-font-family);}
 </style>
 </head>
-<body data-bd-available="${result.bdExecutableStatus.available ? "1" : "0"}" data-sync-available="${syncAvailable ? "1" : "0"}" data-sync-unavailable-reason="${escapeHtml(syncUnavailableReason)}" data-has-sync-warnings="${result.warnings.length > 0 ? "1" : "0"}" data-view-mode="loading">
+<body data-has-beads-workspaces="${hasBeadsWorkspaces ? "1" : "0"}" data-bd-available="${result.bdExecutableStatus.available ? "1" : "0"}" data-sync-available="${syncAvailable ? "1" : "0"}" data-sync-unavailable-reason="${escapeHtml(syncUnavailableReason)}" data-has-sync-warnings="${result.warnings.length > 0 ? "1" : "0"}" data-view-mode="loading">
 <div class="toolbar">
   <div class="toolbarMain">
-    <div class="viewToggle" role="group" aria-label="Beads view mode">
+    <div class="viewToggle" role="group" aria-label="Task view mode">
       <button id="tableView" type="button">Table</button>
       <button id="graphView" type="button">Graph</button>
       <button id="controlView" type="button">Manage</button>
@@ -1657,7 +1682,7 @@ code{font-family:var(--vscode-editor-font-family);}
   </div>
   <div class="toolbarActions">
     <button id="syncBeads" class="actionBtn" type="button" title="${escapeHtml(syncAvailable ? "Sync Beads" : syncUnavailableReason)}" aria-label="${escapeHtml(syncAvailable ? "Sync Beads" : `Sync unavailable: ${syncUnavailableReason}`)}"${syncAvailable ? "" : " disabled"}>
-      <span class="toolbarActionLabel">Sync</span>
+      <span class="toolbarActionLabel">Sync Beads</span>
     </button>
     <button id="openGitGraph" class="actionBtn" type="button" title="Git Graph" aria-label="Git Graph">
       <svg class="toolbarIcon switchIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -1677,7 +1702,7 @@ code{font-family:var(--vscode-editor-font-family);}
   </div>
 </div>
 <div class="toolbarStatsRow"><div id="filterEmptyState" class="filterEmptyState" role="status" hidden><span>No tasks match the current status filters.</span><button id="resetEmptyFilters" type="button">Reset filters</button></div><div class="stats" id="stats" role="status" aria-live="polite"></div></div>
-<div id="rowContextMenu" class="contextMenu" role="menu"><button id="createBeadAction" type="button" role="menuitem">Create</button><button id="closeBeadAction" type="button" role="menuitem">Close</button></div>
+<div id="rowContextMenu" class="contextMenu" role="menu"><button id="createBeadAction" type="button" role="menuitem">Create task</button><button id="editLocalTaskAction" type="button" role="menuitem" hidden>Edit task</button><button id="closeBeadAction" type="button" role="menuitem">Close</button></div>
 <section id="parallelBatchResult" class="parallelBatchResult" aria-label="Latest AI task batch" aria-live="polite" hidden></section>
 <div id="agentExecutionState" data-snapshot="${encodeJsonData(result.executionSnapshot ?? null)}" hidden></div>
 <div id="beadsWorkspaceViews">${bodyHtml}</div>
