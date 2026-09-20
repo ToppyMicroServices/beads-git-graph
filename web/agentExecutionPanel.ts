@@ -72,7 +72,7 @@ export function createAgentExecutionPanelController(root: Document) {
         setText(phase, EXECUTION_PHASE_LABELS[entry.phase]);
         setText(
           meta,
-          `Requested: ${getAgentProviderDefinition(entry.provider).label} · ${getObservedModelLabel(entry.model)}`
+          `Observed: ${getAgentProviderDefinition(entry.provider).label} · ${getObservedModelLabel(entry.model)}`
         );
         setAttribute(time, "datetime", entry.updatedAt);
         setText(time, `Observed ${entry.updatedAt}`);

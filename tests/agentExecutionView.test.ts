@@ -67,7 +67,7 @@ describe("execution Manage rendering", () => {
     );
   });
 
-  it("shows requested assignment, escaped text, and recorded status without inferring execution", () => {
+  it("shows preferred dispatch, escaped text, and recorded status without inferring execution", () => {
     const html = renderAgentPlan(
       [
         task("one", {
@@ -81,7 +81,9 @@ describe("execution Manage rendering", () => {
       "/workspace",
       new Map()
     );
-    expect(html).toContain("Requested: OpenAI API / small-model · Owner: worker");
+    expect(html).toContain(
+      "Dispatch: Preferred · Requested: OpenAI API / small-model · Owner: worker"
+    );
     expect(html).toContain("Recorded: In Progress");
     expect(html).toContain("&lt;script&gt;unsafe&lt;/script&gt;");
     expect(html).not.toContain("<script>");
@@ -91,9 +93,34 @@ describe("execution Manage rendering", () => {
     );
   });
 
-  it("does not substitute an owner for an unspecified requested model", () => {
+  it("uses automatic dispatch by default and does not require an assignment", () => {
+    const html = renderAgentPlan([task("one")], "/workspace", new Map());
+    expect(html).toContain("Dispatch: Automatic");
+    expect(html).not.toContain("Owner: Unassigned");
+    expect(html).toContain('data-dispatch-policy="automatic"');
+    expect(html).toContain("1 automatic · 0 preferred · 0 pinned");
+  });
+
+  it("does not substitute an owner for an unspecified preferred model", () => {
     const html = renderAgentPlan([task("one", { agent: "worker" })], "/workspace", new Map());
-    expect(html).toContain("Requested: Unassigned / Unassigned · Owner: worker");
+    expect(html).toContain(
+      "Dispatch: Preferred · Requested: Unassigned / Unassigned · Owner: worker"
+    );
+  });
+
+  it("honors an explicit pinned or automatic dispatch policy", () => {
+    const html = renderAgentPlan(
+      [
+        task("pinned", { dispatchPolicy: "pinned", provider: "openai", providerExplicit: true }),
+        task("automatic", { dispatchPolicy: "automatic", agent: "fallback-worker" })
+      ],
+      "/workspace",
+      new Map()
+    );
+    expect(html).toContain("Dispatch: Pinned · Requested: OpenAI API / Unassigned");
+    expect(html).toContain('data-plan-issue-id="automatic"');
+    expect(html).toContain('data-dispatch-policy="automatic"');
+    expect(html).toContain("1 automatic · 0 preferred · 1 pinned");
   });
 
   it("keeps missing parents and parent cycles visible once", () => {
@@ -166,6 +193,7 @@ describe("execution Manage rendering", () => {
     });
     expect(html).toContain("Model identity hidden");
     expect(html).not.toContain("person@example.com");
+    expect(html).toContain("Observed: OpenAI API · Model identity hidden");
     expect(html).toContain(
       '<time class="agentExecutionTime" datetime="2026-09-13T00:00:01Z">Observed 2026-09-13T00:00:01Z</time>'
     );

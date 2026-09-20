@@ -27,6 +27,7 @@ export interface BeadItem {
   parallelizableSource: "explicit" | "ready" | "";
   parallelizableSuppressed: boolean;
   agent: string;
+  dispatchPolicy?: AgentDispatchPolicy;
   provider: AgentProviderId;
   providerExplicit?: boolean;
   model: string;
@@ -47,6 +48,8 @@ export interface BeadItem {
   synthetic: boolean;
   syntheticKind: "" | "parallel-pr-merge";
 }
+
+export type AgentDispatchPolicy = "automatic" | "preferred" | "pinned";
 
 export interface BeadHierarchyItem {
   item: BeadItem;
@@ -274,6 +277,21 @@ export function beadPickAgent(record: Record<string, unknown>) {
     ["agent", "agent_id", "agentId", "assigned_agent", "assignedAgent"],
     ["agent", "agent-id", "assigned-agent"]
   );
+}
+
+export function beadPickDispatchPolicy(
+  record: Record<string, unknown>
+): AgentDispatchPolicy | undefined {
+  const raw = beadPickStructuredString(
+    record,
+    ["dispatch_policy", "dispatchPolicy", "assignment_policy", "assignmentPolicy"],
+    ["dispatch", "dispatch-policy", "assignment", "assignment-policy"]
+  );
+  const normalized = normalizeToken(raw);
+  if (["automatic", "auto"].includes(normalized)) return "automatic";
+  if (["preferred", "prefer"].includes(normalized)) return "preferred";
+  if (["pinned", "pin", "required"].includes(normalized)) return "pinned";
+  return undefined;
 }
 
 function beadPickProviderEvidence(record: Record<string, unknown>): {
@@ -630,6 +648,7 @@ export function toBeadItem(item: unknown): BeadItem | null {
   const title = beadPickString(record, ["title", "summary", "name", "description"]);
   const parallelizablePreference = beadPickParallelizablePreference(record);
   const providerEvidence = beadPickProviderEvidence(record);
+  const dispatchPolicy = beadPickDispatchPolicy(record);
 
   if (id === "" || title === "") {
     return null;
@@ -655,6 +674,7 @@ export function toBeadItem(item: unknown): BeadItem | null {
     parallelizableSource: parallelizablePreference === "yes" ? "explicit" : "",
     parallelizableSuppressed: parallelizablePreference === "no",
     agent: beadPickAgent(record),
+    ...(dispatchPolicy === undefined ? {} : { dispatchPolicy }),
     provider: providerEvidence.provider,
     ...(providerEvidence.explicit ? { providerExplicit: true } : {}),
     model: beadPickModel(record),

@@ -6,6 +6,7 @@ import {
   beadPickBranch,
   beadPickCheckStatus,
   beadPickDependencyIds,
+  beadPickDispatchPolicy,
   beadPickModel,
   beadPickParallelizable,
   beadPickParentId,
@@ -119,6 +120,7 @@ describe("toBeadItem", () => {
         parallelizable: true,
         agent: "agent-a",
         provider: "openai",
+        dispatch_policy: "pinned",
         model: "gpt-5-codex",
         ssot: "AGENTS.md, .beads/issues.jsonl",
         artifact: "file:///tmp/neo-agent-task.md",
@@ -134,6 +136,7 @@ describe("toBeadItem", () => {
       parallelizableSuppressed: false,
       agent: "agent-a",
       provider: "openai",
+      dispatchPolicy: "pinned",
       model: "gpt-5-codex",
       ssot: "AGENTS.md, .beads/issues.jsonl",
       artifact: "file:///tmp/neo-agent-task.md",
@@ -152,6 +155,7 @@ describe("toBeadItem", () => {
           "parallel-ok",
           "agent:agent-b",
           "provider:anthropic",
+          "dispatch:preferred",
           "model:gpt-5",
           "ssot:README.md",
           "artifact:file:///tmp/neo-agent-labels.md",
@@ -168,6 +172,7 @@ describe("toBeadItem", () => {
       parallelizableSuppressed: false,
       agent: "agent-b",
       provider: "anthropic",
+      dispatchPolicy: "preferred",
       model: "gpt-5",
       ssot: "README.md",
       artifact: "file:///tmp/neo-agent-labels.md",
@@ -177,6 +182,13 @@ describe("toBeadItem", () => {
       checkStatus: "passed",
       syncRisk: "stale"
     });
+  });
+
+  it("normalizes optional dispatch policies without requiring an assignment", () => {
+    expect(beadPickDispatchPolicy({ assignmentPolicy: "AUTO" })).toBe("automatic");
+    expect(beadPickDispatchPolicy({ labels: ["assignment:required"] })).toBe("pinned");
+    expect(beadPickDispatchPolicy({ labels: ["dispatch:prefer"] })).toBe("preferred");
+    expect(beadPickDispatchPolicy({ labels: ["unrelated"] })).toBeUndefined();
   });
 
   it("supports alternate field names and numeric priorities", () => {

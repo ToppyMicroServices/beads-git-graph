@@ -5,8 +5,20 @@ import {
   isActiveExecutionPhase
 } from "./agentExecutionTrace";
 import { getAgentProviderDefinition } from "./agentProvider";
-import { type BeadItem, beadStatusLabel, normalizeBeadStatus } from "./beadsData";
+import {
+  type AgentDispatchPolicy,
+  type BeadItem,
+  beadStatusLabel,
+  normalizeBeadStatus
+} from "./beadsData";
 import { escapeHtml } from "./utils";
+
+export function resolveAgentDispatchPolicy(item: BeadItem): AgentDispatchPolicy {
+  if (item.dispatchPolicy !== undefined) return item.dispatchPolicy;
+  return item.agent.trim() !== "" || item.providerExplicit === true || item.model.trim() !== ""
+    ? "preferred"
+    : "automatic";
+}
 
 export function renderAgentPlan(
   items: BeadItem[],
@@ -14,6 +26,12 @@ export function renderAgentPlan(
   agentAliases: ReadonlyMap<string, string>
 ) {
   const byId = new Map(items.map((item) => [item.id, item]));
+  const dispatchCounts: Record<AgentDispatchPolicy, number> = {
+    automatic: 0,
+    preferred: 0,
+    pinned: 0
+  };
+  for (const item of items) dispatchCounts[resolveAgentDispatchPolicy(item)]++;
   const children = new Map<string, BeadItem[]>();
   for (const item of items) {
     const parent = item.parentId.trim();
@@ -42,6 +60,11 @@ export function renderAgentPlan(
       const provider = providerExplicit
         ? getAgentProviderDefinition(item.provider).label
         : "Unassigned";
+      const dispatchPolicy = resolveAgentDispatchPolicy(item);
+      const assignment =
+        dispatchPolicy === "automatic"
+          ? "Dispatch: Automatic"
+          : `Dispatch: ${dispatchPolicy === "pinned" ? "Pinned" : "Preferred"} · Requested: ${provider} / ${model} · Owner: ${owner}`;
       const dependencies =
         item.dependencyIds.length === 0
           ? "None"
@@ -49,7 +72,7 @@ export function renderAgentPlan(
               .map((id) => `${id}${byId.has(id) ? "" : " (not loaded)"}`)
               .join(", ");
       rows.push(
-        `<li class="agentPlanRow" data-plan-issue-id="${escapeHtml(item.id)}" data-plan-parent-id="${escapeHtml(parent)}" data-plan-depth="${depth}" style="--plan-depth:${Math.min(depth, 4)}"><div class="agentExecutionHeading"><span class="agentPlanTitle"><span class="beadId">${escapeHtml(item.id)}</span> ${escapeHtml(item.title)}</span><button class="graphDetailsBead" type="button" data-graph-details-id="${escapeHtml(item.id)}" data-graph-details-workspace="${escapeHtml(workspacePath)}" aria-label="${escapeHtml(`Details for ${item.id}: ${item.title}`)}">Details</button></div><div class="agentPlanRelations">Parent: ${escapeHtml(parent === "" ? "None" : `${parent}${byId.has(parent) ? "" : " (not loaded)"}`)} · Depends on: ${escapeHtml(dependencies)}</div><div class="agentPlanAssignment">Requested: ${escapeHtml(provider)} / ${escapeHtml(model)} · Owner: ${escapeHtml(owner)}</div><div class="agentPlanStatus">Recorded: ${escapeHtml(beadStatusLabel(normalizeBeadStatus(item.status)))}</div></li>`
+        `<li class="agentPlanRow" data-plan-issue-id="${escapeHtml(item.id)}" data-plan-parent-id="${escapeHtml(parent)}" data-plan-depth="${depth}" data-dispatch-policy="${escapeHtml(dispatchPolicy)}" style="--plan-depth:${Math.min(depth, 4)}"><div class="agentExecutionHeading"><span class="agentPlanTitle"><span class="beadId">${escapeHtml(item.id)}</span> ${escapeHtml(item.title)}</span><button class="graphDetailsBead" type="button" data-graph-details-id="${escapeHtml(item.id)}" data-graph-details-workspace="${escapeHtml(workspacePath)}" aria-label="${escapeHtml(`Details for ${item.id}: ${item.title}`)}">Details</button></div><div class="agentPlanRelations">Parent: ${escapeHtml(parent === "" ? "None" : `${parent}${byId.has(parent) ? "" : " (not loaded)"}`)} · Depends on: ${escapeHtml(dependencies)}</div><div class="agentPlanAssignment">${escapeHtml(assignment)}</div><div class="agentPlanStatus">Recorded: ${escapeHtml(beadStatusLabel(normalizeBeadStatus(item.status)))}</div></li>`
       );
       const descendants = children.get(item.id) ?? [];
       for (let index = descendants.length - 1; index >= 0; index--) {
@@ -62,7 +85,7 @@ export function renderAgentPlan(
   }
   // Keep malformed parent cycles visible without inventing or duplicating edges.
   for (const item of items) append(item);
-  return `<div class="agentPlanPanel"><div class="agentExecutionSectionHeader"><h3>Subagent plan</h3><span>${items.length} tasks</span></div><p class="agentExecutionHint">All loaded tasks, parent → leaf. Parent and dependency links are recorded separately; assignments are requested, not confirmed execution.</p><ol class="agentPlanList" tabindex="0" aria-label="Recorded subagent plan">${rows.join("")}</ol></div>`;
+  return `<div class="agentPlanPanel"><div class="agentExecutionSectionHeader"><h3>Execution plan</h3><span class="agentDispatchSummary" role="status">${dispatchCounts.automatic} automatic · ${dispatchCounts.preferred} preferred · ${dispatchCounts.pinned} pinned</span></div><p class="agentExecutionHint">Dispatch is automatic unless a preferred or pinned target is recorded. Parent and dependency links are separate; requested targets are not confirmed execution.</p><ol class="agentPlanList" tabindex="0" aria-label="Recorded execution plan">${rows.join("")}</ol></div>`;
 }
 
 export function renderAgentExecutionPanel(
@@ -76,7 +99,7 @@ export function renderAgentExecutionPanel(
   const rows = entries
     .map(
       (entry) =>
-        `<li class="agentExecutionRow" data-execution-run-id="${escapeHtml(entry.runId)}" data-execution-phase="${escapeHtml(entry.phase)}" data-execution-active="${isActiveExecutionPhase(entry.phase) ? "1" : "0"}"><div class="agentExecutionHeading"><span class="agentExecutionTitle">${escapeHtml(`${entry.issueId}: ${entry.title}`)}</span><button class="graphDetailsBead agentExecutionDetails" type="button" data-graph-details-id="${escapeHtml(entry.issueId)}" data-graph-details-workspace="${escapeHtml(workspacePath)}" aria-label="${escapeHtml(`Details for ${entry.issueId}: ${entry.title}`)}">Details</button></div><span class="agentExecutionPhase">${escapeHtml(EXECUTION_PHASE_LABELS[entry.phase])}</span><span class="agentExecutionMeta">Requested: ${escapeHtml(getAgentProviderDefinition(entry.provider).label)} · ${escapeHtml(getObservedModelLabel(entry.model))}</span><time class="agentExecutionTime" datetime="${escapeHtml(entry.updatedAt)}">Observed ${escapeHtml(entry.updatedAt)}</time></li>`
+        `<li class="agentExecutionRow" data-execution-run-id="${escapeHtml(entry.runId)}" data-execution-phase="${escapeHtml(entry.phase)}" data-execution-active="${isActiveExecutionPhase(entry.phase) ? "1" : "0"}"><div class="agentExecutionHeading"><span class="agentExecutionTitle">${escapeHtml(`${entry.issueId}: ${entry.title}`)}</span><button class="graphDetailsBead agentExecutionDetails" type="button" data-graph-details-id="${escapeHtml(entry.issueId)}" data-graph-details-workspace="${escapeHtml(workspacePath)}" aria-label="${escapeHtml(`Details for ${entry.issueId}: ${entry.title}`)}">Details</button></div><span class="agentExecutionPhase">${escapeHtml(EXECUTION_PHASE_LABELS[entry.phase])}</span><span class="agentExecutionMeta">Observed: ${escapeHtml(getAgentProviderDefinition(entry.provider).label)} · ${escapeHtml(getObservedModelLabel(entry.model))}</span><time class="agentExecutionTime" datetime="${escapeHtml(entry.updatedAt)}">Observed ${escapeHtml(entry.updatedAt)}</time></li>`
     )
     .join("");
   return `<div class="agentExecutionPanel" data-workspace-path="${escapeHtml(workspacePath)}"><div class="agentExecutionSectionHeader"><h3>Recent execution</h3><span class="agentExecutionSummary" role="status" aria-live="polite">${active} active · ${entries.length} recent</span></div><p class="agentExecutionHint">Host-observed stages in this session only, up to 100 runs. External sessions are not monitored. Review and applying an edit do not mean task acceptance.</p><ol class="agentExecutionList" tabindex="0" aria-label="Recent host-observed execution"><li class="agentExecutionEmpty"${entries.length > 0 ? " hidden" : ""}>No execution observed in this session. Recorded task status is not live activity.</li>${rows}</ol></div>`;
