@@ -120,6 +120,7 @@ describe("autonomous workspace edit contract", () => {
     "file:///tmp/outside.md",
     ".git/config",
     ".beads/issues.jsonl",
+    ".taskgraph/tasks.json",
     ".github/workflows/release.yml",
     ".github/ISSUE_TEMPLATE/bug.md",
     ".env",

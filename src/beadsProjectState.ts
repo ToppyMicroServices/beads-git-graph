@@ -90,7 +90,7 @@ export function deriveStartAiEligibility(
     return {
       code: "readiness-unknown",
       enabled: false,
-      reason: "Task readiness is unknown because bd ready could not be checked."
+      reason: "Task readiness could not be checked."
     };
   }
 
@@ -98,8 +98,7 @@ export function deriveStartAiEligibility(
     return {
       code: "not-ready",
       enabled: false,
-      reason:
-        "bd ready does not currently report this task as ready. Check blockers or deferred state."
+      reason: "This task is not ready. Check blockers or deferred state."
     };
   }
 
@@ -354,16 +353,16 @@ export function deriveAgentWorkItem(item: BeadItem): AgentWorkItem {
   const queueReason: AgentWorkReason = item.readyByBd
     ? {
         code: "ready-confirmed",
-        message: "Readiness is reported by bd ready"
+        message: "Readiness is confirmed by the task store"
       }
     : item.parallelizable
       ? {
           code: "ready-not-confirmed",
-          message: "Marked parallelizable, but readiness is not confirmed by bd ready"
+          message: "Marked parallelizable, but readiness is not confirmed by the task store"
         }
       : {
           code: "ready-not-confirmed",
-          message: "Status is open; readiness is not confirmed by bd ready"
+          message: "Status is open; readiness is not confirmed by the task store"
         };
 
   return makeDerivedItem(item, "queue", [queueReason], readiness);

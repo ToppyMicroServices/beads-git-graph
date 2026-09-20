@@ -365,9 +365,7 @@ describe("Agent Project Manager webview", () => {
     expect(unknownButton).toContain('aria-disabled="true"');
     expect(unknownButton).not.toContain(" disabled>");
     expect(unknownButton).toContain('aria-describedby="');
-    expect(unknownButton).toContain(
-      "bd ready does not currently report this task as ready. Check blockers or deferred state."
-    );
+    expect(unknownButton).toContain("This task is not ready. Check blockers or deferred state.");
     expect(unknownCard).toContain('data-start-eligibility="not-ready"');
     expect(unknownCard).toContain('class="startAiReason"');
     expect(unknownCard).not.toContain('class="startAiReason" role="status"');
@@ -436,7 +434,7 @@ describe("Agent Project Manager webview", () => {
     expect(button).toContain('aria-disabled="true"');
     expect(button).not.toContain(" disabled>");
     expect(card).toContain('data-start-eligibility="readiness-unknown"');
-    expect(card).toContain("Task readiness is unknown because bd ready could not be checked.");
+    expect(card).toContain("Task readiness could not be checked.");
   });
 
   it("fails closed when a renderer caller omits readinessKnown", () => {
@@ -712,7 +710,7 @@ describe("Agent Project Manager webview", () => {
     );
 
     expect(html).toContain(
-      `<section data-workspace-path="${workspacePath}" data-write-available="1" data-write-unavailable-reason="">`
+      `<section data-storage-kind="beads" data-workspace-path="${workspacePath}" data-write-available="1" data-write-unavailable-reason="">`
     );
     const createButton = getTagContaining(
       html,
@@ -912,7 +910,7 @@ describe("Agent Project Manager webview", () => {
     expect(blockedGraphHandoff).toContain('aria-disabled="true"');
     expect(blockedGraphHandoff).not.toContain(" disabled>");
     expect(blockedGraphHandoff).toContain(
-      "bd ready does not currently report this task as ready. Check blockers or deferred state."
+      "This task is not ready. Check blockers or deferred state."
     );
     expect(getAgentCard(before, "research")).toContain("Provider Hugging Face Inference");
     expect(getAgentCard(before, "implement")).toContain("Provider Ollama");

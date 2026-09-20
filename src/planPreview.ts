@@ -5,6 +5,7 @@ import { projectPlanDraftToGraph } from "./planGraph";
 import { formatPlanMutation, projectPlanDraftMutations } from "./planImport";
 
 export interface PlanDraftPreviewInput {
+  storageKind?: "local" | "beads";
   draft: PlanDraft | null;
   errors: PlanDraftValidationError[];
   capability: BeadsWriteCapability | null;
@@ -29,7 +30,7 @@ export function renderPlanDraftPreview(input: PlanDraftPreviewInput) {
     ({
       supported: false,
       state: "probe-failed",
-      reason: "Select an initialized Beads workspace to check import capability."
+      reason: "Select a workspace folder to check import capability."
     } satisfies BeadsWriteCapability);
   const capabilityHtml = `<div class="planCapability ${capability.supported ? "supported" : "disabled"}"><strong>${capability.supported ? "Import available" : "Import disabled"}</strong><span>${escapeHtml(capability.reason)}</span></div>`;
 
@@ -108,15 +109,29 @@ export function renderPlanDraftPreview(input: PlanDraftPreviewInput) {
         `<article class="planDraftTask"><div class="planDraftTaskHeader"><strong>${escapeHtml(task.id)} · ${escapeHtml(task.title)}</strong><span>${escapeHtml(task.priority)}</span></div><div><b>Instructions:</b> ${task.instructions === undefined ? "Not declared" : escapeHtml(task.instructions)}</div><div><b>Depends on:</b> ${task.dependencyIds.length === 0 ? "None" : task.dependencyIds.map(escapeHtml).join(", ")}</div><div><b>Acceptance:</b><ul>${task.acceptanceCriteria.map((criterion) => `<li>${escapeHtml(criterion)}</li>`).join("")}</ul></div><div><b>SSOT:</b> ${task.ssot.length === 0 ? "None declared" : task.ssot.map(escapeHtml).join(", ")}</div>${task.outputPath === undefined ? "<div><b>Output:</b> Not declared (direct-provider editing unavailable)</div>" : `<div><b>Output:</b> ${escapeHtml(task.outputPath)}</div>`}${task.provider === undefined ? "" : `<div><b>Provider:</b> ${escapeHtml(task.provider)}</div>`}${task.model === undefined ? "" : `<div><b>Model:</b> ${escapeHtml(task.model)}</div>`}</article>`
     )
     .join("");
-  const mutationHtml = projectPlanDraftMutations(input.draft)
-    .map(
-      (mutation, index) =>
-        `<li><span>${index + 1}. ${escapeHtml(mutation.kind)}</span><code>${escapeHtml(formatPlanMutation(mutation))}</code></li>`
-    )
-    .join("");
+  const isLocal = input.storageKind === "local";
+  const mutations = projectPlanDraftMutations(input.draft);
+  const mutationHtml = isLocal
+    ? input.draft.tasks
+        .map(
+          (task) =>
+            `<li class="localTaskMutation"><span>Create task: ${escapeHtml(task.title)} (${escapeHtml(task.priority)})</span><span>${task.dependencyIds.length === 0 ? "No dependencies" : `Depends on: ${task.dependencyIds.map(escapeHtml).join(", ")}`}</span></li>`
+        )
+        .join("")
+    : mutations
+        .map(
+          (mutation, index) =>
+            `<li><span>${index + 1}. ${escapeHtml(mutation.kind)}</span><code>${escapeHtml(formatPlanMutation(mutation))}</code></li>`
+        )
+        .join("");
+  const mutationHeading = isLocal
+    ? `Tasks to save in .taskgraph/tasks.json (${input.draft.tasks.length})`
+    : `Pending Beads mutations (${mutations.length})`;
   const importTitle = capability.supported
-    ? "Review and approve the exact Beads mutations."
+    ? isLocal
+      ? "Review and approve saving these tasks and dependencies."
+      : "Review and approve the exact Beads mutations."
     : capability.reason;
 
-  return `<div class="planPreviewResult">${validationHtml}<section class="planDraftSummary"><h2>${escapeHtml(input.draft.goal)}</h2><div class="planDraftStats"><span>${input.draft.tasks.length} tasks</span><span>${graph.edges.length} dependencies</span></div>${criticalPathHtml}${parallelHtml}${providerTransitionHtml}${dependencyFlowHtml}${executionCompatibilityHtml}${graphHtml}<div class="planDraftTasks">${taskHtml}</div></section><details class="planMutationPreview" open><summary>Pending Beads mutations (${projectPlanDraftMutations(input.draft).length})</summary><ol>${mutationHtml}</ol></details>${capabilityHtml}<div class="planPreviewActions"><button id="cancelPlanDraft" type="button">Discard draft</button><button id="importPlanDraft" type="button" title="${escapeHtml(importTitle)}"${capability.supported ? "" : " disabled"}>Import Plan</button></div></div>`;
+  return `<div class="planPreviewResult">${validationHtml}<section class="planDraftSummary"><h2>${escapeHtml(input.draft.goal)}</h2><div class="planDraftStats"><span>${input.draft.tasks.length} tasks</span><span>${graph.edges.length} dependencies</span></div>${criticalPathHtml}${parallelHtml}${providerTransitionHtml}${dependencyFlowHtml}${executionCompatibilityHtml}${graphHtml}<div class="planDraftTasks">${taskHtml}</div></section><details class="planMutationPreview" open><summary>${mutationHeading}</summary><ol>${mutationHtml}</ol></details>${capabilityHtml}<div class="planPreviewActions"><button id="cancelPlanDraft" type="button">Discard draft</button><button id="importPlanDraft" type="button" title="${escapeHtml(importTitle)}"${capability.supported ? "" : " disabled"}>Import Plan</button></div></div>`;
 }

@@ -4,6 +4,33 @@
 
 Detailed setup, execution behavior, and data boundaries for Beads Git Graph.
 
+## Local tasks and existing Beads workspaces
+
+Open a folder and select **Tasks** in the Beads Git Graph Activity Bar entry. Folders without
+`.beads` use the built-in local task store. You can create and edit tasks, change their status, and
+add or remove dependencies from the task details. **Graph**, **Table**, **Manage**, and **Plan**
+use the same tasks. Basic task management needs no CLI installation, account, or Git repository.
+
+The extension saves local tasks in `.taskgraph/tasks.json` on the first write. Opening a folder
+or viewing an empty store creates no task file. This plain-text file can be versioned with the
+project; review it before committing. An open non-epic task is ready when all its transitive blocking
+dependencies are closed. Missing dependencies or cycles keep it blocked. AI actions still require
+a configured provider, a trusted workspace, and explicit
+approval. Copilot worktree sessions also require Git.
+
+Local writes are serialized with a file lock, including writes from other extension windows.
+If the lock remains busy, the write stops with an error; the extension does not remove another
+writer's lock automatically.
+Malformed existing task data is reported and preserved rather than replaced with an empty store.
+This protects the task file; it does not coordinate separate AI sessions or make generated file
+edits atomic across processes.
+
+If `.beads` already exists, the extension continues to use Beads and its readiness rules. Beads
+mutations require a compatible `bd` CLI. If `bd` is missing or its schema is unsupported, the
+extension shows that problem and does not silently switch to a local task store. Configure
+`beads-git-graph.bdPath` in machine settings if the executable is not on `PATH`. Existing Beads
+tasks are not migrated or copied automatically.
+
 ## Git history
 
 Run **Beads Git Graph: View Git Graph (git log)** from the Command Palette to inspect branches,
@@ -15,13 +42,13 @@ of the remote server.
 
 ## Manage Agent Work
 
-Open **Manage** in the Beads view to see the Agent Work Queue. It derives each lane from Beads status and recorded worktree, PR, check, and sync-risk metadata:
+Open **Manage** in the Tasks view to see the Agent Work Queue. It derives each lane from task status and recorded worktree, PR, check, and sync-risk metadata:
 
 - **Needs attention**: explicitly blocked work, known failing checks, dangerous sync risk, or an unrecognized status
 - **Review**: a pull request is recorded and no supported failure signal is present
-- **Recorded in progress**: Beads reports the task as in progress
-- **Queue**: open work, with confirmed readiness distinguished from readiness not yet confirmed by `bd ready`
-- **Done**: Beads reports the task as closed
+- **Recorded in progress**: the task is recorded as in progress
+- **Queue**: open work, with readiness confirmed by the active task store distinguished from readiness not yet confirmed
+- **Done**: the task is recorded as closed
 
 **Subagent plan** shows loaded parent-to-leaf tasks, their recorded dependencies, and requested
 owner/provider/model. A parent link does not imply a dependency. Unassigned work stays unassigned;
@@ -35,28 +62,28 @@ Copilot handoff is marked **Session opened · not monitored**; copied prompts ar
 An applied edit still needs external acceptance. Failures show a short phase label; inspect the
 VS Code notification for details.
 
-“Recorded in progress” in the lanes remains Beads status, not a live worker heartbeat. External
+“Recorded in progress” in the lanes remains task status, not a live worker heartbeat. External
 agents, including the separate Agent Plugin, are not monitored by this panel. The plugin reports
 host-observed events in chat; supported Beads metadata appears here as recorded state on refresh.
 In Manage, **Start AI** is enabled only when
-`bd ready` confirms readiness and Beads can be updated safely. A disabled action shows the exact
+the active task store confirms readiness and can be updated safely. A disabled action shows the exact
 reason beside it. Provider and model selection happens after **Start AI** is selected; a recorded
 provider label does not by itself enable or disable the action.
 
 ## Plan Agent Work
 
-Open **Plan** in the Beads view and follow the explicit four-step flow:
+Open **Plan** in the Tasks view and follow the explicit four-step flow:
 
 1. Describe the project goal and select **Generate task plan with AI**.
 2. Choose an Ollama, Hugging Face, OpenAI, or Anthropic direct-response provider and model, review
    the one-request confirmation, and approve it.
 3. Review and edit the returned Plan Draft. The local preview shows tasks, dependencies, acceptance
    criteria, SSOT/provider/model hints, Critical Path, parallel groups, requested provider/model
-   transitions, validation errors, and the exact ordered Beads mutations.
+   transitions, validation errors, and the exact ordered task mutations.
 4. Select **Import Plan** only after the draft is correct, then move to **Manage** to run work that
-   Beads currently reports as ready.
+   the active task store currently reports as ready.
 
-AI generation creates an editable draft only. It does not import tasks, mutate Beads, execute the
+AI generation creates an editable draft only. It does not import tasks, update the task store, execute the
 response, or start an agent. The planning request contains the goal, workspace display name,
 available relative SSOT references, and configured provider/model choices; it does not include file
 contents, an absolute workspace path, or credentials. The raw provider response is retained as a
@@ -69,24 +96,25 @@ example, or edit the generated JSON directly. Preview remains local and read-onl
 dependency-linked tasks declare different providers or models, it shows the planned requested
 provider/model transitions between them.
 
-**Import Plan** is enabled only when the active workspace has a Beads database and the installed
-`bd` executable demonstrates the required create, update, and dependency commands. The Extension
-Host parses and validates the draft again, repeats the capability check, shows the mutation list,
-and asks for explicit approval before executing it. Discarding the draft performs no Beads write.
+**Import Plan** uses the active task store. Built-in local tasks need no CLI. For an existing Beads
+workspace, the installed `bd` executable must demonstrate the required create, update, and dependency
+commands. The Extension Host parses and validates the draft again, repeats the capability check,
+shows the mutation list, and asks for explicit approval before executing it. Discarding the draft
+performs no task write.
 
-A missing executable, unsupported command, or schema mismatch keeps import disabled and shows the
-observed reason. The extension does not initialize, bootstrap, or migrate a Beads database. If an
+A Beads executable error, unsupported command, or schema mismatch keeps import disabled and shows
+the observed reason. The extension does not initialize, bootstrap, or migrate a Beads database. If an
 approved import fails partway through, it stops, reports created IDs plus failed and unexecuted
 operations, and does not claim rollback.
 
 ## Multi-Agent Hints
 
-The Beads view surfaces optional execution hints from issue fields, metadata, or labels:
+The Tasks view surfaces optional execution hints from task fields, metadata, or labels:
 
 - `parallelizable: true` or label `parallel-ok`
 - `provider: "ollama"` or label `provider:ollama`
 - `model: "gpt-5-codex"` or label `model:gpt-5-codex`
-- `ssot: "AGENTS.md, .beads/issues.jsonl"` or label `ssot:AGENTS.md`
+- `ssot: "AGENTS.md, docs/decision.md"` or label `ssot:AGENTS.md`
 - `worktree: "../repo-agent-a"` or label `worktree:../repo-agent-a`
 - `branch: "agent/task-a"` or label `branch:agent/task-a`
 - `pr: 123`, `check_status: "success"`, or labels such as `pr:#123`, `checks:success`
@@ -95,7 +123,7 @@ The Beads view surfaces optional execution hints from issue fields, metadata, or
 
 When you use **Start AI**, the extension asks for a provider and a provider-scoped model before
 changing anything. Direct-provider editing requires observable acceptance criteria and exactly one
-safe relative `output_path` (or a relative `artifact` value) on the Beads task.
+safe relative `output_path` (or a relative `artifact` value) on the task.
 
 | Provider               | Result                                                                                         |
 | ---------------------- | ---------------------------------------------------------------------------------------------- |
@@ -115,7 +143,7 @@ remains `in_progress`, with `provider_status=edit_applied`, `content_check_statu
 edit is not the same as closing the task or completing external validation.
 
 The edit host never executes model-generated shell commands. It can replace only the declared
-relative target. Workspace escape, symlinks, `.git`, `.beads`, `.vscode`, `.codex`, `.agents`,
+relative target. Workspace escape, symlinks, `.git`, `.beads`, `.taskgraph`, `.vscode`, `.codex`, `.agents`,
 `.github`, environment files, any `AGENTS.md`, output above 256 KiB, and copied or near-copied
 upstream artifacts are rejected. A local audit artifact shows the exact proposed file content while
 keeping raw provider output and verification provenance separate.
@@ -126,21 +154,22 @@ providers receive task fields and their own generated candidate during verificat
 workspace file content. They cannot replace an existing file or run a dependency-linked task. Use
 local Ollama or a Copilot worktree for those cases.
 
-Canceling a picker or the initial run confirmation performs no provider call, Beads write, or
+Canceling a picker or the initial run confirmation performs no provider call, task write, or
 workspace mutation. Rejecting the later per-task review preserves the audit artifact but applies no
-file and performs no Beads write. The initial confirmation shows declared edit targets, maximum
+file and performs no task write. The initial confirmation shows declared edit targets, maximum
 request count, concurrency, and the local versus cloud data boundary. One task can make at most two
 generation and two verification calls, so cloud providers may charge for up to four calls per task.
 
-Before contacting a provider, the extension runs a non-mutating Beads capability check and reloads
-the current task, dependencies, acceptance criteria, and declared target from `bd show`. Readiness
-and dependencies are rechecked after generation and before the serialized workspace/Beads
-mutation. Existing targets are compared with the content read before generation, again immediately
+Before contacting a provider, the extension checks task-store capabilities without writing and
+reloads the current task, dependencies, acceptance criteria, and declared target. For Beads, this
+uses `bd show`; local tasks are read from `.taskgraph/tasks.json`. Readiness and dependencies are
+rechecked after generation and before the serialized workspace/task-store mutation. Existing
+targets are compared with the content read before generation, again immediately
 before applying the candidate. New targets use exclusive creation. A detected file change or unsaved
 target document in the current VS Code window stops the edit and opens the saved candidate for
 review. Generate a new candidate after resolving the conflict.
 
-If Beads update fails, rollback checks that the applied content is still unchanged and that the
+If the task update fails, rollback checks that the applied content is still unchanged and that the
 current window has no unsaved target changes. If that check fails, the newer work is left in place
 and the audit artifact is opened for manual recovery. These checks do not provide an atomic
 cross-process claim: another window can start the same task, unsaved changes in another window are
@@ -189,29 +218,33 @@ A Hugging Face repository model run by Ollama should be represented as `provider
 exact `hf.co/...` model name. Hugging Face Inference Providers may route through another inference
 provider, so the extension does not infer an unconfirmed backend.
 
-Use task dependencies to plan work across different requested AI models. Beads readiness controls
+Use task dependencies to plan work across different requested AI models. Task readiness controls
 when dependent work becomes eligible. For local Ollama tasks, completed upstream `output_path`
 contents become bounded read-only handoff context. The downstream agent still writes only its own
-declared target. Copilot keeps the isolated worktree/session path. Cloud direct providers do not
-receive upstream workspace artifacts.
+declared target. Copilot keeps the isolated worktree/session path. For local tasks, its prompt points
+to the original workspace's `.taskgraph/tasks.json` for read-only current-task and upstream-task
+context. It tells the agent not to copy or change that store. Text-response prompts omit that store
+path and local workspace/worktree paths. Cloud direct providers do not receive upstream workspace
+artifacts.
 
 When multiple ready tasks can run in parallel, **Start Parallel** asks whether to preserve each
 task's provider/model handoff or override every selected task. It validates every task before
 contacting providers and keeps one batch to at most 20 direct-provider tasks. Generation and
-verification waits may overlap. Human review prompts, final readiness checks, file writes, Beads
+verification waits may overlap. Human review prompts, final readiness checks, file writes, task
 updates, and Git/worktree mutations remain serialized per workspace.
 
 The batch result distinguishes **Edit applied**, session started, prompt prepared, failed, skipped,
 and cancelled. A failed verifier leaves the workspace unchanged and preserves its candidate audit
 artifact. Successful direct tasks are not rerun when another task fails.
 
-These hints are visual metadata. Beads ready/blocking behavior still comes from issue status and dependencies.
+These hints are visual metadata. Ready/blocking behavior still comes from task status and dependencies.
 
 ## Security and Privacy Boundaries
 
-In VS Code Restricted Mode, the extension keeps Git history and tracked Beads JSON/JSONL viewing
+In VS Code Restricted Mode, the extension keeps Git history, local task viewing, and tracked Beads
+JSON/JSONL viewing
 available, but it does not start `bd`, contact an AI provider, manage provider credentials, create a
-worktree, fetch a remote, or change Git or Beads state. Trust the workspace before using those actions. The
+worktree, fetch a remote, or change Git or task state. Trust the workspace before using those actions. The
 Extension Host enforces this boundary even if a webview sends a forged action message.
 
 Every `bd` process started by this extension, including executable and capability checks, receives
@@ -226,9 +259,10 @@ count is exceeded, and **Beads Git Graph: Clear Stored AI Response Artifacts** d
 set after confirmation. Avoid sending or storing credentials, private keys, personal data, or other
 secrets in prompts, generated responses, task titles, descriptions, notes, or labels.
 
-Beads data is also local plain text and can be tracked by Git. This repository's default Beads setup
+Local `.taskgraph/tasks.json` data and Beads data are plain text and can be tracked by Git.
+This repository's default Beads setup
 tracks selected JSONL/configuration records, so data committed to a public repository becomes
-public. Review `.beads` changes before committing. The extension does not initialize, bootstrap, or
+public. Review task data changes before committing. The extension does not initialize, bootstrap, or
 migrate a Beads database, and it preserves schema-mismatch failures instead of bypassing them.
 
 ## SSOT Usage
@@ -238,7 +272,7 @@ The extension reads SSOT/context from `ssot-usage.json`, `.beads/ssot-usage.json
 ```json
 {
   "version": 1,
-  "default": ["bd:${issueId}", "AGENTS.md", ".beads/issues.jsonl", "README.md"],
+  "default": ["AGENTS.md", "README.md"],
   "contexts": [
     {
       "id": "agent-rules",
@@ -249,7 +283,8 @@ The extension reads SSOT/context from `ssot-usage.json`, `.beads/ssot-usage.json
 }
 ```
 
-Only existing local paths are added; refs such as `bd:${issueId}` and URLs are kept as-is.
+Only existing local paths are added. Existing Beads workspaces can also include `bd:${issueId}`
+and `.beads/issues.jsonl`; reference URIs and URLs are kept as-is.
 
 For derived parallel merge tasks, **Merge PRs** checks the registered agent worktrees and branch PR checks before asking GitHub CLI to auto-merge their branch PRs. It blocks if a worktree is not registered, does not contain `origin/main`, has uncommitted changes, has no open PR, or has missing, pending, or failing checks.
 

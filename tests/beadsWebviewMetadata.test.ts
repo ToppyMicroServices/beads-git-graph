@@ -384,8 +384,8 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("if (model === null)");
     expect(beadsView).toContain("queryReadyItemIds");
     expect(beadsView).toContain("queryDependencyIdsForStart");
-    expect(beadsView).toContain("bd ready no longer reports this task as ready");
-    expect(beadsView).toContain("Unable to verify current Beads dependencies for:");
+    expect(beadsView).toContain("This task is no longer ready");
+    expect(beadsView).toContain("Unable to verify current task dependencies for:");
     expect(beadsView).toContain("revalidateExecutionTargets");
     expect(beadsView).toContain("runReadinessGuardedStart");
     expect(agentStartGuard).toContain("readyBeforePreparation");
@@ -439,7 +439,7 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("`worktree=$" + "{worktree}`");
     expect(beadsView).toContain("`branch=$" + "{prepared.worktree.branch.trim()}`");
     expect(agentWorkPrompt).toContain("Inspect the current bead in Beads using ID");
-    expect(agentWorkPrompt).toContain("Upstream bead handoff IDs");
+    expect(agentWorkPrompt).toContain("Upstream $" + "{taskLabel} handoff IDs");
     expect(beadsView).toContain('["show", issueId, "--json"]');
     expect(beadsView).not.toContain("Assign Agent");
     expect(beadsView).not.toContain("Assign AI Model");
@@ -461,8 +461,10 @@ describe("beads webview presentation metadata", () => {
     expect(beadsView).toContain("generation !== this.refreshGeneration");
     expect(beadsMain).toContain("applyBeadsRenderUpdate");
     expect(beadsMain).toContain("message.generation <= lastRenderGeneration");
-    expect(beadsMain).toContain("DOMPurify.sanitize(message.html)");
-    expect(beadsMain.indexOf("DOMPurify.sanitize(message.html)")).toBeLessThan(
+    expect(beadsMain).toContain("DOMPurify.sanitize(message.html, { WHOLE_DOCUMENT: true })");
+    expect(
+      beadsMain.indexOf("DOMPurify.sanitize(message.html, { WHOLE_DOCUMENT: true })")
+    ).toBeLessThan(
       beadsMain.indexOf('new DOMParser().parseFromString(sanitizedHtml, "text/html")')
     );
     expect(beadsMain).toContain("reconcileRenderRegion(beadsWorkspaceViews, nextWorkspaceViews)");

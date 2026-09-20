@@ -7,14 +7,16 @@ import { type CommandAvailability } from "./commandAvailability";
 export interface BeadGroup {
   workspace: string;
   workspacePath: string;
+  storageKind?: "local" | "beads";
   items: BeadItem[];
-  /** Whether `bd ready` completed successfully for this snapshot. */
+  /** Whether readiness was computed successfully for this snapshot. */
   readinessKnown: boolean;
 }
 
 export interface EmptyBeadWorkspace {
   workspace: string;
   workspacePath: string;
+  storageKind?: "local" | "beads";
 }
 
 export interface BeadWarning {
@@ -25,6 +27,7 @@ export interface BeadWarning {
 
 export interface BeadLoadResult {
   executionSnapshot?: AgentExecutionSnapshot;
+  localWorkspaces?: EmptyBeadWorkspace[];
   groups: BeadGroup[];
   emptyWorkspaces: EmptyBeadWorkspace[];
   unavailableWorkspaces: EmptyBeadWorkspace[];

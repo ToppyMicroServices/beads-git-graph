@@ -110,7 +110,7 @@ describe("deriveStartAiEligibility", () => {
     ).toEqual({
       code: "readiness-unknown",
       enabled: false,
-      reason: "Task readiness is unknown because bd ready could not be checked."
+      reason: "Task readiness could not be checked."
     });
   });
 
@@ -124,8 +124,7 @@ describe("deriveStartAiEligibility", () => {
     ).toEqual({
       code: "not-ready",
       enabled: false,
-      reason:
-        "bd ready does not currently report this task as ready. Check blockers or deferred state."
+      reason: "This task is not ready. Check blockers or deferred state."
     });
   });
 
@@ -293,22 +292,22 @@ describe("deriveAgentWorkItem", () => {
     expect(confirmed).toMatchObject({
       lane: "queue",
       readiness: "confirmed",
-      reason: "Readiness is reported by bd ready"
+      reason: "Readiness is confirmed by the task store"
     });
     expect(confirmedSerial).toMatchObject({
       lane: "queue",
       readiness: "confirmed",
-      reason: "Readiness is reported by bd ready"
+      reason: "Readiness is confirmed by the task store"
     });
     expect(explicit).toMatchObject({
       lane: "queue",
       readiness: "not-confirmed",
-      reason: "Marked parallelizable, but readiness is not confirmed by bd ready"
+      reason: "Marked parallelizable, but readiness is not confirmed by the task store"
     });
     expect(openOnly).toMatchObject({
       lane: "queue",
       readiness: "not-confirmed",
-      reason: "Status is open; readiness is not confirmed by bd ready"
+      reason: "Status is open; readiness is not confirmed by the task store"
     });
   });
 

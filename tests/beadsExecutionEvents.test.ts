@@ -74,7 +74,8 @@ describe("host execution events", () => {
         },
         ensureAgentWorktree: ensureWorktree,
         openAssignAgentSession: openSession,
-        runBdCommand: runBd
+        runTaskCommand: runBd,
+        flushTaskWorkspace: () => runBd(["sync", "--flush-only"], values.workspacePath)
       });
       await provider.assignAndStartBead({ ...values, provider: "copilot" });
       expect(phases(messages)).toEqual(
