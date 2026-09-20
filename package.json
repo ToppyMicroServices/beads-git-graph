@@ -1,7 +1,7 @@
 {
   "name": "beads-git-graph",
   "displayName": "Beads Git Graph",
-  "version": "0.7.0",
+  "version": "0.9.0",
   "description": "Local tasks, dependencies, AI work, and Git history for VS Code. Beads is optional.",
   "categories": [
     "Other",

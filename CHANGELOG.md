@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-20
+
+### Added
+
+- Manage tasks, dependencies, and AI work without installing Beads. Folders without `.beads`
+  use local task storage, created only when tasks are first saved.
+- Create a task with one title input, then edit its status, dependencies, and AI execution fields.
+- Import task plans and their dependencies together in one local update. Check dependencies before
+  starting work, and preserve conflicting edits rather than overwriting them.
+
+### Fixed
+
+- Preserve task source and action availability when refreshing the view.
+- Keep hidden task actions out of keyboard menu navigation.
+
+### Compatibility
+
+- Existing `.beads` workspaces keep Beads storage, dependency graphs, and Git links. Provider setup
+  and explicit execution confirmations remain in place for AI work.
+- Keep the extension identity, command IDs, and settings keys unchanged. Version 0.9.0 follows the
+  existing 0.8-series daily prereleases so users can upgrade to this stable release.
+
 ## [0.7.0] - 2026-09-13
 
 ### Added
@@ -549,7 +571,9 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.7.0...v0.9.0
+[0.7.0]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.6...v0.7.0
 [0.6.3]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.0...v0.6.2
 [0.6.0]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.4.20260710...v0.6.0
