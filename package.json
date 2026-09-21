@@ -73,7 +73,7 @@
     "dompurify": "^3.4.15",
     "esbuild": "^0.28.2",
     "eslint-plugin-simple-import-sort": "^13.0.0",
-    "fast-check": "^4.10.0",
+    "fast-check": "^4.10.1",
     "ovsx": "1.2.0",
     "oxfmt": "^0.68.0",
     "oxlint": "^1.83.0",
