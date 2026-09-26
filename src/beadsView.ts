@@ -1,4 +1,3 @@
-import * as cp from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -87,6 +86,7 @@ import {
   probeBeadsAgentWriteCapability,
   probeBeadsWriteCapability
 } from "./beadsWriteCapability";
+import { runBoundedProcess } from "./boundedProcess";
 import { BranchSwitchSyncCoordinator } from "./branchSwitchSync";
 import { checkExecutable } from "./commandAvailability";
 import { getConfig } from "./config";
@@ -241,6 +241,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private readonly agentExecutionQueue = new WorkspaceSerialQueue<string>();
   private readonly executionTracker = new AgentExecutionTracker(randomUUID());
   private readonly inFlightActions = new Set<string>();
+  private readonly activeAgentControllers = new Set<AbortController>();
 
   constructor(
     extensionUri: vscode.Uri,
@@ -304,6 +305,10 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   public dispose() {
+    for (const controller of this.activeAgentControllers) {
+      controller.abort("Extension host disposed.");
+    }
+    this.activeAgentControllers.clear();
     if (this.refreshTimer !== null) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
@@ -1301,33 +1306,39 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       }
 
       const controller = new AbortController();
-      const response = await vscode.window.withProgress(
-        {
-          location: vscode.ProgressLocation.Notification,
-          title: `Generating an editable task plan with ${getAgentProviderDefinition(provider).label}`,
-          cancellable: true
-        },
-        async (_progress, token) => {
-          const cancellation = token.onCancellationRequested(() => {
-            controller.abort("Plan generation cancelled by user.");
-          });
-          try {
-            const credential = await this.credentialStore.get(provider);
-            return await requestAgentProviderResponse({
-              provider,
-              model,
-              prompt,
-              apiKey: credential?.value,
-              ollamaBaseUrl: provider === "ollama" ? getConfig().agentOllamaBaseUrl() : undefined,
-              maxOutputTokens: getConfig().agentProviderMaxOutputTokens(),
-              timeoutMs: getConfig().agentProviderTimeoutMs(),
-              signal: controller.signal
+      this.activeAgentControllers.add(controller);
+      let response;
+      try {
+        response = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Generating an editable task plan with ${getAgentProviderDefinition(provider).label}`,
+            cancellable: true
+          },
+          async (_progress, token) => {
+            const cancellation = token.onCancellationRequested(() => {
+              controller.abort("Plan generation cancelled by user.");
             });
-          } finally {
-            cancellation.dispose();
+            try {
+              const credential = await this.credentialStore.get(provider);
+              return await requestAgentProviderResponse({
+                provider,
+                model,
+                prompt,
+                apiKey: credential?.value,
+                ollamaBaseUrl: provider === "ollama" ? getConfig().agentOllamaBaseUrl() : undefined,
+                maxOutputTokens: getConfig().agentProviderMaxOutputTokens(),
+                timeoutMs: getConfig().agentProviderTimeoutMs(),
+                signal: controller.signal
+              });
+            } finally {
+              cancellation.dispose();
+            }
           }
-        }
-      );
+        );
+      } finally {
+        this.activeAgentControllers.delete(controller);
+      }
 
       const capture = await this.artifactStore.writeOrOpenFallback({
         issueId: "plan-draft",
@@ -1469,15 +1480,23 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         ? this.resolveAssignWorktree(workspacePath, issueId, currentWorktree)
         : "";
 
-    const startResult = await this.assignAndStartBead({
-      workspacePath,
-      issueId,
-      title,
-      provider,
-      model,
-      ssot,
-      worktree
-    });
+    const controller = new AbortController();
+    this.activeAgentControllers.add(controller);
+    let startResult;
+    try {
+      startResult = await this.assignAndStartBead({
+        workspacePath,
+        issueId,
+        title,
+        provider,
+        model,
+        ssot,
+        worktree,
+        signal: controller.signal
+      });
+    } finally {
+      this.activeAgentControllers.delete(controller);
+    }
     if (startResult.status === "not-ready") {
       vscode.window.showWarningMessage(
         startResult.phase === "before-preparation"
@@ -2071,8 +2090,9 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     });
     let completed = 0;
     const total = uniqueCandidates.length;
-    const completedOutcomes = await vscode.window
-      .withProgress(
+    this.activeAgentControllers.add(controller);
+    const completedOutcomes = await Promise.resolve(
+      vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
           title: `Running ${total} ready AI task${total === 1 ? "" : "s"}`,
@@ -2179,6 +2199,7 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           }
         }
       )
+    )
       .then(
         (results) => {
           for (const result of results) {
@@ -2208,7 +2229,8 @@ export class BeadsViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           });
           throw error;
         }
-      );
+      )
+      .finally(() => this.activeAgentControllers.delete(controller));
 
     outcomes.push(...completedOutcomes);
     await this.refresh();
@@ -3887,32 +3909,15 @@ A provider can write only its declared relative target after its model content c
       throw new Error("Refusing to run bd outside an open workspace folder.");
     }
 
-    return new Promise<string>((resolve, reject) => {
-      const bdPath = getConfig().bdPath();
-      const child = cp.spawn(bdPath, args, createBdSpawnOptions(workspacePath));
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (chunk) => {
-        stdout += chunk.toString();
-      });
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
-      });
-      child.on("error", (error) => {
-        reject(error);
-      });
-      child.on("close", (code) => {
-        if (code === 0) {
-          resolve(stdout);
-          return;
-        }
-        reject(
-          new Error(
-            stderr.trim() || `${bdPath} ${args.join(" ")} failed with exit code ${code ?? -1}.`
-          )
-        );
-      });
+    const bdPath = getConfig().bdPath();
+    const result = await runBoundedProcess(bdPath, args, {
+      spawnOptions: createBdSpawnOptions(workspacePath)
     });
+    if (result.exitCode === 0) return result.stdout;
+    throw new Error(
+      result.stderr.trim() ||
+        `${bdPath} ${args.join(" ")} failed with exit code ${result.exitCode}.`
+    );
   }
 
   private async runBdCapabilityProbe(
@@ -3925,21 +3930,10 @@ A provider can write only its declared relative target after its model content c
       throw new Error("Refusing to probe bd outside an open workspace folder.");
     }
 
-    return new Promise((resolve, reject) => {
-      const child = cp.spawn(getConfig().bdPath(), [...args], createBdSpawnOptions(workspacePath));
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (chunk) => {
-        stdout += chunk.toString();
-      });
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
-      });
-      child.on("error", reject);
-      child.on("close", (code) => {
-        resolve({ exitCode: code ?? -1, stdout, stderr });
-      });
+    const result = await runBoundedProcess(getConfig().bdPath(), args, {
+      spawnOptions: createBdSpawnOptions(workspacePath)
     });
+    return result;
   }
 
   private getBdExecutableStatus() {
@@ -3951,59 +3945,21 @@ A provider can write only its declared relative target after its model content c
   }
 
   private async runGitCommand(args: string[], cwd: string) {
-    return new Promise<string>((resolve, reject) => {
-      const gitPath = getConfig().gitPath();
-      const child = cp.spawn(gitPath, args, { cwd });
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (chunk) => {
-        stdout += chunk.toString();
-      });
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
-      });
-      child.on("error", (error) => {
-        reject(error);
-      });
-      child.on("close", (code) => {
-        if (code === 0) {
-          resolve(stdout);
-          return;
-        }
-        reject(
-          new Error(
-            stderr.trim() || `${gitPath} ${args.join(" ")} failed with exit code ${code ?? -1}.`
-          )
-        );
-      });
-    });
+    const gitPath = getConfig().gitPath();
+    const result = await runBoundedProcess(gitPath, args, { spawnOptions: { cwd } });
+    if (result.exitCode === 0) return result.stdout;
+    throw new Error(
+      result.stderr.trim() ||
+        `${gitPath} ${args.join(" ")} failed with exit code ${result.exitCode}.`
+    );
   }
 
   private async runExternalCommand(command: string, args: string[], cwd: string) {
-    return new Promise<string>((resolve, reject) => {
-      const child = cp.spawn(command, args, { cwd });
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (chunk) => {
-        stdout += chunk.toString();
-      });
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
-      });
-      child.on("error", (error) => {
-        reject(error);
-      });
-      child.on("close", (code) => {
-        if (code === 0) {
-          resolve(stdout);
-          return;
-        }
-        reject(
-          new Error(
-            stderr.trim() || `${command} ${args.join(" ")} failed with exit code ${code ?? -1}.`
-          )
-        );
-      });
-    });
+    const result = await runBoundedProcess(command, args, { spawnOptions: { cwd } });
+    if (result.exitCode === 0) return result.stdout;
+    throw new Error(
+      result.stderr.trim() ||
+        `${command} ${args.join(" ")} failed with exit code ${result.exitCode}.`
+    );
   }
 }

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-09-26
+
+### Fixed
+
+- Bound Git, Beads, and helper CLI processes started by task actions by time and captured output so
+  a stalled or noisy subprocess cannot retain a workspace serialization slot or grow memory
+  indefinitely.
+- Abort active provider requests when the extension host is disposed.
+- Bound retired execution-session identifiers retained by the Manage webview while still rejecting
+  delayed updates from recent host sessions.
+
 ## [0.9.1] - 2026-09-20
 
 ### Added
