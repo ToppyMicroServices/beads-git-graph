@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+<!-- daily-generated:start -->
+
+### Daily Snapshot
+
+- [`1df911c`](https://github.com/ToppyMicroServices/beads-git-graph/commit/1df911c1e3294e3eb0a6c8ab0bd51389dff8ada9) build(deps-dev): bump oxfmt from 0.68.0 to 0.70.0 (#330)
+- [`1030534`](https://github.com/ToppyMicroServices/beads-git-graph/commit/1030534d179d694e34ba132f7cdd32cd0c1aeabd) build(deps-dev): bump oxlint from 1.83.0 to 1.85.0 (#329)
+- [`043799a`](https://github.com/ToppyMicroServices/beads-git-graph/commit/043799ae72f117ce3c6e53a16626304201c4a4c4) build(deps-dev): bump fast-check from 4.10.1 to 4.10.2 (#327)
+- [`64f797c`](https://github.com/ToppyMicroServices/beads-git-graph/commit/64f797c9dd188b7a2ea611b0222285eddf984c57) build(deps): bump github/codeql-action/upload-sarif (#324)
+- [`4fe4748`](https://github.com/ToppyMicroServices/beads-git-graph/commit/4fe47489f6fe74f070f78b28a92b917c3f17c977) build(deps-dev): bump fast-check from 4.10.0 to 4.10.1 (#321)
+
+<!-- daily-generated:end -->
+
 ## [0.9.1] - 2026-09-20
 
 ### Added
