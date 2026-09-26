@@ -1,7 +1,7 @@
 # Beads Git Graph
 
 [![MIT License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](./LICENSE)
-[![Version 0.9.1](https://img.shields.io/badge/version-0.9.1-0366d6?style=flat-square)](./CHANGELOG.md)
+[![Version 0.9.2](https://img.shields.io/badge/version-0.9.2-0366d6?style=flat-square)](./CHANGELOG.md)
 
 A local project workspace for coordinating tasks across AI providers in VS Code.
 Create tasks, follow dependencies, and review results without installing Beads or another task CLI.

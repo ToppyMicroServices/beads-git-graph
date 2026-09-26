@@ -11,6 +11,15 @@ import { getAgentProviderDefinition } from "../src/agentProvider";
 export function createAgentExecutionPanelController(root: Document) {
   let current: AgentExecutionSnapshot | null = null;
   const retiredSessions = new Set<string>();
+  const maxRetiredSessions = 32;
+
+  function retireSession(sessionId: string) {
+    retiredSessions.add(sessionId);
+    if (retiredSessions.size > maxRetiredSessions) {
+      const oldest = retiredSessions.values().next().value;
+      if (oldest !== undefined) retiredSessions.delete(oldest);
+    }
+  }
 
   function setText(element: Element, text: string) {
     if (element.textContent !== text) element.textContent = text;
@@ -107,7 +116,7 @@ export function createAgentExecutionPanelController(root: Document) {
     )
       return false;
     if (current !== null && current.sessionId !== snapshot.sessionId)
-      retiredSessions.add(current.sessionId);
+      retireSession(current.sessionId);
     current = snapshot;
     render();
     return true;

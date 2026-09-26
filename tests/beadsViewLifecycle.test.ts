@@ -61,4 +61,19 @@ describe("Beads view lifecycle", () => {
     expect(trustListeners.size).toBe(0);
     expect(refresh).not.toHaveBeenCalled();
   });
+
+  it("aborts and releases active provider requests when disposed", () => {
+    vi.spyOn(BeadsViewProvider.prototype, "refresh").mockResolvedValue();
+    const provider = new BeadsViewProvider({} as never, {} as never, {} as never);
+    const controller = new AbortController();
+    const internals = provider as unknown as {
+      activeAgentControllers: Set<AbortController>;
+    };
+    internals.activeAgentControllers.add(controller);
+
+    provider.dispose();
+
+    expect(controller.signal.aborted).toBe(true);
+    expect(internals.activeAgentControllers.size).toBe(0);
+  });
 });
