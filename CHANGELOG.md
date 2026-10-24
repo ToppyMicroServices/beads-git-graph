@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+<!-- daily-generated:start -->
+
+### Daily Snapshot
+
+- [`1eca419`](https://github.com/ToppyMicroServices/beads-git-graph/commit/1eca4192ab566101c060ae57a3853c79fbcc6aef) build(deps): bump github/codeql-action/analyze from 4.38.0 to 4.38.2 (#334)
+- [`cd08b8a`](https://github.com/ToppyMicroServices/beads-git-graph/commit/cd08b8a8d2d6a32836c84f492665a78a541107ff) build(deps-dev): bump dompurify from 3.4.15 to 3.4.16 (#333)
+- [`1bb925f`](https://github.com/ToppyMicroServices/beads-git-graph/commit/1bb925f7c5365ca545a4a2e92f4a4c609ad87370) build(deps-dev): bump vite from 8.3.0 to 8.3.1 (#332)
+
+<!-- daily-generated:end -->
+
 ## [0.9.2] - 2026-09-26
 
 ### Fixed
@@ -596,7 +606,7 @@
 
 Initial release
 
-[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.9.2...HEAD
 [0.9.1]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.7.0...v0.9.0
 [0.7.0]: https://github.com/ToppyMicroServices/beads-git-graph/compare/v0.6.6...v0.7.0
